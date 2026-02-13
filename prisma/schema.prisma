@@ -1,0 +1,171 @@
+generator client {
+    provider = "prisma-client-js"
+    binaryTargets = ["native", "linux-musl-arm64-openssl-3.0.x"]
+    output = "/home/ubuntu/project_dashboard_demo/nextjs_space/node_modules/.prisma/client"
+}
+
+datasource db {
+    provider = "postgresql"
+    url      = env("DATABASE_URL")
+}
+
+model User {
+  id            String    @id @default(cuid())
+  name          String?
+  email         String    @unique
+  emailVerified DateTime?
+  password      String?
+  image         String?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+  accounts      Account[]
+  sessions      Session[]
+  projects      Project[]
+  ideas         Idea[]
+  notes         Note[]
+  links         Link[]
+  images        Image[]
+  chatMessages  ChatMessage[]
+}
+
+model Account {
+  id                String  @id @default(cuid())
+  userId            String
+  type              String
+  provider          String
+  providerAccountId String
+  refresh_token     String? @db.Text
+  access_token      String? @db.Text
+  expires_at        Int?
+  token_type        String?
+  scope             String?
+  id_token          String? @db.Text
+  session_state     String?
+  user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([provider, providerAccountId])
+}
+
+model Session {
+  id           String   @id @default(cuid())
+  sessionToken String   @unique
+  userId       String
+  expires      DateTime
+  user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}
+
+model VerificationToken {
+  identifier String
+  token      String   @unique
+  expires    DateTime
+
+  @@unique([identifier, token])
+}
+
+model Project {
+  id          String   @id @default(cuid())
+  title       String
+  description String?  @db.Text
+  status      String   @default("idea") // idea, development, execution, completed
+  category    String?
+  tags        String[] @default([])
+  priority    String   @default("medium") // low, medium, high
+  progress    Int      @default(0) // 0-100
+  dueDate     DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  
+  // Framework fields
+  concept         String? @db.Text // Step 1
+  problemSolved   String? @db.Text
+  targetMarket    String? @db.Text // Step 2
+  marketValidation String? @db.Text
+  businessModel   String? @db.Text // Step 3
+  valueProposition String? @db.Text
+  actionPlan      String? @db.Text // Step 4
+  milestones      String? @db.Text
+  resources       String? @db.Text // Step 5
+  metrics         String? @db.Text
+  currentStep     Int     @default(1) // 1-5
+  
+  ideas         Idea[]
+  notes         Note[]
+  links         Link[]
+  images        Image[]
+}
+
+model Idea {
+  id          String   @id @default(cuid())
+  title       String
+  content     String   @db.Text
+  category    String?
+  tags        String[] @default([])
+  isFavorite  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId   String?
+  project     Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+}
+
+model Note {
+  id          String   @id @default(cuid())
+  title       String
+  content     String   @db.Text
+  category    String?
+  tags        String[] @default([])
+  isFavorite  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId   String?
+  project     Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+}
+
+model Link {
+  id          String   @id @default(cuid())
+  url         String
+  title       String?
+  description String?  @db.Text
+  imageUrl    String?
+  category    String?
+  tags        String[] @default([])
+  isFavorite  Boolean  @default(false)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId   String?
+  project     Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+}
+
+model Image {
+  id              String   @id @default(cuid())
+  title           String?
+  description     String?  @db.Text
+  cloudStoragePath String
+  isPublic        Boolean  @default(false)
+  category        String?
+  tags            String[] @default([])
+  isFavorite      Boolean  @default(false)
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  userId          String
+  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId       String?
+  project         Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+}
+
+model ChatMessage {
+  id        String   @id @default(cuid())
+  role      String   // user, assistant
+  content   String   @db.Text
+  context   String?  @db.Text // context about what project/idea was being discussed
+  createdAt DateTime @default(now())
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+}

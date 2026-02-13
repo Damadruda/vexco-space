@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 256 256">
+  <defs>
+    <linearGradient id="blueGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#3B82F6;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#1E40AF;stop-opacity:1" />
+    </linearGradient>
+  </defs>
+  <rect width="256" height="256" rx="48" fill="url(#blueGrad)"/>
+  <path d="M80 70 h60 c30 0 50 15 50 45 c0 30 -20 45 -50 45 h-30 v40 h-30 Z M110 95 v40 h30 c15 0 25 -7 25 -20 c0 -13 -10 -20 -25 -20 Z" fill="#ffffff"/>
+</svg>
