@@ -28,13 +28,14 @@ export async function GET(request: NextRequest) {
     const pageToken = searchParams.get("pageToken") || "";
     const mimeType = searchParams.get("mimeType") || "";
     
-    // Construir query para Google Drive API
+    // Construir query para Google Drive API - sanitize inputs to prevent injection
+    const sanitize = (s: string) => s.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
     let driveQuery = "trashed=false";
     if (query) {
-      driveQuery += ` and name contains '${query}'`;
+      driveQuery += ` and name contains '${sanitize(query)}'`;
     }
     if (mimeType) {
-      driveQuery += ` and mimeType='${mimeType}'`;
+      driveQuery += ` and mimeType='${sanitize(mimeType)}'`;
     }
     
     const params = new URLSearchParams({

@@ -42,6 +42,7 @@ model Account {
   user              User    @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@unique([provider, providerAccountId])
+  @@index([userId])
 }
 
 model Session {
@@ -50,6 +51,8 @@ model Session {
   userId       String
   expires      DateTime
   user         User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }
 
 model VerificationToken {
@@ -74,7 +77,7 @@ model Project {
   updatedAt   DateTime @updatedAt
   userId      String
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  
+
   // Framework fields
   concept         String? @db.Text // Step 1
   problemSolved   String? @db.Text
@@ -87,11 +90,14 @@ model Project {
   resources       String? @db.Text // Step 5
   metrics         String? @db.Text
   currentStep     Int     @default(1) // 1-5
-  
+
   ideas         Idea[]
   notes         Note[]
   links         Link[]
   images        Image[]
+
+  @@index([userId])
+  @@index([status])
 }
 
 model Idea {
@@ -107,6 +113,9 @@ model Idea {
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   projectId   String?
   project     Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([projectId])
 }
 
 model Note {
@@ -122,6 +131,9 @@ model Note {
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   projectId   String?
   project     Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([projectId])
 }
 
 model Link {
@@ -139,6 +151,9 @@ model Link {
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   projectId   String?
   project     Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([projectId])
 }
 
 model Image {
@@ -156,6 +171,9 @@ model Image {
   user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   projectId       String?
   project         Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+
+  @@index([userId])
+  @@index([projectId])
 }
 
 model ChatMessage {
@@ -166,4 +184,6 @@ model ChatMessage {
   createdAt DateTime @default(now())
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
 }

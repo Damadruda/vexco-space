@@ -87,12 +87,15 @@ ${context ? `\nContexto adicional: ${context}` : ""}`;
 
     return new Response(stream, {
       headers: {
-        "Content-Type": "text/plain; charset=utf-8",
+        "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
         "Connection": "keep-alive"
       }
     });
   } catch (error) {
+    if (error instanceof Error && error.message === "No autenticado") {
+      return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+    }
     console.error("Assistant error:", error);
     return NextResponse.json(
       { error: "Error al procesar la solicitud" },

@@ -33,7 +33,7 @@ export async function GET(request: NextRequest) {
       
       do {
         const params = new URLSearchParams({
-          q: `'${folderId}' in parents and trashed=false`,
+          q: `'${folderId.replace(/\\/g, "\\\\").replace(/'/g, "\\'")}' in parents and trashed=false`,
           fields: "nextPageToken,files(id,name,mimeType,iconLink,thumbnailLink,webViewLink,webContentLink,modifiedTime,size,parents)",
           pageSize: "100",
           orderBy: "folder,name"
