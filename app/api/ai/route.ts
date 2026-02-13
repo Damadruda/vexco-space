@@ -174,6 +174,9 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ success: true, data: content });
 
   } catch (error) {
+    if (error instanceof Error && error.message === "No autenticado") {
+      return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+    }
     console.error("AI route error:", error);
     return NextResponse.json(
       { success: false, error: "Error al procesar la solicitud de IA" },

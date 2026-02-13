@@ -20,6 +20,9 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ items });
   } catch (error) {
+    if (error instanceof Error && error.message === "No autenticado") {
+      return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+    }
     console.error("Error fetching notes:", error);
     return NextResponse.json({ error: "Error del servidor" }, { status: 500 });
   }
@@ -30,10 +33,14 @@ export async function POST(request: NextRequest) {
     const userId = await getDefaultUserId();
     const body = await request.json();
 
+    if (!body.title || typeof body.title !== "string") {
+      return NextResponse.json({ error: "El título es requerido" }, { status: 400 });
+    }
+
     const note = await prisma.note.create({
       data: {
         title: body.title,
-        content: body.content,
+        content: body.content || "",
         category: body.category,
         tags: body.tags || [],
         projectId: body.projectId,
@@ -43,6 +50,9 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ note });
   } catch (error) {
+    if (error instanceof Error && error.message === "No autenticado") {
+      return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+    }
     console.error("Error creating note:", error);
     return NextResponse.json({ error: "Error del servidor" }, { status: 500 });
   }

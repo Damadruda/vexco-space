@@ -1,18 +1,18 @@
-import { prisma } from "@/lib/db";
-
-let cachedUserId: string | null = null;
+import { getServerSession } from "next-auth";
+import { authOptions } from "@/lib/auth-options";
 
 export async function getDefaultUserId(): Promise<string> {
-  if (cachedUserId) return cachedUserId;
-  
-  const user = await prisma.user.findFirst({
-    orderBy: { createdAt: "asc" }
-  });
-  
-  if (!user) {
-    throw new Error("No hay usuarios en la base de datos. Ejecute el seed primero.");
+  const session = await getServerSession(authOptions);
+
+  if (!session?.user) {
+    throw new Error("No autenticado");
   }
-  
-  cachedUserId = user.id;
-  return user.id;
+
+  const userId = (session.user as any).id;
+
+  if (!userId) {
+    throw new Error("ID de usuario no encontrado en la sesión");
+  }
+
+  return userId;
 }

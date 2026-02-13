@@ -27,6 +27,9 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ projects });
   } catch (error) {
+    if (error instanceof Error && error.message === "No autenticado") {
+      return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+    }
     console.error("Error fetching projects:", error);
     return NextResponse.json({ error: "Error del servidor" }, { status: 500 });
   }
@@ -36,6 +39,10 @@ export async function POST(request: NextRequest) {
   try {
     const userId = await getDefaultUserId();
     const body = await request.json();
+
+    if (!body.title || typeof body.title !== "string") {
+      return NextResponse.json({ error: "El título es requerido" }, { status: 400 });
+    }
 
     const project = await prisma.project.create({
       data: {
@@ -52,6 +59,9 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ project });
   } catch (error) {
+    if (error instanceof Error && error.message === "No autenticado") {
+      return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+    }
     console.error("Error creating project:", error);
     return NextResponse.json({ error: "Error del servidor" }, { status: 500 });
   }

@@ -29,6 +29,9 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ items });
   } catch (error) {
+    if (error instanceof Error && error.message === "No autenticado") {
+      return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+    }
     console.error("Error fetching images:", error);
     return NextResponse.json({ error: "Error del servidor" }, { status: 500 });
   }
@@ -38,6 +41,10 @@ export async function POST(request: NextRequest) {
   try {
     const userId = await getDefaultUserId();
     const body = await request.json();
+
+    if (!body.cloudStoragePath || typeof body.cloudStoragePath !== "string") {
+      return NextResponse.json({ error: "cloudStoragePath es requerido" }, { status: 400 });
+    }
 
     const image = await prisma.image.create({
       data: {
@@ -54,6 +61,9 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ image });
   } catch (error) {
+    if (error instanceof Error && error.message === "No autenticado") {
+      return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+    }
     console.error("Error creating image:", error);
     return NextResponse.json({ error: "Error del servidor" }, { status: 500 });
   }

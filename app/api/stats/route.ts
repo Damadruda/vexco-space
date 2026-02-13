@@ -35,6 +35,9 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ stats });
   } catch (error) {
+    if (error instanceof Error && error.message === "No autenticado") {
+      return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+    }
     console.error("Error fetching stats:", error);
     return NextResponse.json({ error: "Error del servidor" }, { status: 500 });
   }
