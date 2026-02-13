@@ -340,10 +340,10 @@ RECURSOS:
 ${project.resources || "No definidos"}
 
 NOTAS DEL PROYECTO:
-${project.notes.map(n => `- ${n.title}: ${n.content?.substring(0, 200)}...`).join("\n") || "Sin notas"}
+${project.notes.map((n: any) => `- ${n.title}: ${n.content?.substring(0, 200)}...`).join("\n") || "Sin notas"}
 
 ENLACES GUARDADOS:
-${project.links.map(l => `- ${l.title}: ${l.url}`).join("\n") || "Sin enlaces"}
+${project.links.map((l: any) => `- ${l.title}: ${l.url}`).join("\n") || "Sin enlaces"}
 `;
 
     const systemPrompt = `Eres un consultor de negocios senior con más de 25 años de experiencia. Tu tarea es generar documentos profesionales de alta calidad basados en la información del proyecto proporcionada.
