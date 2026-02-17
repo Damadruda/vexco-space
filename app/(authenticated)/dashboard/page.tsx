@@ -4,8 +4,9 @@ import { useState, useEffect, useRef } from "react";
 import { Header } from "@/components/ui/header";
 import { StatCard } from "@/components/ui/stat-card";
 import { KanbanBoard } from "@/components/ui/kanban-board";
-import { FolderKanban, Lightbulb, FileText, Link as LinkIcon, Image as ImageIcon, TrendingUp, Loader2, ArrowRight, Sparkles, RefreshCw } from "lucide-react";
+import { FolderKanban, Lightbulb, FileText, Link as LinkIcon, Image as ImageIcon, TrendingUp, Loader2, ArrowRight, Sparkles, RefreshCw, CloudDownload, Plus } from "lucide-react";
 import Link from "next/link";
+import { DriveFolderAnalyzer } from "@/components/ui/drive-folder-analyzer";
 
 interface Stats {
   totalProjects: number;
@@ -26,6 +27,7 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [aiInsights, setAiInsights] = useState<string>("");
   const [loadingInsights, setLoadingInsights] = useState(false);
+  const [showDriveAnalyzer, setShowDriveAnalyzer] = useState(false);
   const insightsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -104,7 +106,31 @@ export default function DashboardPage() {
     <div className="min-h-screen bg-gray-50">
       <Header title="Dashboard" subtitle="Vista general" />
       
+      {/* Drive Folder Analyzer Modal */}
+      <DriveFolderAnalyzer 
+        isOpen={showDriveAnalyzer} 
+        onClose={() => setShowDriveAnalyzer(false)} 
+      />
+      
       <div className="p-8 space-y-10">
+        {/* Quick Actions */}
+        <div className="flex flex-wrap gap-3">
+          <Link
+            href="/project-builder/new"
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors"
+          >
+            <Plus className="h-4 w-4" />
+            Nuevo Proyecto
+          </Link>
+          <button
+            onClick={() => setShowDriveAnalyzer(true)}
+            className="inline-flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 hover:border-gray-300 transition-colors"
+          >
+            <CloudDownload className="h-4 w-4" />
+            Importar desde Google Drive
+          </button>
+        </div>
+
         {/* Stats Cards */}
         {loading ? (
           <div className="flex justify-center py-12">
