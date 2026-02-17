@@ -1,16 +1,30 @@
 "use client";
 
-import { Search } from "lucide-react";
-import { useState, useEffect } from "react";
+import { Search, LogOut, User } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
+import { signOut, useSession } from "next-auth/react";
 
 export function Header({ title, subtitle }: { title: string; subtitle?: string }) {
+  const { data: session } = useSession();
   const [searchQuery, setSearchQuery] = useState("");
   const [currentDate, setCurrentDate] = useState("");
+  const [showUserMenu, setShowUserMenu] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
   const router = useRouter();
 
   useEffect(() => {
     setCurrentDate(new Date().toLocaleDateString("es-ES", { weekday: "long", day: "numeric", month: "long" }));
+  }, []);
+
+  useEffect(() => {
+    const handleClickOutside = (event: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(event.target as Node)) {
+        setShowUserMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClickOutside);
+    return () => document.removeEventListener("mousedown", handleClickOutside);
   }, []);
 
   const handleSearch = (e: React.FormEvent) => {
@@ -18,6 +32,10 @@ export function Header({ title, subtitle }: { title: string; subtitle?: string }
     if (searchQuery?.trim()) {
       router.push(`/search?q=${encodeURIComponent(searchQuery.trim())}`);
     }
+  };
+
+  const handleSignOut = () => {
+    signOut({ callbackUrl: "/login" });
   };
 
   return (
@@ -49,6 +67,40 @@ export function Header({ title, subtitle }: { title: string; subtitle?: string }
             <p className="text-sm font-medium text-gray-700">
               {currentDate || "—"}
             </p>
+          </div>
+
+          {/* User Menu */}
+          <div className="relative" ref={menuRef}>
+            <button
+              onClick={() => setShowUserMenu(!showUserMenu)}
+              className="flex items-center gap-2 rounded-full bg-gray-100 p-2 hover:bg-gray-200 transition-colors"
+            >
+              {session?.user?.image ? (
+                <img 
+                  src={session.user.image} 
+                  alt="Avatar" 
+                  className="h-8 w-8 rounded-full"
+                />
+              ) : (
+                <User className="h-5 w-5 text-gray-600" />
+              )}
+            </button>
+
+            {showUserMenu && (
+              <div className="absolute right-0 top-full mt-2 w-64 rounded-lg border border-gray-200 bg-white py-2 shadow-lg">
+                <div className="px-4 py-2 border-b border-gray-100">
+                  <p className="text-sm font-medium text-gray-900">{session?.user?.name}</p>
+                  <p className="text-xs text-gray-500">{session?.user?.email}</p>
+                </div>
+                <button
+                  onClick={handleSignOut}
+                  className="flex w-full items-center gap-2 px-4 py-2 text-sm text-red-600 hover:bg-red-50 transition-colors"
+                >
+                  <LogOut className="h-4 w-4" />
+                  Cerrar sesión
+                </button>
+              </div>
+            )}
           </div>
         </div>
       </div>
