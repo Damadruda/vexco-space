@@ -72,24 +72,30 @@ export function DriveFolderAnalyzer({ isOpen, onClose, onProjectCreated }: Drive
   
   useEffect(() => {
     if (isOpen) {
-      fetchRootFiles();
-      // Reset state
+      // Reset state when modal opens
+      setSearchQuery("");
       setSelectedFolder(null);
       setFolderStats(null);
       setAnalysisResult(null);
       setCreatedProjectId(null);
+      setError(null);
     }
   }, [isOpen]);
   
-  const fetchRootFiles = async () => {
+  const fetchRootFiles = async (query?: string) => {
     setLoading(true);
     setError(null);
     
     try {
-      // Fetch only folders at root level
+      // Fetch only folders
       const params = new URLSearchParams({
         mimeType: "application/vnd.google-apps.folder"
       });
+      
+      // Add search query if provided
+      if (query && query.trim()) {
+        params.append("query", query.trim());
+      }
       
       const response = await fetch(`/api/drive?${params.toString()}`);
       const data = await response.json();
@@ -114,6 +120,17 @@ export function DriveFolderAnalyzer({ isOpen, onClose, onProjectCreated }: Drive
       setLoading(false);
     }
   };
+  
+  // Search when query changes (with debounce)
+  useEffect(() => {
+    if (!isOpen) return;
+    
+    const timer = setTimeout(() => {
+      fetchRootFiles(searchQuery);
+    }, 500);
+    
+    return () => clearTimeout(timer);
+  }, [searchQuery, isOpen]);
   
   const fetchFolderContents = async (folderId: string) => {
     try {
@@ -348,7 +365,6 @@ export function DriveFolderAnalyzer({ isOpen, onClose, onProjectCreated }: Drive
                   <div className="space-y-0.5">
                     {files
                       .filter(f => f.mimeType === "application/vnd.google-apps.folder")
-                      .filter(f => !searchQuery || f.name.toLowerCase().includes(searchQuery.toLowerCase()))
                       .map(folder => renderFolder(folder))}
                   </div>
                 )}
