@@ -27,10 +27,17 @@ export async function GET(request: NextRequest) {
     const query = searchParams.get("query") || "";
     const pageToken = searchParams.get("pageToken") || "";
     const mimeType = searchParams.get("mimeType") || "";
+    const parentId = searchParams.get("parentId") || "";
     
     // Construir query para Google Drive API - sanitize inputs to prevent injection
     const sanitize = (s: string) => s.replace(/\\/g, "\\\\").replace(/'/g, "\\'");
     let driveQuery = "trashed=false";
+    
+    // Filtrar por carpeta padre si se especifica
+    if (parentId) {
+      driveQuery += ` and '${sanitize(parentId)}' in parents`;
+    }
+    
     if (query) {
       driveQuery += ` and name contains '${sanitize(query)}'`;
     }

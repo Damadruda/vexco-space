@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { 
   X, Search, Folder, FolderOpen, ChevronRight, ChevronDown, 
   Loader2, CloudOff, Sparkles, FileText, FileSpreadsheet, 
-  Image as ImageIcon, FileIcon, Check, AlertCircle
+  Image as ImageIcon, FileIcon, Check, AlertCircle, Home, Settings, FolderRoot
 } from "lucide-react";
 import { signIn, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
@@ -70,6 +70,26 @@ export function DriveFolderAnalyzer({ isOpen, onClose, onProjectCreated }: Drive
   const [analysisStep, setAnalysisStep] = useState<string>("");
   const [createdProjectId, setCreatedProjectId] = useState<string | null>(null);
   
+  // Navegación de carpetas
+  const [currentFolder, setCurrentFolder] = useState<{ id: string; name: string } | null>(null);
+  const [breadcrumbs, setBreadcrumbs] = useState<{ id: string; name: string }[]>([]);
+  const [rootFolder, setRootFolder] = useState<{ id: string; name: string } | null>(null);
+  
+  // Cargar carpeta raíz guardada
+  useEffect(() => {
+    const saved = localStorage.getItem("driveRootFolder");
+    if (saved) {
+      try {
+        const parsed = JSON.parse(saved);
+        setRootFolder(parsed);
+        setCurrentFolder(parsed);
+        setBreadcrumbs([parsed]);
+      } catch (e) {
+        console.error("Error loading root folder:", e);
+      }
+    }
+  }, []);
+  
   useEffect(() => {
     if (isOpen) {
       // Reset state when modal opens
@@ -79,20 +99,31 @@ export function DriveFolderAnalyzer({ isOpen, onClose, onProjectCreated }: Drive
       setAnalysisResult(null);
       setCreatedProjectId(null);
       setError(null);
+      
+      // Reset to root folder if configured
+      if (rootFolder) {
+        setCurrentFolder(rootFolder);
+        setBreadcrumbs([rootFolder]);
+      } else {
+        setCurrentFolder(null);
+        setBreadcrumbs([]);
+      }
     }
-  }, [isOpen]);
+  }, [isOpen, rootFolder]);
   
-  const fetchRootFiles = async (query?: string) => {
+  const fetchFolders = async (parentId?: string, query?: string) => {
     setLoading(true);
     setError(null);
     
     try {
-      // Fetch only folders
       const params = new URLSearchParams({
         mimeType: "application/vnd.google-apps.folder"
       });
       
-      // Add search query if provided
+      if (parentId) {
+        params.append("parentId", parentId);
+      }
+      
       if (query && query.trim()) {
         params.append("query", query.trim());
       }
@@ -121,16 +152,53 @@ export function DriveFolderAnalyzer({ isOpen, onClose, onProjectCreated }: Drive
     }
   };
   
-  // Search when query changes (with debounce)
+  // Fetch folders when current folder or search changes
   useEffect(() => {
     if (!isOpen) return;
     
     const timer = setTimeout(() => {
-      fetchRootFiles(searchQuery);
+      fetchFolders(currentFolder?.id, searchQuery);
     }, 500);
     
     return () => clearTimeout(timer);
-  }, [searchQuery, isOpen]);
+  }, [currentFolder?.id, searchQuery, isOpen]);
+  
+  const navigateToFolder = (folder: DriveFile) => {
+    const newFolder = { id: folder.id, name: folder.name };
+    setCurrentFolder(newFolder);
+    setBreadcrumbs(prev => [...prev, newFolder]);
+    setSelectedFolder(null);
+    setSearchQuery("");
+  };
+  
+  const navigateToBreadcrumb = (index: number) => {
+    if (index === -1) {
+      // Go to Drive root
+      setCurrentFolder(null);
+      setBreadcrumbs([]);
+    } else {
+      const newBreadcrumbs = breadcrumbs.slice(0, index + 1);
+      setBreadcrumbs(newBreadcrumbs);
+      setCurrentFolder(newBreadcrumbs[newBreadcrumbs.length - 1]);
+    }
+    setSelectedFolder(null);
+    setSearchQuery("");
+  };
+  
+  const setAsRootFolder = (folder: { id: string; name: string }) => {
+    localStorage.setItem("driveRootFolder", JSON.stringify(folder));
+    setRootFolder(folder);
+    setCurrentFolder(folder);
+    setBreadcrumbs([folder]);
+    setSelectedFolder(null);
+  };
+  
+  const clearRootFolder = () => {
+    localStorage.removeItem("driveRootFolder");
+    setRootFolder(null);
+    setCurrentFolder(null);
+    setBreadcrumbs([]);
+  };
   
   const fetchFolderContents = async (folderId: string) => {
     try {
@@ -334,6 +402,49 @@ export function DriveFolderAnalyzer({ isOpen, onClose, onProjectCreated }: Drive
           <div className="flex-1 flex overflow-hidden">
             {/* Left panel - Folder tree */}
             <div className="w-1/2 border-r flex flex-col">
+              {/* Root folder indicator */}
+              {rootFolder && (
+                <div className="px-3 py-2 bg-purple-50 border-b flex items-center justify-between">
+                  <div className="flex items-center gap-2 text-sm text-purple-700">
+                    <FolderRoot className="h-4 w-4" />
+                    <span>Carpeta raíz: <strong>{rootFolder.name}</strong></span>
+                  </div>
+                  <button
+                    onClick={clearRootFolder}
+                    className="text-xs text-purple-600 hover:text-purple-800 underline"
+                  >
+                    Quitar
+                  </button>
+                </div>
+              )}
+              
+              {/* Breadcrumbs */}
+              <div className="px-3 py-2 border-b flex items-center gap-1 text-sm overflow-x-auto">
+                {!rootFolder && (
+                  <button
+                    onClick={() => navigateToBreadcrumb(-1)}
+                    className="flex items-center gap-1 text-gray-500 hover:text-gray-900 shrink-0"
+                  >
+                    <Home className="h-4 w-4" />
+                    <span>Mi Drive</span>
+                  </button>
+                )}
+                {breadcrumbs.map((crumb, index) => (
+                  <div key={crumb.id} className="flex items-center gap-1 shrink-0">
+                    <ChevronRight className="h-4 w-4 text-gray-400" />
+                    <button
+                      onClick={() => navigateToBreadcrumb(index)}
+                      className={`hover:text-gray-900 ${
+                        index === breadcrumbs.length - 1 ? "text-gray-900 font-medium" : "text-gray-500"
+                      }`}
+                    >
+                      {crumb.name}
+                    </button>
+                  </div>
+                ))}
+              </div>
+              
+              {/* Search */}
               <div className="p-3 border-b">
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -359,13 +470,46 @@ export function DriveFolderAnalyzer({ isOpen, onClose, onProjectCreated }: Drive
                   </div>
                 ) : files.length === 0 ? (
                   <div className="text-center py-12 text-gray-500">
-                    No se encontraron carpetas
+                    {currentFolder ? "Esta carpeta está vacía" : "No se encontraron carpetas"}
                   </div>
                 ) : (
                   <div className="space-y-0.5">
                     {files
                       .filter(f => f.mimeType === "application/vnd.google-apps.folder")
-                      .map(folder => renderFolder(folder))}
+                      .map(folder => (
+                        <div
+                          key={folder.id}
+                          className={`group flex items-center gap-2 px-2 py-1.5 rounded cursor-pointer ${
+                            selectedFolder?.id === folder.id 
+                              ? "bg-gray-900 text-white" 
+                              : "hover:bg-gray-100"
+                          }`}
+                        >
+                          <Folder className={`h-4 w-4 shrink-0 ${
+                            selectedFolder?.id === folder.id ? "text-white" : "text-yellow-500"
+                          }`} />
+                          <span 
+                            className="flex-1 text-sm truncate"
+                            onClick={() => setSelectedFolder(folder)}
+                          >
+                            {folder.name}
+                          </span>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              navigateToFolder(folder);
+                            }}
+                            className={`p-1 rounded opacity-0 group-hover:opacity-100 transition-opacity ${
+                              selectedFolder?.id === folder.id 
+                                ? "hover:bg-gray-700 text-white" 
+                                : "hover:bg-gray-200 text-gray-500"
+                            }`}
+                            title="Abrir carpeta"
+                          >
+                            <ChevronRight className="h-4 w-4" />
+                          </button>
+                        </div>
+                      ))}
                   </div>
                 )}
               </div>
@@ -485,6 +629,17 @@ export function DriveFolderAnalyzer({ isOpen, onClose, onProjectCreated }: Drive
                         <li>• Plan de acción y recursos necesarios</li>
                       </ul>
                     </div>
+                    
+                    {/* Set as root folder option */}
+                    {selectedFolder && rootFolder?.id !== selectedFolder.id && (
+                      <button
+                        onClick={() => setAsRootFolder({ id: selectedFolder.id, name: selectedFolder.name })}
+                        className="w-full flex items-center justify-center gap-2 px-4 py-2 text-sm text-gray-600 border border-gray-200 rounded-md hover:bg-gray-50 transition-colors"
+                      >
+                        <FolderRoot className="h-4 w-4" />
+                        Establecer como carpeta raíz
+                      </button>
+                    )}
                     
                     {error && (
                       <div className="bg-red-50 text-red-700 p-3 rounded-lg text-sm">
