@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { 
   X, Search, Folder, FolderOpen, ChevronRight, ChevronDown, 
   Loader2, CloudOff, Sparkles, FileText, FileSpreadsheet, 
-  Image as ImageIcon, FileIcon, Check, AlertCircle, Home, Settings, FolderRoot
+  Image as ImageIcon, FileIcon, Check, AlertCircle, Home, Settings, FolderRoot, Code
 } from "lucide-react";
 import { signIn, useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
@@ -29,6 +29,14 @@ interface FolderStats {
   other: number;
 }
 
+interface TechStack {
+  frontend?: string[];
+  backend?: string[];
+  database?: string[];
+  infrastructure?: string[];
+  other?: string[];
+}
+
 interface AnalysisResult {
   title: string;
   description: string;
@@ -45,6 +53,10 @@ interface AnalysisResult {
   resources: string;
   metrics: string;
   insights: string;
+  // Campos técnicos
+  techStack?: TechStack;
+  techSummary?: string;
+  techRecommendations?: string;
 }
 
 interface DriveFolderAnalyzerProps {
@@ -594,6 +606,74 @@ export function DriveFolderAnalyzer({ isOpen, onClose, onProjectCreated }: Drive
                             Insights de IA
                           </h4>
                           <p className="text-purple-800 text-sm mt-1">{analysisResult.insights}</p>
+                        </div>
+                      )}
+                      
+                      {/* Sección Técnica */}
+                      {(analysisResult.techStack || analysisResult.techSummary) && (
+                        <div className="border-t pt-4 mt-4">
+                          <h4 className="font-medium text-gray-900 flex items-center gap-2 mb-3">
+                            <Code className="h-4 w-4 text-blue-600" />
+                            Análisis Técnico
+                          </h4>
+                          
+                          {analysisResult.techStack && (
+                            <div className="space-y-2 mb-3">
+                              {analysisResult.techStack.frontend && analysisResult.techStack.frontend.length > 0 && (
+                                <div className="flex flex-wrap gap-1">
+                                  <span className="text-xs font-medium text-gray-500 w-16">Frontend:</span>
+                                  {analysisResult.techStack.frontend.map((tech, i) => (
+                                    <span key={i} className="px-2 py-0.5 bg-blue-100 text-blue-700 text-xs rounded">
+                                      {tech}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                              {analysisResult.techStack.backend && analysisResult.techStack.backend.length > 0 && (
+                                <div className="flex flex-wrap gap-1">
+                                  <span className="text-xs font-medium text-gray-500 w-16">Backend:</span>
+                                  {analysisResult.techStack.backend.map((tech, i) => (
+                                    <span key={i} className="px-2 py-0.5 bg-green-100 text-green-700 text-xs rounded">
+                                      {tech}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                              {analysisResult.techStack.database && analysisResult.techStack.database.length > 0 && (
+                                <div className="flex flex-wrap gap-1">
+                                  <span className="text-xs font-medium text-gray-500 w-16">Database:</span>
+                                  {analysisResult.techStack.database.map((tech, i) => (
+                                    <span key={i} className="px-2 py-0.5 bg-orange-100 text-orange-700 text-xs rounded">
+                                      {tech}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                              {analysisResult.techStack.infrastructure && analysisResult.techStack.infrastructure.length > 0 && (
+                                <div className="flex flex-wrap gap-1">
+                                  <span className="text-xs font-medium text-gray-500 w-16">Infra:</span>
+                                  {analysisResult.techStack.infrastructure.map((tech, i) => (
+                                    <span key={i} className="px-2 py-0.5 bg-purple-100 text-purple-700 text-xs rounded">
+                                      {tech}
+                                    </span>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          )}
+                          
+                          {analysisResult.techSummary && (
+                            <div className="bg-gray-50 p-3 rounded-lg mb-2">
+                              <p className="text-gray-700 text-sm">{analysisResult.techSummary}</p>
+                            </div>
+                          )}
+                          
+                          {analysisResult.techRecommendations && (
+                            <div className="bg-blue-50 p-3 rounded-lg">
+                              <h5 className="font-medium text-blue-900 text-xs mb-1">Recomendaciones Técnicas</h5>
+                              <p className="text-blue-800 text-sm">{analysisResult.techRecommendations}</p>
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>

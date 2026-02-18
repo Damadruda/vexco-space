@@ -70,6 +70,79 @@ async function downloadAndExtractText(fileId: string, mimeType: string, accessTo
   return `[Archivo: ${mimeType}]`;
 }
 
+// Extensiones de código soportadas
+const CODE_EXTENSIONS: Record<string, string> = {
+  // JavaScript/TypeScript
+  ".js": "javascript",
+  ".jsx": "javascript",
+  ".ts": "typescript",
+  ".tsx": "typescript",
+  ".mjs": "javascript",
+  // Python
+  ".py": "python",
+  // Web
+  ".html": "html",
+  ".css": "css",
+  ".scss": "scss",
+  // Config/Data
+  ".json": "json",
+  ".yaml": "yaml",
+  ".yml": "yaml",
+  ".env": "env",
+  ".env.local": "env",
+  ".env.example": "env",
+  // Docs
+  ".md": "markdown",
+  ".mdx": "markdown",
+  // Other
+  ".sql": "sql",
+  ".sh": "shell",
+  ".dockerfile": "dockerfile",
+};
+
+// Archivos de config importantes
+const IMPORTANT_FILES = [
+  "package.json",
+  "requirements.txt",
+  "pyproject.toml",
+  "Cargo.toml",
+  "go.mod",
+  "README.md",
+  "README",
+  ".env.example",
+];
+
+// Verificar si es un archivo de código
+function isCodeFile(fileName: string): boolean {
+  const lowerName = fileName.toLowerCase();
+  
+  // Verificar archivos importantes por nombre
+  if (IMPORTANT_FILES.some(f => lowerName === f.toLowerCase())) {
+    return true;
+  }
+  
+  // Verificar por extensión
+  const ext = "." + lowerName.split(".").pop();
+  return ext in CODE_EXTENSIONS;
+}
+
+// Descargar archivo de código de Google Drive
+async function downloadCodeFile(fileId: string, accessToken: string): Promise<string> {
+  const response = await fetch(
+    `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
+    {
+      headers: { Authorization: `Bearer ${accessToken}` }
+    }
+  );
+  
+  if (!response.ok) {
+    console.error(`Error downloading code file ${fileId}:`, await response.text());
+    return "";
+  }
+  
+  return await response.text();
+}
+
 // Extraer contenido de un archivo
 async function extractFileContent(file: DriveFile, accessToken: string): Promise<ExtractedContent | null> {
   const { id, name, mimeType } = file;
@@ -92,6 +165,16 @@ async function extractFileContent(file: DriveFile, accessToken: string): Promise
     // PDFs y archivos de texto
     else if (mimeType === "application/pdf" || mimeType.startsWith("text/")) {
       content = await downloadAndExtractText(id, mimeType, accessToken);
+    }
+    // Archivos de código
+    else if (isCodeFile(name)) {
+      content = await downloadCodeFile(id, accessToken);
+      // Marcar como código para el análisis
+      if (content) {
+        const ext = "." + name.toLowerCase().split(".").pop();
+        const lang = CODE_EXTENSIONS[ext] || "code";
+        content = `[CÓDIGO - ${lang}]\n${content}`;
+      }
     }
     // Otros archivos - solo mencionamos que existen
     else {
@@ -137,18 +220,21 @@ async function analyzeWithAI(contents: ExtractedContent[], folderName: string): 
     .map(c => `--- ${c.fileName} ---\n${c.content}`)
     .join("\n\n");
   
-  const systemPrompt = `Eres un experto consultor de negocios con más de 20 años de experiencia. 
+  // Detectar si hay código en el contenido
+  const hasCode = contents.some(c => c.content.startsWith("[CÓDIGO"));
+  
+  const systemPrompt = `Eres un experto consultor de negocios y arquitecto de software con más de 20 años de experiencia. 
 Tu tarea es analizar el contenido de una carpeta de proyecto y extraer información estructurada.
 
-Analiza los documentos proporcionados y extrae la siguiente información para cada campo.
+Analiza los documentos y código proporcionados y extrae la siguiente información para cada campo.
 Si no encuentras información para un campo, déjalo como null.
 Responde ÚNICAMENTE con un objeto JSON válido, sin texto adicional.
 
 Estructura requerida:
 {
-  "title": "Nombre del proyecto (inferido de los documentos)",
+  "title": "Nombre del proyecto (inferido de los documentos/código)",
   "description": "Descripción general del proyecto (2-3 oraciones)",
-  "category": "Categoría del proyecto (ej: SaaS, E-commerce, Consultoría, etc.)",
+  "category": "Categoría del proyecto (ej: SaaS, E-commerce, Consultoría, App Móvil, etc.)",
   "tags": ["tag1", "tag2", "tag3"],
   
   "concept": "Paso 1 - Concepto: ¿Cuál es la idea central del proyecto?",
@@ -167,8 +253,24 @@ Estructura requerida:
   "metrics": "¿Qué métricas se deben seguir?",
   
   "currentStep": 1,
-  "insights": "Observaciones adicionales o recomendaciones basadas en el análisis"
-}`;
+  "insights": "Observaciones adicionales o recomendaciones basadas en el análisis",
+  
+  "techStack": {
+    "frontend": ["tecnologías de frontend detectadas"],
+    "backend": ["tecnologías de backend detectadas"],
+    "database": ["bases de datos detectadas"],
+    "infrastructure": ["infraestructura/cloud detectados"],
+    "other": ["otras tecnologías relevantes"]
+  },
+  "techSummary": "Resumen técnico del proyecto: arquitectura, patrones usados, estado del desarrollo",
+  "techRecommendations": "Recomendaciones técnicas: mejoras sugeridas, deuda técnica identificada, próximos pasos técnicos"
+}
+
+IMPORTANTE: 
+- Si detectas archivos de código (marcados con [CÓDIGO]), analiza el stack tecnológico.
+- Extrae dependencias de package.json, requirements.txt, etc.
+- Identifica frameworks (React, Next.js, Django, FastAPI, etc.)
+- Si no hay código, deja techStack, techSummary y techRecommendations como null.`;
 
   const userMessage = `Analiza el contenido de la carpeta "${folderName}" y extrae la información del proyecto:
 
