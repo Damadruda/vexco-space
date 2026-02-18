@@ -99,28 +99,29 @@ export async function POST(request: NextRequest) {
     const systemPrompt = getSystemPrompt(action, context);
     const userMessage = typeof data.content === "string" ? data.content : JSON.stringify(data);
 
-    const response = await fetch("https://apps.abacus.ai/v1/chat/completions", {
+    // Llamada a Claude API
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${process.env.ABACUSAI_API_KEY}`
+        "x-api-key": process.env.ANTHROPIC_API_KEY || "",
+        "anthropic-version": "2023-06-01"
       },
       body: JSON.stringify({
-        model: "gpt-4.1",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userMessage }
-        ],
-        stream,
+        model: "claude-sonnet-4-5-20250929",
         max_tokens: 4000,
-        temperature: 0.7
+        stream,
+        system: systemPrompt,
+        messages: [
+          { role: "user", content: userMessage }
+        ]
       })
     });
 
     if (!response.ok) {
       const errorText = await response.text();
-      console.error("AI API error:", errorText);
-      throw new Error("Error en la API de IA");
+      console.error("Claude API error:", errorText);
+      throw new Error("Error en la API de Claude");
     }
 
     if (stream) {
@@ -131,11 +132,33 @@ export async function POST(request: NextRequest) {
           const encoder = new TextEncoder();
 
           try {
+            let buffer = "";
             while (reader) {
               const { done, value } = await reader.read();
               if (done) break;
-              const chunk = decoder.decode(value);
-              controller.enqueue(encoder.encode(chunk));
+              
+              buffer += decoder.decode(value, { stream: true });
+              const lines = buffer.split("\n");
+              buffer = lines.pop() || "";
+              
+              for (const line of lines) {
+                if (line.startsWith("data: ")) {
+                  const data = line.slice(6);
+                  if (data === "[DONE]") continue;
+                  
+                  try {
+                    const parsed = JSON.parse(data);
+                    if (parsed.type === "content_block_delta" && parsed.delta?.text) {
+                      const openAIFormat = {
+                        choices: [{ delta: { content: parsed.delta.text } }]
+                      };
+                      controller.enqueue(encoder.encode(`data: ${JSON.stringify(openAIFormat)}\n\n`));
+                    }
+                  } catch (e) {
+                    // Ignorar líneas que no son JSON válido
+                  }
+                }
+              }
             }
           } catch (error) {
             console.error("Stream error:", error);
@@ -156,7 +179,7 @@ export async function POST(request: NextRequest) {
     }
 
     const result = await response.json();
-    const content = result.choices?.[0]?.message?.content || "";
+    const content = result.content?.[0]?.text || "";
 
     // Try to parse JSON responses for structured actions
     if (["analyze_link", "summarize_note", "auto_tag"].includes(action)) {

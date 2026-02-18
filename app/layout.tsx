@@ -30,9 +30,7 @@ export default function RootLayout({
 }) {
   return (
     <html lang="es" suppressHydrationWarning>
-      <head>
-        <script src="https://apps.abacus.ai/chatllm/appllm-lib.js" />
-      </head>
+      <head />
       <body className={`${inter.variable} ${playfair.variable} font-sans`} suppressHydrationWarning>
         <Providers>{children}</Providers>
       </body>

@@ -66,10 +66,10 @@ async function extractFileContent(fileId: string, mimeType: string, accessToken:
 
 // Analizar todos los archivos con IA y generar estructura de proyecto
 async function analyzeFilesWithAI(fileContents: FileContent[]): Promise<any> {
-  const apiKey = process.env.ABACUSAI_API_KEY;
+  const apiKey = process.env.ANTHROPIC_API_KEY;
   
   if (!apiKey) {
-    throw new Error("API key no configurada");
+    throw new Error("ANTHROPIC_API_KEY no configurada");
   }
   
   const filesDescription = fileContents
@@ -161,29 +161,32 @@ DEBES responder SOLO con un objeto JSON válido con esta estructura exacta:
   
   const userPrompt = `Analiza los siguientes documentos de una carpeta de Drive y genera una estructura de proyecto completa:\n\n${filesDescription}\n\nRecuerda: responde SOLO con el objeto JSON, sin texto adicional.`;
   
-  const response = await fetch("https://routellm.abacus.ai/v1/chat/completions", {
+  // Llamada a Claude API
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      Authorization: `Bearer ${apiKey}`
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01"
     },
     body: JSON.stringify({
-      model: "gpt-4o-mini",
+      model: "claude-sonnet-4-5-20250929",
+      max_tokens: 4000,
+      system: systemPrompt,
       messages: [
-        { role: "system", content: systemPrompt },
         { role: "user", content: userPrompt }
-      ],
-      temperature: 0.7,
-      max_tokens: 4000
+      ]
     })
   });
   
   if (!response.ok) {
-    throw new Error("Error al analizar con IA");
+    const errorText = await response.text();
+    console.error("Claude API error:", errorText);
+    throw new Error("Error al analizar con Claude");
   }
   
   const data = await response.json();
-  const content = data.choices[0]?.message?.content || "";
+  const content = data.content?.[0]?.text || "";
   
   // Extraer JSON del contenido
   const jsonMatch = content.match(/```json\n([\s\S]*?)\n```/) || content.match(/\{[\s\S]*\}/);

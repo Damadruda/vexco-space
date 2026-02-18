@@ -41,28 +41,32 @@ Responde siempre en español, de forma clara y estructurada. Sé práctico y ori
 ${projectsContext}
 ${context ? `\nContexto adicional: ${context}` : ""}`;
 
-    const response = await fetch("https://apps.abacus.ai/v1/chat/completions", {
+    // Llamada a Claude API con streaming
+    const response = await fetch("https://api.anthropic.com/v1/messages", {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        "Authorization": `Bearer ${process.env.ABACUSAI_API_KEY}`
+        "x-api-key": process.env.ANTHROPIC_API_KEY || "",
+        "anthropic-version": "2023-06-01"
       },
       body: JSON.stringify({
-        model: "gpt-4.1-mini",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: message }
-        ],
+        model: "claude-3-5-haiku-20241022", // Haiku para chat (más rápido y económico)
+        max_tokens: 2000,
         stream: true,
-        max_tokens: 2000
+        system: systemPrompt,
+        messages: [
+          { role: "user", content: message }
+        ]
       })
     });
 
     if (!response.ok) {
+      const errorText = await response.text();
+      console.error("Claude API error:", errorText);
       throw new Error("Error en la API del asistente");
     }
 
-    // Stream the response
+    // Stream the response - adaptar formato Anthropic a SSE estándar
     const stream = new ReadableStream({
       async start(controller) {
         const reader = response.body?.getReader();
@@ -70,11 +74,35 @@ ${context ? `\nContexto adicional: ${context}` : ""}`;
         const encoder = new TextEncoder();
 
         try {
+          let buffer = "";
           while (reader) {
             const { done, value } = await reader.read();
             if (done) break;
-            const chunk = decoder.decode(value);
-            controller.enqueue(encoder.encode(chunk));
+            
+            buffer += decoder.decode(value, { stream: true });
+            const lines = buffer.split("\n");
+            buffer = lines.pop() || "";
+            
+            for (const line of lines) {
+              if (line.startsWith("data: ")) {
+                const data = line.slice(6);
+                if (data === "[DONE]") continue;
+                
+                try {
+                  const parsed = JSON.parse(data);
+                  // Extraer texto del formato Anthropic
+                  if (parsed.type === "content_block_delta" && parsed.delta?.text) {
+                    // Convertir a formato OpenAI-compatible para el frontend
+                    const openAIFormat = {
+                      choices: [{ delta: { content: parsed.delta.text } }]
+                    };
+                    controller.enqueue(encoder.encode(`data: ${JSON.stringify(openAIFormat)}\n\n`));
+                  }
+                } catch (e) {
+                  // Ignorar líneas que no son JSON válido
+                }
+              }
+            }
           }
         } catch (error) {
           console.error("Stream error:", error);

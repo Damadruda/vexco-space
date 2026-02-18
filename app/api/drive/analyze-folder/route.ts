@@ -276,31 +276,32 @@ IMPORTANTE:
 
 ${combinedContent.slice(0, 50000)}`;
 
-  const response = await fetch("https://apps.abacus.ai/v1/chat/completions", {
+  // Llamada a Claude API (Anthropic)
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "Authorization": `Bearer ${process.env.ABACUSAI_API_KEY}`
+      "x-api-key": process.env.ANTHROPIC_API_KEY || "",
+      "anthropic-version": "2023-06-01"
     },
     body: JSON.stringify({
-      model: "gpt-4.1",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userMessage }
-      ],
+      model: "claude-sonnet-4-5-20250929",
       max_tokens: 4000,
-      temperature: 0.3 // Más determinista para extracción de datos
+      system: systemPrompt,
+      messages: [
+        { role: "user", content: userMessage }
+      ]
     })
   });
 
   if (!response.ok) {
     const errorText = await response.text();
-    console.error("AI API error:", errorText);
-    throw new Error("Error en la API de IA");
+    console.error("Claude API error:", errorText);
+    throw new Error("Error en la API de Claude");
   }
 
   const result = await response.json();
-  const content = result.choices?.[0]?.message?.content || "";
+  const content = result.content?.[0]?.text || "";
   
   // Extraer JSON de la respuesta
   try {
