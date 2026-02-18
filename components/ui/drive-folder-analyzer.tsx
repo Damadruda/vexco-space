@@ -75,7 +75,13 @@ export function DriveFolderAnalyzer({ isOpen, onClose, onProjectCreated }: Drive
   const [breadcrumbs, setBreadcrumbs] = useState<{ id: string; name: string }[]>([]);
   const [rootFolder, setRootFolder] = useState<{ id: string; name: string } | null>(null);
   
-  // Cargar carpeta raíz guardada
+  // Carpeta raíz por defecto (carpeta de Proyectos de Diego)
+  const DEFAULT_ROOT_FOLDER = {
+    id: "1vSvQRth1ka9rSJ3S6e1a60_kD9G0Deir",
+    name: "Proyectos"
+  };
+  
+  // Cargar carpeta raíz guardada o usar la por defecto
   useEffect(() => {
     const saved = localStorage.getItem("driveRootFolder");
     if (saved) {
@@ -86,7 +92,17 @@ export function DriveFolderAnalyzer({ isOpen, onClose, onProjectCreated }: Drive
         setBreadcrumbs([parsed]);
       } catch (e) {
         console.error("Error loading root folder:", e);
+        // Usar carpeta por defecto si hay error
+        setRootFolder(DEFAULT_ROOT_FOLDER);
+        setCurrentFolder(DEFAULT_ROOT_FOLDER);
+        setBreadcrumbs([DEFAULT_ROOT_FOLDER]);
       }
+    } else {
+      // No hay carpeta guardada, usar la por defecto
+      setRootFolder(DEFAULT_ROOT_FOLDER);
+      setCurrentFolder(DEFAULT_ROOT_FOLDER);
+      setBreadcrumbs([DEFAULT_ROOT_FOLDER]);
+      localStorage.setItem("driveRootFolder", JSON.stringify(DEFAULT_ROOT_FOLDER));
     }
   }, []);
   
