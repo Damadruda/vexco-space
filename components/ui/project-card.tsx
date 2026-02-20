@@ -3,12 +3,14 @@
 import { Calendar, MoreHorizontal, Trash2, Edit, Eye, ArrowRight } from "lucide-react";
 import { useState } from "react";
 import Link from "next/link";
+import { PROJECT_TYPES, ProjectType } from "@/lib/project-types";
 
 interface ProjectCardProps {
   id: string;
   title: string;
   description?: string | null;
   status: string;
+  projectType?: string;
   category?: string | null;
   tags?: string[];
   progress: number;
@@ -29,6 +31,7 @@ export function ProjectCard({
   id,
   title,
   description,
+  projectType,
   category,
   tags = [],
   progress,
@@ -46,6 +49,10 @@ export function ProjectCard({
       })
     : null;
 
+  const typeInfo = projectType && PROJECT_TYPES[projectType as ProjectType]
+    ? PROJECT_TYPES[projectType as ProjectType]
+    : null;
+
   return (
     <div
       className={`group relative border border-gray-200 bg-white p-4 transition-all hover:border-gray-300 ${
@@ -54,16 +61,24 @@ export function ProjectCard({
     >
       {/* Header */}
       <div className="mb-2 flex items-start justify-between">
-        <div className="flex-1">
+        <div className="flex-1 min-w-0">
           <Link href={`/project-builder/${id}`} className="group/link flex items-center gap-1">
             <h3 className="font-medium text-gray-800 line-clamp-2 group-hover/link:text-gray-600">{title}</h3>
-            <ArrowRight className="h-3 w-3 opacity-0 transition-all group-hover/link:opacity-100 group-hover/link:translate-x-0.5" />
+            <ArrowRight className="h-3 w-3 shrink-0 opacity-0 transition-all group-hover/link:opacity-100 group-hover/link:translate-x-0.5" />
           </Link>
-          {category && (
-            <span className="mt-1 inline-block text-xs text-gray-400">{category}</span>
-          )}
+          <div className="mt-1 flex items-center gap-2 flex-wrap">
+            {typeInfo && (
+              <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${typeInfo.bgColor} ${typeInfo.color}`}>
+                <span className={`h-1.5 w-1.5 rounded-full ${typeInfo.dotColor}`} />
+                {typeInfo.label}
+              </span>
+            )}
+            {category && (
+              <span className="text-xs text-gray-400">{category}</span>
+            )}
+          </div>
         </div>
-        <div className="relative">
+        <div className="relative ml-2">
           <button
             onClick={() => setShowMenu(!showMenu)}
             className="p-1 text-gray-300 opacity-0 transition-opacity hover:text-gray-500 group-hover:opacity-100"

@@ -17,17 +17,30 @@ import {
   Target,
   BarChart3,
   Plus,
-  Sparkles,
   FileText,
-  Wand2
+  Wand2,
+  CheckCircle2,
+  Circle,
+  Trash2,
+  Flag
 } from "lucide-react";
 import Link from "next/link";
+import { PROJECT_TYPES, PROJECT_TYPE_ORDER, MILESTONES_BY_TYPE, ProjectType } from "@/lib/project-types";
+
+interface MilestoneItem {
+  id: string;
+  title: string;
+  description?: string | null;
+  isCompleted: boolean;
+  order: number;
+}
 
 interface Project {
   id: string;
   title: string;
   description?: string | null;
   status: string;
+  projectType: string;
   currentStep: number;
   progress: number;
   concept?: string | null;
@@ -40,6 +53,7 @@ interface Project {
   milestones?: string | null;
   resources?: string | null;
   metrics?: string | null;
+  milestoneItems: MilestoneItem[];
 }
 
 type GeneratorType = "competitor_analysis" | "business_model_suggestions" | "action_plan" | "market_validation";
@@ -86,7 +100,7 @@ const steps = [
     aiAction: "action_plan" as GeneratorType,
     fields: [
       { key: "actionPlan", label: "Pasos Inmediatos", placeholder: "Lista las 3-5 acciones principales para los próximos 30 días..." },
-      { key: "milestones", label: "Hitos Clave", placeholder: "Define los hitos importantes: lanzamiento, primeros clientes, break-even..." }
+      { key: "milestones", label: "Hitos Clave (texto libre)", placeholder: "Define los hitos importantes: lanzamiento, primeros clientes, break-even..." }
     ]
   },
   {
@@ -112,6 +126,11 @@ export default function ProjectDetailPage() {
   const [showDocGenerator, setShowDocGenerator] = useState(false);
   const [activeAIGenerator, setActiveAIGenerator] = useState<GeneratorType | null>(null);
   const [formData, setFormData] = useState<Record<string, string>>({});
+  const [milestones, setMilestones] = useState<MilestoneItem[]>([]);
+  const [newMilestoneTitle, setNewMilestoneTitle] = useState("");
+  const [addingMilestone, setAddingMilestone] = useState(false);
+  const [showMilestoneInput, setShowMilestoneInput] = useState(false);
+  const [changingType, setChangingType] = useState(false);
 
   useEffect(() => {
     fetchProject();
@@ -126,6 +145,7 @@ export default function ProjectDetailPage() {
       }
       const data = await res.json();
       setProject(data?.project);
+      setMilestones(data?.project?.milestoneItems ?? []);
       // Initialize form data
       const initialData: Record<string, string> = {};
       steps.forEach((step) => {
@@ -190,6 +210,89 @@ export default function ProjectDetailPage() {
     }
   };
 
+  const handleChangeProjectType = async (newType: ProjectType) => {
+    if (!project || changingType) return;
+    setChangingType(true);
+    try {
+      await fetch(`/api/projects/${project.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectType: newType })
+      });
+      setProject((prev) => prev ? { ...prev, projectType: newType } : null);
+    } catch (error) {
+      console.error("Error changing project type:", error);
+    } finally {
+      setChangingType(false);
+    }
+  };
+
+  const handleToggleMilestone = async (milestone: MilestoneItem) => {
+    const updated = { ...milestone, isCompleted: !milestone.isCompleted };
+    setMilestones((prev) => prev.map((m) => m.id === milestone.id ? updated : m));
+    try {
+      await fetch(`/api/milestones/${milestone.id}`, {
+        method: "PATCH",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ isCompleted: updated.isCompleted })
+      });
+    } catch {
+      // Revert on error
+      setMilestones((prev) => prev.map((m) => m.id === milestone.id ? milestone : m));
+    }
+  };
+
+  const handleDeleteMilestone = async (id: string) => {
+    setMilestones((prev) => prev.filter((m) => m.id !== id));
+    try {
+      await fetch(`/api/milestones/${id}`, { method: "DELETE" });
+    } catch {
+      fetchProject();
+    }
+  };
+
+  const handleAddMilestone = async (title: string) => {
+    if (!title.trim() || !project) return;
+    setAddingMilestone(true);
+    try {
+      const res = await fetch(`/api/projects/${project.id}/milestones`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title: title.trim() })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setMilestones((prev) => [...prev, data.milestone]);
+        setNewMilestoneTitle("");
+        setShowMilestoneInput(false);
+      }
+    } catch {
+      console.error("Error adding milestone");
+    } finally {
+      setAddingMilestone(false);
+    }
+  };
+
+  const handleAddSuggestedMilestone = async (title: string) => {
+    if (!project) return;
+    setAddingMilestone(true);
+    try {
+      const res = await fetch(`/api/projects/${project.id}/milestones`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ title })
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setMilestones((prev) => [...prev, data.milestone]);
+      }
+    } catch {
+      console.error("Error adding milestone");
+    } finally {
+      setAddingMilestone(false);
+    }
+  };
+
   if (loading) {
     return (
       <div className="flex min-h-screen items-center justify-center">
@@ -199,6 +302,12 @@ export default function ProjectDetailPage() {
   }
 
   if (!project) return null;
+
+  const currentType = (project.projectType || "idea") as ProjectType;
+  const typeInfo = PROJECT_TYPES[currentType];
+  const suggestedMilestones = MILESTONES_BY_TYPE[currentType];
+  const existingMilestoneTitles = new Set(milestones.map((m) => m.title.toLowerCase()));
+  const completedMilestones = milestones.filter((m) => m.isCompleted).length;
 
   return (
     <div className="min-h-screen bg-slate-50">
@@ -244,6 +353,38 @@ export default function ProjectDetailPage() {
           </div>
         </div>
 
+        {/* Project Type Selector */}
+        <div className="rounded-xl bg-white p-4 shadow-sm border border-slate-200">
+          <div className="mb-3 flex items-center gap-2">
+            <Flag className="h-4 w-4 text-slate-500" />
+            <span className="text-sm font-semibold text-slate-700">Tipo de Proyecto (PM Ágil)</span>
+            {changingType && <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />}
+          </div>
+          <div className="flex flex-wrap gap-2">
+            {PROJECT_TYPE_ORDER.map((type) => {
+              const info = PROJECT_TYPES[type];
+              const isSelected = currentType === type;
+              return (
+                <button
+                  key={type}
+                  onClick={() => handleChangeProjectType(type)}
+                  disabled={changingType}
+                  className={`inline-flex items-center gap-2 rounded-lg border-2 px-3 py-1.5 text-sm font-medium transition-all disabled:opacity-60 ${
+                    isSelected
+                      ? `${info.borderColor} ${info.bgColor} ${info.color}`
+                      : "border-slate-100 bg-white text-slate-500 hover:border-slate-200"
+                  }`}
+                >
+                  <span className={`h-2 w-2 rounded-full ${info.dotColor}`} />
+                  {info.label}
+                  {isSelected && <Check className="h-3.5 w-3.5" />}
+                </button>
+              );
+            })}
+          </div>
+          <p className="mt-2 text-xs text-slate-400">{typeInfo.description}</p>
+        </div>
+
         {/* Progress Bar */}
         <div className="rounded-xl bg-white p-4 shadow-sm border border-slate-200">
           <div className="mb-2 flex items-center justify-between">
@@ -283,6 +424,119 @@ export default function ProjectDetailPage() {
                 </div>
               );
             })}
+          </div>
+        </div>
+
+        {/* Milestones Section */}
+        <div className="rounded-xl bg-white shadow-sm border border-slate-200 overflow-hidden">
+          <div className={`flex items-center justify-between p-4 border-b border-slate-100 ${typeInfo.bgColor}`}>
+            <div className="flex items-center gap-3">
+              <div className={`flex h-9 w-9 items-center justify-center rounded-lg ${typeInfo.bgColor} border ${typeInfo.borderColor}`}>
+                <Flag className={`h-4 w-4 ${typeInfo.color}`} />
+              </div>
+              <div>
+                <h3 className="font-semibold text-slate-800">Milestones</h3>
+                <p className="text-xs text-slate-500">
+                  {completedMilestones}/{milestones.length} completados · Tipo: {typeInfo.label}
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowMilestoneInput(true)}
+              className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 text-xs font-medium ${typeInfo.borderColor} ${typeInfo.bgColor} ${typeInfo.color} hover:opacity-80`}
+            >
+              <Plus className="h-3.5 w-3.5" />
+              Agregar
+            </button>
+          </div>
+
+          <div className="p-4 space-y-3">
+            {/* Suggested milestones not yet added */}
+            {suggestedMilestones.some((s) => !existingMilestoneTitles.has(s.toLowerCase())) && (
+              <div className="rounded-lg border border-dashed border-slate-200 p-3">
+                <p className="mb-2 text-xs font-medium text-slate-500">Sugeridos para proyectos de tipo "{typeInfo.label}":</p>
+                <div className="flex flex-wrap gap-2">
+                  {suggestedMilestones
+                    .filter((s) => !existingMilestoneTitles.has(s.toLowerCase()))
+                    .map((suggestion) => (
+                      <button
+                        key={suggestion}
+                        onClick={() => handleAddSuggestedMilestone(suggestion)}
+                        disabled={addingMilestone}
+                        className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-medium ${typeInfo.borderColor} ${typeInfo.bgColor} ${typeInfo.color} hover:opacity-80 disabled:opacity-40`}
+                      >
+                        <Plus className="h-3 w-3" />
+                        {suggestion}
+                      </button>
+                    ))}
+                </div>
+              </div>
+            )}
+
+            {/* Existing milestones */}
+            {milestones.length === 0 && suggestedMilestones.every((s) => existingMilestoneTitles.has(s.toLowerCase())) && (
+              <p className="py-4 text-center text-sm text-slate-400">
+                No hay milestones. Agrega uno arriba.
+              </p>
+            )}
+
+            {milestones.map((milestone) => (
+              <div
+                key={milestone.id}
+                className="group flex items-center gap-3 rounded-lg border border-slate-100 p-3 hover:border-slate-200 transition-colors"
+              >
+                <button
+                  onClick={() => handleToggleMilestone(milestone)}
+                  className="shrink-0 text-slate-400 hover:text-green-500 transition-colors"
+                >
+                  {milestone.isCompleted ? (
+                    <CheckCircle2 className="h-5 w-5 text-green-500" />
+                  ) : (
+                    <Circle className="h-5 w-5" />
+                  )}
+                </button>
+                <span className={`flex-1 text-sm ${milestone.isCompleted ? "line-through text-slate-400" : "text-slate-700"}`}>
+                  {milestone.title}
+                </span>
+                <button
+                  onClick={() => handleDeleteMilestone(milestone.id)}
+                  className="shrink-0 text-slate-300 opacity-0 group-hover:opacity-100 hover:text-red-400 transition-all"
+                >
+                  <Trash2 className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            ))}
+
+            {/* New milestone input */}
+            {showMilestoneInput && (
+              <div className="flex gap-2">
+                <input
+                  type="text"
+                  value={newMilestoneTitle}
+                  onChange={(e) => setNewMilestoneTitle(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") handleAddMilestone(newMilestoneTitle);
+                    if (e.key === "Escape") { setShowMilestoneInput(false); setNewMilestoneTitle(""); }
+                  }}
+                  autoFocus
+                  placeholder="Nombre del milestone..."
+                  className="flex-1 rounded-lg border border-slate-200 px-3 py-2 text-sm focus:border-slate-400 focus:outline-none"
+                />
+                <button
+                  onClick={() => handleAddMilestone(newMilestoneTitle)}
+                  disabled={addingMilestone || !newMilestoneTitle.trim()}
+                  className="rounded-lg bg-slate-800 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:bg-slate-200"
+                >
+                  {addingMilestone ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+                </button>
+                <button
+                  onClick={() => { setShowMilestoneInput(false); setNewMilestoneTitle(""); }}
+                  className="rounded-lg border border-slate-200 px-3 py-2 text-sm text-slate-500 hover:bg-slate-50"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
           </div>
         </div>
 
