@@ -3,8 +3,9 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Header } from "@/components/ui/header";
-import { ArrowLeft, Loader2, Calendar, Tag, X, Plus } from "lucide-react";
+import { ArrowLeft, Loader2, Calendar, Tag, X, Plus, Sparkles, CheckCircle2 } from "lucide-react";
 import Link from "next/link";
+import { PROJECT_TYPES, ProjectType, PROJECT_TYPE_ORDER } from "@/lib/project-types";
 
 export default function NewProjectPage() {
   const router = useRouter();
@@ -13,16 +14,57 @@ export default function NewProjectPage() {
 
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
+  const [projectType, setProjectType] = useState<ProjectType>("idea");
   const [category, setCategory] = useState("");
   const [priority, setPriority] = useState("medium");
   const [dueDate, setDueDate] = useState("");
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
+  const [suggestingType, setSuggestingType] = useState(false);
 
   const handleAddTag = () => {
     if (tagInput.trim() && !tags.includes(tagInput.trim())) {
       setTags([...tags, tagInput.trim()]);
       setTagInput("");
+    }
+  };
+
+  const suggestProjectType = async () => {
+    if (!description.trim() && !title.trim()) return;
+    setSuggestingType(true);
+    try {
+      const res = await fetch("/api/ai", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action: "suggest_project_type",
+          data: {
+            content: `Analiza este proyecto y sugiere el tipo más adecuado.
+Título: ${title}
+Descripción: ${description}
+
+Tipos disponibles:
+- idea: Exploración inicial, validando hipótesis, sin desarrollo activo
+- active: En desarrollo activo, equipo trabajando, progresando hacia lanzamiento
+- operational: Ya lanzado, generando valor/ingresos, en operación
+- completed: Finalizado, archivado, objetivos cumplidos o cancelado
+
+Responde ÚNICAMENTE con una de estas palabras: idea, active, operational, completed`
+          }
+        })
+      });
+
+      if (!res.ok) throw new Error("Error");
+      const data = await res.json();
+      const suggested = data?.content?.trim().toLowerCase();
+      const validTypes: ProjectType[] = ["idea", "active", "operational", "completed"];
+      if (validTypes.includes(suggested as ProjectType)) {
+        setProjectType(suggested as ProjectType);
+      }
+    } catch {
+      // Silent fail - user can select manually
+    } finally {
+      setSuggestingType(false);
     }
   };
 
@@ -43,6 +85,7 @@ export default function NewProjectPage() {
         body: JSON.stringify({
           title,
           description,
+          projectType,
           category,
           priority,
           dueDate: dueDate || null,
@@ -114,6 +157,57 @@ export default function NewProjectPage() {
                   placeholder="Describe brevemente tu proyecto..."
                   rows={3}
                 />
+              </div>
+
+              {/* Project Type */}
+              <div>
+                <div className="mb-1.5 flex items-center justify-between">
+                  <label className="text-sm font-medium text-slate-700">
+                    Tipo de Proyecto (PM Ágil)
+                  </label>
+                  <button
+                    type="button"
+                    onClick={suggestProjectType}
+                    disabled={suggestingType || (!title.trim() && !description.trim())}
+                    className="inline-flex items-center gap-1.5 rounded-lg bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-100 disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {suggestingType ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <Sparkles className="h-3 w-3" />
+                    )}
+                    Sugerir con IA
+                  </button>
+                </div>
+                <div className="grid gap-2 sm:grid-cols-2">
+                  {PROJECT_TYPE_ORDER.map((type) => {
+                    const typeInfo = PROJECT_TYPES[type];
+                    const isSelected = projectType === type;
+                    return (
+                      <button
+                        key={type}
+                        type="button"
+                        onClick={() => setProjectType(type)}
+                        className={`relative flex items-start gap-3 rounded-lg border-2 p-3 text-left transition-all ${
+                          isSelected
+                            ? `${typeInfo.borderColor} ${typeInfo.bgColor}`
+                            : "border-slate-100 bg-white hover:border-slate-200"
+                        }`}
+                      >
+                        <div className={`mt-0.5 h-3.5 w-3.5 shrink-0 rounded-full ${typeInfo.dotColor}`} />
+                        <div className="min-w-0">
+                          <p className={`text-sm font-medium ${isSelected ? typeInfo.color : "text-slate-700"}`}>
+                            {typeInfo.label}
+                          </p>
+                          <p className="text-xs text-slate-500 leading-snug">{typeInfo.description}</p>
+                        </div>
+                        {isSelected && (
+                          <CheckCircle2 className={`absolute right-3 top-3 h-4 w-4 shrink-0 ${typeInfo.color}`} />
+                        )}
+                      </button>
+                    );
+                  })}
+                </div>
               </div>
 
               {/* Category & Priority */}

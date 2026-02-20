@@ -68,6 +68,7 @@ model Project {
   title       String
   description String?  @db.Text
   status      String   @default("idea") // idea, development, execution, completed
+  projectType String   @default("idea") // idea, active, operational, completed
   category    String?
   tags        String[] @default([])
   priority    String   @default("medium") // low, medium, high
@@ -91,13 +92,29 @@ model Project {
   metrics         String? @db.Text
   currentStep     Int     @default(1) // 1-5
 
-  ideas         Idea[]
-  notes         Note[]
-  links         Link[]
-  images        Image[]
+  ideas          Idea[]
+  notes          Note[]
+  links          Link[]
+  images         Image[]
+  milestoneItems Milestone[]
 
   @@index([userId])
   @@index([status])
+  @@index([projectType])
+}
+
+model Milestone {
+  id          String   @id @default(cuid())
+  title       String
+  description String?  @db.Text
+  isCompleted Boolean  @default(false)
+  order       Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
 }
 
 model Idea {

@@ -10,17 +10,22 @@ export async function GET(request: NextRequest) {
     const { searchParams } = new URL(request.url);
     const status = searchParams.get("status");
     const category = searchParams.get("category");
+    const projectType = searchParams.get("projectType");
 
     const where: any = { userId };
     if (status) where.status = status;
     if (category) where.category = category;
+    if (projectType) where.projectType = projectType;
 
     const projects = await prisma.project.findMany({
       where,
       orderBy: { updatedAt: "desc" },
       include: {
         _count: {
-          select: { ideas: true, notes: true, links: true, images: true }
+          select: { ideas: true, notes: true, links: true, images: true, milestoneItems: true }
+        },
+        milestoneItems: {
+          orderBy: { order: "asc" }
         }
       }
     });
@@ -44,11 +49,15 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: "El título es requerido" }, { status: 400 });
     }
 
+    const validProjectTypes = ["idea", "active", "operational", "completed"];
+    const projectType = validProjectTypes.includes(body.projectType) ? body.projectType : "idea";
+
     const project = await prisma.project.create({
       data: {
         title: body.title,
         description: body.description,
         status: body.status || "idea",
+        projectType,
         category: body.category,
         tags: body.tags || [],
         priority: body.priority || "medium",

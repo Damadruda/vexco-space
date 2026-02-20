@@ -7,6 +7,7 @@ import { KanbanBoard } from "@/components/ui/kanban-board";
 import { FolderKanban, Lightbulb, FileText, Link as LinkIcon, Image as ImageIcon, TrendingUp, Loader2, ArrowRight, Sparkles, RefreshCw, CloudDownload, Plus } from "lucide-react";
 import Link from "next/link";
 import { DriveFolderAnalyzer } from "@/components/ui/drive-folder-analyzer";
+import { PROJECT_TYPES, PROJECT_TYPE_ORDER, ProjectType } from "@/lib/project-types";
 
 interface Stats {
   totalProjects: number;
@@ -14,6 +15,12 @@ interface Stats {
     idea: number;
     development: number;
     execution: number;
+    completed: number;
+  };
+  projectsByType: {
+    idea: number;
+    active: number;
+    operational: number;
     completed: number;
   };
   totalNotes: number;
@@ -105,13 +112,13 @@ export default function DashboardPage() {
   return (
     <div className="min-h-screen bg-gray-50">
       <Header title="Dashboard" subtitle="Vista general" />
-      
+
       {/* Drive Folder Analyzer Modal */}
-      <DriveFolderAnalyzer 
-        isOpen={showDriveAnalyzer} 
-        onClose={() => setShowDriveAnalyzer(false)} 
+      <DriveFolderAnalyzer
+        isOpen={showDriveAnalyzer}
+        onClose={() => setShowDriveAnalyzer(false)}
       />
-      
+
       <div className="p-8 space-y-10">
         {/* Quick Actions */}
         <div className="flex flex-wrap gap-3">
@@ -165,6 +172,46 @@ export default function DashboardPage() {
           </div>
         )}
 
+        {/* PM Ágil Type Distribution */}
+        {!loading && stats && (
+          <div>
+            <p className="mb-2 text-xs tracking-[0.15em] uppercase text-gray-400">Framework PM Ágil</p>
+            <h3 className="mb-4 font-serif text-xl text-gray-900">Distribución por tipo de proyecto</h3>
+            <div className="grid gap-3 sm:grid-cols-4">
+              {PROJECT_TYPE_ORDER.map((type) => {
+                const info = PROJECT_TYPES[type as ProjectType];
+                const count = stats.projectsByType?.[type as keyof typeof stats.projectsByType] ?? 0;
+                const total = stats.totalProjects || 1;
+                const pct = Math.round((count / total) * 100);
+                return (
+                  <Link
+                    key={type}
+                    href={`/project-builder?type=${type}`}
+                    className={`group relative overflow-hidden rounded-xl border p-4 transition-all hover:shadow-md ${info.borderColor} ${info.bgColor}`}
+                  >
+                    <div className="mb-3 flex items-center gap-2">
+                      <span className={`h-2.5 w-2.5 rounded-full ${info.dotColor}`} />
+                      <span className={`text-xs font-semibold uppercase tracking-wide ${info.color}`}>{info.label}</span>
+                    </div>
+                    <p className="font-serif text-3xl font-bold text-gray-900">{count}</p>
+                    <p className="text-xs text-gray-500">proyecto{count !== 1 ? "s" : ""}</p>
+                    <div className="mt-3">
+                      <div className="h-1 w-full overflow-hidden rounded-full bg-white/60">
+                        <div
+                          className={`h-full ${info.dotColor} transition-all`}
+                          style={{ width: `${pct}%` }}
+                        />
+                      </div>
+                      <p className={`mt-1 text-xs ${info.color}`}>{pct}% del total</p>
+                    </div>
+                    <ArrowRight className={`absolute right-3 top-3 h-4 w-4 opacity-0 transition-all group-hover:opacity-100 ${info.color}`} />
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* AI Insights Section */}
         <div className="border border-amber-200 bg-amber-50/50 p-6">
           <div className="flex items-center justify-between mb-4">
@@ -190,9 +237,9 @@ export default function DashboardPage() {
               {aiInsights ? "Actualizar" : "Generar Insights"}
             </button>
           </div>
-          
+
           {aiInsights && (
-            <div 
+            <div
               ref={insightsRef}
               className="mt-4 max-h-64 overflow-y-auto rounded-lg bg-white p-4 border border-amber-100"
             >
@@ -202,7 +249,7 @@ export default function DashboardPage() {
               </div>
             </div>
           )}
-          
+
           {!aiInsights && !loadingInsights && (
             <p className="text-sm text-gray-500 mt-2">
               Haz clic en "Generar Insights" para obtener un análisis personalizado de tus proyectos y recomendaciones.

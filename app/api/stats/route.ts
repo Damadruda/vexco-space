@@ -8,9 +8,14 @@ export async function GET(request: NextRequest) {
   try {
     const userId = await getDefaultUserId();
 
-    const [projectCounts, totalNotes, totalLinks, totalImages] = await Promise.all([
+    const [projectCounts, projectTypeCounts, totalNotes, totalLinks, totalImages] = await Promise.all([
       prisma.project.groupBy({
         by: ["status"],
+        where: { userId },
+        _count: true
+      }),
+      prisma.project.groupBy({
+        by: ["projectType"],
         where: { userId },
         _count: true
       }),
@@ -26,6 +31,12 @@ export async function GET(request: NextRequest) {
         development: projectCounts.find((c) => c.status === "development")?._count || 0,
         execution: projectCounts.find((c) => c.status === "execution")?._count || 0,
         completed: projectCounts.find((c) => c.status === "completed")?._count || 0
+      },
+      projectsByType: {
+        idea: projectTypeCounts.find((c) => c.projectType === "idea")?._count || 0,
+        active: projectTypeCounts.find((c) => c.projectType === "active")?._count || 0,
+        operational: projectTypeCounts.find((c) => c.projectType === "operational")?._count || 0,
+        completed: projectTypeCounts.find((c) => c.projectType === "completed")?._count || 0
       },
       totalNotes,
       totalLinks,
