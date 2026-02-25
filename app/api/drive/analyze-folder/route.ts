@@ -2,10 +2,19 @@ import { NextRequest, NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth-options";
 import { prisma } from "@/lib/db";
+import { GoogleGenAI } from "@google/genai";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120; // 2 minutos para procesar carpetas grandes
 
+// ============================================================
+// Gemini Client (reemplaza Anthropic Claude API)
+// ============================================================
+const gemini = new GoogleGenAI({ apiKey: process.env.GEMINI_API_KEY || "" });
+
+// ============================================================
+// Tipos
+// ============================================================
 interface DriveFile {
   id: string;
   name: string;
@@ -19,6 +28,128 @@ interface ExtractedContent {
   content: string;
   mimeType: string;
 }
+
+// ============================================================
+// System Prompt - PM Ágil con Framework 4 Fases
+// ============================================================
+const PM_AGIL_SYSTEM_PROMPT = `# ROL
+Eres un Product Manager senior con 20 años de experiencia en metodologías ágiles (Scrum, Kanban, Lean Startup, Shape Up). Tu especialidad es transformar información fragmentada en roadmaps ejecutables.
+
+# INSTRUCCIONES
+Analiza el contenido de una carpeta de Google Drive que contiene documentos de un proyecto. Tu tarea es:
+
+1. **CLASIFICAR** el tipo de proyecto en UNA de estas 4 categorías:
+   - **tech_product**: SaaS, App, Plataforma digital (ingresos: suscripción, licencia, freemium)
+   - **service**: Consultoría, Agencia, Profesional (ingresos: por hora, proyecto, retainer)
+   - **commerce**: E-commerce, Marketplace, Retail (ingresos: venta de productos, comisiones)
+   - **content**: Media, Educación, Comunidad (ingresos: ads, sponsors, membresía, cursos)
+
+   Algoritmo de clasificación:
+   - Busca indicadores en los documentos: tecnologías mencionadas → tech_product, clientes/propuestas → service, productos/catálogo → commerce, contenido/audiencia → content
+   - Si hay ambigüedad, elige la categoría con más evidencia
+
+2. **DETERMINAR LA FASE** actual del proyecto según este framework:
+   - **idea**: Concepto sin validar, solo documentación inicial, sin producto ni usuarios reales
+   - **active**: En desarrollo activo, tiene MVP o prototipo, buscando product-market fit
+   - **operational**: Funcionando con usuarios/clientes reales, generando ingresos o tracción medible
+   - **completed**: Proyecto finalizado, entregado al cliente, o descontinuado
+
+3. **GENERAR MILESTONES** adaptados al tipo de proyecto:
+
+   ### tech_product (5 milestones)
+   1. Definición → Problema validado, usuario definido, propuesta clara
+   2. Validación → Entrevistas, landing, lista de espera, LOIs
+   3. MVP → Funcionalidad core, primeros usuarios reales
+   4. Product-Market Fit → Retención, NPS >40, revenue inicial
+   5. Escala → Growth loops, unit economics positivos
+
+   ### service (4 milestones)
+   1. Propuesta → Oferta clara, pricing, diferenciación
+   2. Piloto → 1-3 clientes piloto, case studies
+   3. Sistematización → Procesos, templates, equipo
+   4. Crecimiento → Pipeline, partnerships, expansión
+
+   ### commerce (5 milestones)
+   1. Producto → Catálogo, pricing, proveedores
+   2. Plataforma → Tienda operativa, pagos, logística
+   3. Lanzamiento → Marketing inicial, primeras ventas
+   4. Optimización → Conversión, CAC/LTV, inventario
+   5. Escala → Nuevos canales, categorías, geografías
+
+   ### content (4 milestones)
+   1. Estrategia → Nicho, formato, calendario editorial
+   2. Producción → Contenido inicial, distribución
+   3. Audiencia → 1000 true fans, engagement
+   4. Monetización → Revenue streams activados
+
+4. **EVALUAR CADA MILESTONE**: Analiza los documentos y marca qué milestones están completados según la evidencia encontrada.
+
+5. **CALCULAR PROGRESO**: % general basado en milestones completados vs totales.
+
+6. **ANÁLISIS TÉCNICO** (si hay código): Detecta stack tecnológico, frameworks, dependencias.
+
+# OUTPUT
+Responde ÚNICAMENTE con un JSON válido (sin markdown, sin backticks, sin texto adicional):
+
+{
+  "title": "Nombre del proyecto",
+  "description": "Descripción breve (2-3 oraciones)",
+  "category": "Categoría general del proyecto",
+  "tags": ["tag1", "tag2", "tag3"],
+  "projectType": "tech_product | service | commerce | content",
+  "currentPhase": "idea | active | operational | completed",
+  "overallProgress": 0-100,
+
+  "concept": "Paso 1 - Concepto del proyecto",
+  "problemSolved": "Problema principal que resuelve",
+  "targetMarket": "Mercado objetivo y segmentos",
+  "marketValidation": "Estado de validación de mercado",
+  "businessModel": "Modelo de negocio identificado",
+  "valueProposition": "Propuesta de valor única",
+  "actionPlan": "Resumen del plan de acción",
+  "resources": "Recursos necesarios identificados",
+  "metrics": "Métricas clave sugeridas",
+  "currentStep": 1-5,
+
+  "milestones": [
+    {
+      "title": "Nombre del milestone",
+      "description": "Qué significa completar este milestone",
+      "order": 1,
+      "isCompleted": false
+    }
+  ],
+
+  "insights": "Análisis cualitativo del estado del proyecto. Fortalezas, debilidades, patrones detectados, recomendaciones. Mínimo 3 párrafos con observaciones profundas y accionables.",
+  "nextActions": ["Acción 1 específica", "Acción 2 específica", "Acción 3 específica"],
+  "blockers": ["Bloqueante identificado"],
+  "confidence": "high | medium | low",
+
+  "techStack": {
+    "frontend": ["tecnologías detectadas"],
+    "backend": ["tecnologías detectadas"],
+    "database": ["bases de datos detectadas"],
+    "infrastructure": ["infraestructura detectada"],
+    "other": ["otras tecnologías"]
+  },
+  "techSummary": "Resumen técnico si hay código, null si no",
+  "techRecommendations": "Recomendaciones técnicas si hay código, null si no"
+}
+
+# REGLAS
+- Si no hay suficiente información para un campo, usa null para strings y [] para arrays
+- Cada milestone debe tener title, description, order e isCompleted
+- El progreso general se calcula: (milestones completados / total milestones) * 100
+- Las nextActions deben ser específicas y accionables, no genéricas
+- Los insights deben ser profundos y útiles, mínimo 3 párrafos
+- La confianza (confidence) refleja cuánta información tenías para el análisis
+- Si detectas archivos de código (marcados con [CÓDIGO]), analiza el stack tecnológico
+- Si no hay código, deja techStack, techSummary y techRecommendations como null
+`;
+
+// ============================================================
+// Funciones de extracción de contenido desde Google Drive
+// ============================================================
 
 // Exportar Google Docs/Sheets/Slides a texto
 async function exportGoogleFile(fileId: string, mimeType: string, accessToken: string): Promise<string> {
@@ -45,10 +176,8 @@ async function exportGoogleFile(fileId: string, mimeType: string, accessToken: s
   return await response.text();
 }
 
-// Descargar archivo binario y extraer texto (PDFs, etc.)
+// Descargar archivo y extraer texto
 async function downloadAndExtractText(fileId: string, mimeType: string, accessToken: string): Promise<string> {
-  // Para PDFs, descargamos y extraemos texto básico
-  // En producción podrías usar una librería como pdf-parse
   const response = await fetch(
     `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
     {
@@ -60,41 +189,32 @@ async function downloadAndExtractText(fileId: string, mimeType: string, accessTo
     return "";
   }
   
-  // Para archivos de texto plano
   if (mimeType.startsWith("text/")) {
     return await response.text();
   }
   
-  // Para PDFs y otros, retornamos indicación del archivo
-  // Una mejora futura sería usar pdf-parse o similar
   return `[Archivo: ${mimeType}]`;
 }
 
 // Extensiones de código soportadas
 const CODE_EXTENSIONS: Record<string, string> = {
-  // JavaScript/TypeScript
   ".js": "javascript",
   ".jsx": "javascript",
   ".ts": "typescript",
   ".tsx": "typescript",
   ".mjs": "javascript",
-  // Python
   ".py": "python",
-  // Web
   ".html": "html",
   ".css": "css",
   ".scss": "scss",
-  // Config/Data
   ".json": "json",
   ".yaml": "yaml",
   ".yml": "yaml",
   ".env": "env",
   ".env.local": "env",
   ".env.example": "env",
-  // Docs
   ".md": "markdown",
   ".mdx": "markdown",
-  // Other
   ".sql": "sql",
   ".sh": "shell",
   ".dockerfile": "dockerfile",
@@ -116,12 +236,10 @@ const IMPORTANT_FILES = [
 function isCodeFile(fileName: string): boolean {
   const lowerName = fileName.toLowerCase();
   
-  // Verificar archivos importantes por nombre
   if (IMPORTANT_FILES.some(f => lowerName === f.toLowerCase())) {
     return true;
   }
   
-  // Verificar por extensión
   const ext = "." + lowerName.split(".").pop();
   return ext in CODE_EXTENSIONS;
 }
@@ -150,34 +268,22 @@ async function extractFileContent(file: DriveFile, accessToken: string): Promise
   try {
     let content = "";
     
-    // Google Docs
     if (mimeType === "application/vnd.google-apps.document") {
       content = await exportGoogleFile(id, mimeType, accessToken);
-    }
-    // Google Sheets
-    else if (mimeType === "application/vnd.google-apps.spreadsheet") {
+    } else if (mimeType === "application/vnd.google-apps.spreadsheet") {
       content = await exportGoogleFile(id, mimeType, accessToken);
-    }
-    // Google Slides
-    else if (mimeType === "application/vnd.google-apps.presentation") {
+    } else if (mimeType === "application/vnd.google-apps.presentation") {
       content = await exportGoogleFile(id, mimeType, accessToken);
-    }
-    // PDFs y archivos de texto
-    else if (mimeType === "application/pdf" || mimeType.startsWith("text/")) {
+    } else if (mimeType === "application/pdf" || mimeType.startsWith("text/")) {
       content = await downloadAndExtractText(id, mimeType, accessToken);
-    }
-    // Archivos de código
-    else if (isCodeFile(name)) {
+    } else if (isCodeFile(name)) {
       content = await downloadCodeFile(id, accessToken);
-      // Marcar como código para el análisis
       if (content) {
         const ext = "." + name.toLowerCase().split(".").pop();
         const lang = CODE_EXTENSIONS[ext] || "code";
         content = `[CÓDIGO - ${lang}]\n${content}`;
       }
-    }
-    // Otros archivos - solo mencionamos que existen
-    else {
+    } else {
       return null;
     }
     
@@ -185,7 +291,7 @@ async function extractFileContent(file: DriveFile, accessToken: string): Promise
       return null;
     }
     
-    return { fileName: name, content: content.slice(0, 10000), mimeType }; // Limitar a 10k chars por archivo
+    return { fileName: name, content: content.slice(0, 10000), mimeType };
     
   } catch (error) {
     console.error(`Error extracting content from ${name}:`, error);
@@ -199,11 +305,9 @@ async function processFilesRecursively(files: DriveFile[], accessToken: string):
   
   for (const file of files) {
     if (file.mimeType === "application/vnd.google-apps.folder" && file.children) {
-      // Procesar subcarpetas
       const childContents = await processFilesRecursively(file.children, accessToken);
       contents.push(...childContents);
     } else {
-      // Extraer contenido del archivo
       const extracted = await extractFileContent(file, accessToken);
       if (extracted) {
         contents.push(extracted);
@@ -214,108 +318,70 @@ async function processFilesRecursively(files: DriveFile[], accessToken: string):
   return contents;
 }
 
-// Analizar contenido con IA
+// ============================================================
+// Análisis con Gemini (antes: Anthropic Claude API)
+// ============================================================
 async function analyzeWithAI(contents: ExtractedContent[], folderName: string): Promise<any> {
   const combinedContent = contents
     .map(c => `--- ${c.fileName} ---\n${c.content}`)
     .join("\n\n");
-  
-  // Detectar si hay código en el contenido
-  const hasCode = contents.some(c => c.content.startsWith("[CÓDIGO"));
-  
-  const systemPrompt = `Eres un experto consultor de negocios y arquitecto de software con más de 20 años de experiencia. 
-Tu tarea es analizar el contenido de una carpeta de proyecto y extraer información estructurada.
 
-Analiza los documentos y código proporcionados y extrae la siguiente información para cada campo.
-Si no encuentras información para un campo, déjalo como null.
-Responde ÚNICAMENTE con un objeto JSON válido, sin texto adicional.
+  const userMessage = `Analiza el contenido de la carpeta "${folderName}" y extrae la información del proyecto según el framework PM Ágil:\n\n${combinedContent.slice(0, 50000)}`;
 
-Estructura requerida:
-{
-  "title": "Nombre del proyecto (inferido de los documentos/código)",
-  "description": "Descripción general del proyecto (2-3 oraciones)",
-  "category": "Categoría del proyecto (ej: SaaS, E-commerce, Consultoría, App Móvil, etc.)",
-  "tags": ["tag1", "tag2", "tag3"],
-  
-  "concept": "Paso 1 - Concepto: ¿Cuál es la idea central del proyecto?",
-  "problemSolved": "¿Qué problema específico resuelve?",
-  
-  "targetMarket": "Paso 2 - Mercado objetivo: ¿Quiénes son los clientes ideales?",
-  "marketValidation": "¿Qué validación de mercado existe o se necesita?",
-  
-  "businessModel": "Paso 3 - Modelo de negocio: ¿Cómo genera ingresos?",
-  "valueProposition": "¿Cuál es la propuesta de valor única?",
-  
-  "actionPlan": "Paso 4 - Plan de acción: ¿Cuáles son los próximos pasos?",
-  "milestones": "¿Cuáles son los hitos principales?",
-  
-  "resources": "Paso 5 - Recursos: ¿Qué recursos se necesitan?",
-  "metrics": "¿Qué métricas se deben seguir?",
-  
-  "currentStep": 1,
-  "insights": "Observaciones adicionales o recomendaciones basadas en el análisis",
-  
-  "techStack": {
-    "frontend": ["tecnologías de frontend detectadas"],
-    "backend": ["tecnologías de backend detectadas"],
-    "database": ["bases de datos detectadas"],
-    "infrastructure": ["infraestructura/cloud detectados"],
-    "other": ["otras tecnologías relevantes"]
-  },
-  "techSummary": "Resumen técnico del proyecto: arquitectura, patrones usados, estado del desarrollo",
-  "techRecommendations": "Recomendaciones técnicas: mejoras sugeridas, deuda técnica identificada, próximos pasos técnicos"
-}
-
-IMPORTANTE: 
-- Si detectas archivos de código (marcados con [CÓDIGO]), analiza el stack tecnológico.
-- Extrae dependencias de package.json, requirements.txt, etc.
-- Identifica frameworks (React, Next.js, Django, FastAPI, etc.)
-- Si no hay código, deja techStack, techSummary y techRecommendations como null.`;
-
-  const userMessage = `Analiza el contenido de la carpeta "${folderName}" y extrae la información del proyecto:
-
-${combinedContent.slice(0, 50000)}`;
-
-  // Llamada a Claude API (Anthropic)
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": process.env.ANTHROPIC_API_KEY || "",
-      "anthropic-version": "2023-06-01"
+  // Llamada a Gemini API (reemplaza Claude/Anthropic)
+  const response = await gemini.models.generateContent({
+    model: "gemini-1.5-pro",
+    contents: userMessage,
+    config: {
+      systemInstruction: PM_AGIL_SYSTEM_PROMPT,
+      maxOutputTokens: 8000,
+      temperature: 0.3,
+      // Forzar output JSON nativo de Gemini
+      responseMimeType: "application/json",
     },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-5-20250929",
-      max_tokens: 4000,
-      system: systemPrompt,
-      messages: [
-        { role: "user", content: userMessage }
-      ]
-    })
   });
 
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error("Claude API error:", errorText);
-    throw new Error("Error en la API de Claude");
+  const rawText = response.text?.trim();
+
+  if (!rawText) {
+    console.error("Gemini devolvió respuesta vacía");
+    return null;
   }
 
-  const result = await response.json();
-  const content = result.content?.[0]?.text || "";
-  
-  // Extraer JSON de la respuesta
+  // Limpiar posibles backticks de markdown (por seguridad)
+  const cleanText = rawText
+    .replace(/^```json\s*/i, "")
+    .replace(/^```\s*/i, "")
+    .replace(/\s*```$/i, "")
+    .trim();
+
   try {
-    const jsonMatch = content.match(/\{[\s\S]*\}/);
-    if (jsonMatch) {
-      return JSON.parse(jsonMatch[0]);
+    const analysis = JSON.parse(cleanText);
+
+    // Validar y normalizar campos críticos
+    if (!analysis.title) analysis.title = folderName;
+    if (!analysis.projectType) analysis.projectType = "tech_product";
+    if (!["idea", "active", "operational", "completed"].includes(analysis.currentPhase)) {
+      analysis.currentPhase = "idea";
     }
+    if (!Array.isArray(analysis.milestones)) analysis.milestones = [];
+    if (typeof analysis.overallProgress !== "number" || analysis.overallProgress < 0) {
+      analysis.overallProgress = 0;
+    }
+    if (!Array.isArray(analysis.nextActions)) analysis.nextActions = [];
+    if (!Array.isArray(analysis.blockers)) analysis.blockers = [];
+
+    return analysis;
   } catch (e) {
-    console.error("Error parsing AI response:", e);
+    console.error("Error parsing Gemini response:", e);
+    console.error("Raw response:", cleanText.slice(0, 500));
+    return null;
   }
-  
-  return null;
 }
 
+// ============================================================
+// POST /api/drive/analyze-folder
+// ============================================================
 export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
@@ -332,6 +398,14 @@ export async function POST(request: NextRequest) {
         error: "No hay token de Google Drive",
         needsGoogleAuth: true 
       }, { status: 401 });
+    }
+
+    // Validar que GEMINI_API_KEY esté configurada
+    if (!process.env.GEMINI_API_KEY) {
+      console.error("GEMINI_API_KEY no está configurada");
+      return NextResponse.json({ 
+        error: "Configuración de IA incompleta. Contacta al administrador.",
+      }, { status: 500 });
     }
     
     const { folderId, folderName, createProject = true } = await request.json();
@@ -374,7 +448,7 @@ export async function POST(request: NextRequest) {
       }, { status: 400 });
     }
     
-    // 3. Analizar con IA
+    // 3. Analizar con Gemini (antes: Claude/Anthropic)
     const analysis = await analyzeWithAI(extractedContents, folderName || "Proyecto");
     
     if (!analysis) {
@@ -385,18 +459,27 @@ export async function POST(request: NextRequest) {
       }, { status: 500 });
     }
     
-    // 4. Crear proyecto si se solicita
+    // 4. Crear proyecto y milestones si se solicita
     let project = null;
     if (createProject) {
+      // Mapear currentPhase al campo status del proyecto
+      const statusMap: Record<string, string> = {
+        idea: "idea",
+        active: "development",
+        operational: "execution",
+        completed: "completed",
+      };
+
       project = await prisma.project.create({
         data: {
           title: analysis.title || folderName || "Proyecto importado",
           description: analysis.description || null,
           category: analysis.category || null,
           tags: analysis.tags || [],
-          status: "idea",
+          status: statusMap[analysis.currentPhase] || "idea",
+          projectType: analysis.currentPhase || "idea",
           priority: "medium",
-          progress: 0,
+          progress: analysis.overallProgress || 0,
           
           // Framework de 5 pasos
           concept: analysis.concept || null,
@@ -406,7 +489,7 @@ export async function POST(request: NextRequest) {
           businessModel: analysis.businessModel || null,
           valueProposition: analysis.valueProposition || null,
           actionPlan: analysis.actionPlan || null,
-          milestones: analysis.milestones || null,
+          milestones: analysis.milestones ? JSON.stringify(analysis.milestones) : null,
           resources: analysis.resources || null,
           metrics: analysis.metrics || null,
           currentStep: analysis.currentStep || 1,
@@ -415,14 +498,41 @@ export async function POST(request: NextRequest) {
         }
       });
       
-      // Crear una nota con los insights del análisis
+      // Crear milestones en la tabla Milestone
+      if (analysis.milestones && Array.isArray(analysis.milestones) && analysis.milestones.length > 0) {
+        for (const milestone of analysis.milestones) {
+          await prisma.milestone.create({
+            data: {
+              title: milestone.title || milestone.name || "Milestone",
+              description: milestone.description || null,
+              order: milestone.order || 0,
+              isCompleted: milestone.isCompleted === true,
+              projectId: project.id,
+            }
+          });
+        }
+      }
+      
+      // Crear nota con insights del análisis
       if (analysis.insights) {
+        const nextActionsText = analysis.nextActions?.length
+          ? `\n\n### Próximas acciones\n${analysis.nextActions.map((a: string, i: number) => `${i + 1}. ${a}`).join("\n")}`
+          : "";
+
+        const blockersText = analysis.blockers?.length
+          ? `\n\n### Bloqueantes\n${analysis.blockers.map((b: string) => `- ${b}`).join("\n")}`
+          : "";
+
+        const techText = analysis.techSummary
+          ? `\n\n### Stack Técnico\n${analysis.techSummary}${analysis.techRecommendations ? `\n\n**Recomendaciones:** ${analysis.techRecommendations}` : ""}`
+          : "";
+
         await prisma.note.create({
           data: {
-            title: "Análisis IA - Importación desde Drive",
-            content: `## Análisis del proyecto\n\n${analysis.insights}\n\n---\n\n**Archivos analizados:** ${extractedContents.length}\n**Carpeta origen:** ${folderName || folderId}`,
+            title: `Análisis IA - ${analysis.title || folderName}`,
+            content: `## Análisis del proyecto\n\n${analysis.insights}${nextActionsText}${blockersText}${techText}\n\n---\n\n**Motor IA:** Gemini 1.5 Pro\n**Tipo de proyecto:** ${analysis.projectType}\n**Fase detectada:** ${analysis.currentPhase}\n**Confianza:** ${analysis.confidence || "medium"}\n**Archivos analizados:** ${extractedContents.length}\n**Carpeta origen:** ${folderName || folderId}`,
             category: "Análisis IA",
-            tags: ["importado", "análisis-ia", "google-drive"],
+            tags: ["importado", "análisis-ia", "google-drive", "gemini", analysis.projectType].filter(Boolean),
             userId,
             projectId: project.id
           }
@@ -437,7 +547,8 @@ export async function POST(request: NextRequest) {
       stats: {
         ...stats,
         filesAnalyzed: extractedContents.length,
-        filesExtracted: extractedContents.map(c => c.fileName)
+        filesExtracted: extractedContents.map(c => c.fileName),
+        aiEngine: "gemini-1.5-pro",
       }
     });
     
