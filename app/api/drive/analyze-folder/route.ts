@@ -5,7 +5,7 @@ import { prisma } from "@/lib/db";
 import { GoogleGenAI } from "@google/genai";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 120; // 2 minutos para procesar carpetas grandes
+export const maxDuration = 60; // Vercel function timeout
 
 // ============================================================
 // Gemini Client (reemplaza Anthropic Claude API)
@@ -299,23 +299,25 @@ async function extractFileContent(file: DriveFile, accessToken: string): Promise
   }
 }
 
-// Procesar archivos recursivamente
+// Procesar archivos en paralelo (antes: secuencial con for-loop)
 async function processFilesRecursively(files: DriveFile[], accessToken: string): Promise<ExtractedContent[]> {
-  const contents: ExtractedContent[] = [];
+  const promises: Promise<ExtractedContent | null>[] = [];
   
   for (const file of files) {
     if (file.mimeType === "application/vnd.google-apps.folder" && file.children) {
-      const childContents = await processFilesRecursively(file.children, accessToken);
-      contents.push(...childContents);
+      // Recursión para subcarpetas (se resuelve en paralelo también)
+      promises.push(
+        processFilesRecursively(file.children, accessToken).then(results => results as any)
+      );
     } else {
-      const extracted = await extractFileContent(file, accessToken);
-      if (extracted) {
-        contents.push(extracted);
-      }
+      promises.push(extractFileContent(file, accessToken));
     }
   }
   
-  return contents;
+  const results = await Promise.all(promises);
+  
+  // Aplanar resultados (subcarpetas devuelven arrays) y filtrar nulls
+  return results.flat().filter((r): r is ExtractedContent => r !== null);
 }
 
 // ============================================================
@@ -326,15 +328,15 @@ async function analyzeWithAI(contents: ExtractedContent[], folderName: string): 
     .map(c => `--- ${c.fileName} ---\n${c.content}`)
     .join("\n\n");
 
-  const userMessage = `Analiza el contenido de la carpeta "${folderName}" y extrae la información del proyecto según el framework PM Ágil:\n\n${combinedContent.slice(0, 50000)}`;
+  const userMessage = `Analiza el contenido de la carpeta "${folderName}" y extrae la información del proyecto según el framework PM Ágil:\n\n${combinedContent.slice(0, 30000)}`;
 
-  // Llamada a Gemini API (reemplaza Claude/Anthropic)
+  // Llamada a Gemini API — Flash para velocidad en importación
   const response = await gemini.models.generateContent({
-    model: "gemini-1.5-pro",
+    model: "gemini-1.5-flash",
     contents: userMessage,
     config: {
       systemInstruction: PM_AGIL_SYSTEM_PROMPT,
-      maxOutputTokens: 8000,
+      maxOutputTokens: 4000,
       temperature: 0.3,
       // Forzar output JSON nativo de Gemini
       responseMimeType: "application/json",
@@ -530,7 +532,7 @@ export async function POST(request: NextRequest) {
         await prisma.note.create({
           data: {
             title: `Análisis IA - ${analysis.title || folderName}`,
-            content: `## Análisis del proyecto\n\n${analysis.insights}${nextActionsText}${blockersText}${techText}\n\n---\n\n**Motor IA:** Gemini 1.5 Pro\n**Tipo de proyecto:** ${analysis.projectType}\n**Fase detectada:** ${analysis.currentPhase}\n**Confianza:** ${analysis.confidence || "medium"}\n**Archivos analizados:** ${extractedContents.length}\n**Carpeta origen:** ${folderName || folderId}`,
+            content: `## Análisis del proyecto\n\n${analysis.insights}${nextActionsText}${blockersText}${techText}\n\n---\n\n**Motor IA:** Gemini 1.5 Flash\n**Tipo de proyecto:** ${analysis.projectType}\n**Fase detectada:** ${analysis.currentPhase}\n**Confianza:** ${analysis.confidence || "medium"}\n**Archivos analizados:** ${extractedContents.length}\n**Carpeta origen:** ${folderName || folderId}`,
             category: "Análisis IA",
             tags: ["importado", "análisis-ia", "google-drive", "gemini", analysis.projectType].filter(Boolean),
             userId,
@@ -548,7 +550,7 @@ export async function POST(request: NextRequest) {
         ...stats,
         filesAnalyzed: extractedContents.length,
         filesExtracted: extractedContents.map(c => c.fileName),
-        aiEngine: "gemini-1.5-pro",
+        aiEngine: "gemini-1.5-flash",
       }
     });
     

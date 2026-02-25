@@ -1,0 +1,7 @@
+{
+  "functions": {
+    "app/api/drive/analyze-folder/route.ts": {
+      "maxDuration": 60
+    }
+  }
+}
