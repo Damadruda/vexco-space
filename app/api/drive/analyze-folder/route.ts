@@ -36,16 +36,13 @@ export async function POST(request: Request) {
       } catch { return ""; }
     }));
 
-    // 3. IA - Cambio de nombre de modelo para evitar Error 404
-    // Usamos 'gemini-1.5-flash-latest' que es el nombre más estable en la API v1beta
+    // 3. IA - Modelo corregido para evitar Error 404
     const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash-latest" });
-    
     const prompt = `Analiza estos textos y resume el proyecto "${folderName}" en una frase. Contenido: ${contents.join(" ").substring(0, 2000)}`;
-    
     const result = await model.generateContent(prompt);
     const summary = result.response.text();
 
-    // 4. Guardado Ultraseguro en Neon
+    // 4. Guardado en Neon (Campos básicos)
     const project = await prisma.project.create({
       data: {
         title: folderName,
@@ -59,41 +56,8 @@ export async function POST(request: Request) {
   } catch (error: any) {
     console.error("ERROR EN PRODUCCIÓN:", error.message);
     return NextResponse.json({ 
-      error: "Error en el modelo de IA", 
+      error: "Fallo en el servidor", 
       details: error.message 
     }, { status: 500 });
-  }
-}    }));
-
-    const filteredContent = contents.filter(c => c !== null);
-
-    // 3. IA con "Escudo Antierrores"
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
-    const prompt = `Analiza estos archivos del proyecto "${folderName}" y devuelve UNICAMENTE un JSON sin etiquetas markdown con: title, description, projectType (tech_product, service, commerce, content), currentPhase (idea, active, operational, completed), overallProgress (0-100). Contenido: ${JSON.stringify(filteredContent)}`;
-
-    const result = await model.generateContent(prompt);
-    const rawText = result.response.text();
-    
-    // LIMPIEZA QUIRÚRGICA: Elimina ```json y otras etiquetas que causan el Error 500
-    const cleanJson = rawText.replace(/```json/g, "").replace(/```/g, "").trim();
-    const analysis = JSON.parse(cleanJson);
-
-    // 4. Guardado robusto en Neon
-    const project = await prisma.project.create({
-      data: {
-        title: analysis.title || folderName,
-        description: analysis.description || "Importado desde Drive",
-        status: analysis.currentPhase || "idea",
-        projectType: analysis.projectType || "tech_product",
-        currentPhase: analysis.currentPhase || "idea",
-        overallProgress: analysis.overallProgress || 0,
-        userId: session.user.id,
-      }
-    });
-
-    return NextResponse.json({ success: true, project });
-  } catch (error: any) {
-    console.error("Fallo crítico:", error);
-    return NextResponse.json({ error: "Fallo en el servidor", details: error.message }, { status: 500 });
   }
 }
