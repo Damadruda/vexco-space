@@ -2,96 +2,432 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth-options";
 import { prisma } from "@/lib/db";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenerativeAI, Part } from "@google/generative-ai";
 
+// Initialize Gemini with the correct model identifier
+// NOTE: "gemini-1.5-flash" causes 404 on v1beta. Use "gemini-1.5-flash-latest" or "gemini-2.0-flash"
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
-export async function POST(request: Request) {
+// Configuration constants
+const CONFIG = {
+  // Model options (try in order if one fails)
+  GEMINI_MODELS: ["gemini-1.5-flash-latest", "gemini-2.0-flash-exp", "gemini-pro-vision"],
+  MAX_FILE_SIZE_MB: 10,
+  MAX_TEXT_LENGTH: 8000,
+  MAX_FILES_PER_BATCH: 20,
+  SUPPORTED_IMAGE_TYPES: ["image/jpeg", "image/png", "image/gif", "image/webp"],
+  SUPPORTED_TEXT_TYPES: [
+    "application/vnd.google-apps.document",
+    "application/vnd.google-apps.spreadsheet",
+    "text/plain",
+    "text/html",
+    "text/csv",
+    "application/json",
+    "application/pdf",
+  ],
+};
+
+interface DriveFile {
+  id: string;
+  name: string;
+  mimeType: string;
+  size?: string;
+}
+
+interface ProcessedFile {
+  name: string;
+  type: "image" | "text" | "skipped";
+  content?: Part;
+  error?: string;
+}
+
+interface FolderAnalysis {
+  totalFiles: number;
+  processedFiles: number;
+  images: number;
+  documents: number;
+  errors: string[];
+}
+
+/**
+ * Recursively scan all files in a Google Drive folder and its subfolders
+ */
+async function scanFolderRecursively(
+  folderId: string,
+  accessToken: string,
+  depth: number = 0,
+  maxDepth: number = 10
+): Promise<DriveFile[]> {
+  if (depth > maxDepth) {
+    console.log(`Max depth ${maxDepth} reached, stopping recursion`);
+    return [];
+  }
+
   try {
+    const query = encodeURIComponent(`'${folderId}' in parents and trashed=false`);
+    const fields = encodeURIComponent("files(id,name,mimeType,size)");
+    const url = `https://www.googleapis.com/drive/v3/files?q=${query}&fields=${fields}&pageSize=1000`;
+
+    const response = await fetch(url, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (!response.ok) {
+      console.error(`Failed to scan folder ${folderId}: ${response.status}`);
+      return [];
+    }
+
+    const data = await response.json();
+    const files: DriveFile[] = data.files || [];
+    let allFiles: DriveFile[] = [];
+
+    for (const file of files) {
+      if (file.mimeType === "application/vnd.google-apps.folder") {
+        // Recursively scan subfolders (subcarpetas)
+        const subFiles = await scanFolderRecursively(file.id, accessToken, depth + 1, maxDepth);
+        allFiles = allFiles.concat(subFiles);
+      } else {
+        allFiles.push(file);
+      }
+    }
+
+    return allFiles;
+  } catch (error: any) {
+    console.error(`Error scanning folder ${folderId}:`, error.message);
+    return [];
+  }
+}
+
+/**
+ * Download and convert image to Base64 for Gemini inlineData
+ */
+async function processImageFile(
+  file: DriveFile,
+  accessToken: string
+): Promise<ProcessedFile> {
+  try {
+    const fileSize = parseInt(file.size || "0");
+    if (fileSize > CONFIG.MAX_FILE_SIZE_MB * 1024 * 1024) {
+      return { name: file.name, type: "skipped", error: "File too large" };
+    }
+
+    const response = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+
+    if (!response.ok) {
+      return { name: file.name, type: "skipped", error: `HTTP ${response.status}` };
+    }
+
+    const buffer = await response.arrayBuffer();
+    const base64Data = Buffer.from(buffer).toString("base64");
+
+    return {
+      name: file.name,
+      type: "image",
+      content: {
+        inlineData: {
+          data: base64Data,
+          mimeType: file.mimeType,
+        },
+      },
+    };
+  } catch (error: any) {
+    return { name: file.name, type: "skipped", error: error.message };
+  }
+}
+
+/**
+ * Extract text content from documents (Google Docs, text files, etc.)
+ */
+async function processTextFile(
+  file: DriveFile,
+  accessToken: string
+): Promise<ProcessedFile> {
+  try {
+    let exportUrl: string;
+
+    // Google Workspace files need to be exported
+    if (file.mimeType.includes("google-apps")) {
+      if (file.mimeType.includes("spreadsheet")) {
+        exportUrl = `https://www.googleapis.com/drive/v3/files/${file.id}/export?mimeType=text/csv`;
+      } else {
+        exportUrl = `https://www.googleapis.com/drive/v3/files/${file.id}/export?mimeType=text/plain`;
+      }
+    } else {
+      exportUrl = `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`;
+    }
+
+    const response = await fetch(exportUrl, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    if (!response.ok) {
+      return { name: file.name, type: "skipped", error: `HTTP ${response.status}` };
+    }
+
+    let text = await response.text();
+    
+    // Truncate if too long
+    if (text.length > CONFIG.MAX_TEXT_LENGTH) {
+      text = text.substring(0, CONFIG.MAX_TEXT_LENGTH) + "\n[... contenido truncado ...]";
+    }
+
+    return {
+      name: file.name,
+      type: "text",
+      content: {
+        text: `\n--- Archivo: ${file.name} ---\n${text}\n`,
+      },
+    };
+  } catch (error: any) {
+    return { name: file.name, type: "skipped", error: error.message };
+  }
+}
+
+/**
+ * Process files in batches to handle large folders within timeout
+ */
+async function processFilesInBatches(
+  files: DriveFile[],
+  accessToken: string,
+  batchSize: number = CONFIG.MAX_FILES_PER_BATCH
+): Promise<{ parts: Part[]; analysis: FolderAnalysis }> {
+  const analysis: FolderAnalysis = {
+    totalFiles: files.length,
+    processedFiles: 0,
+    images: 0,
+    documents: 0,
+    errors: [],
+  };
+
+  const parts: Part[] = [];
+  
+  // Process in batches
+  for (let i = 0; i < files.length; i += batchSize) {
+    const batch = files.slice(i, i + batchSize);
+    
+    const batchResults = await Promise.all(
+      batch.map(async (file) => {
+        // Check if it's an image
+        if (CONFIG.SUPPORTED_IMAGE_TYPES.some((type) => file.mimeType.startsWith(type.split("/")[0]) && file.mimeType.includes(type.split("/")[1])) ||
+            file.mimeType.startsWith("image/")) {
+          return processImageFile(file, accessToken);
+        }
+        // Check if it's a text/document
+        else if (
+          CONFIG.SUPPORTED_TEXT_TYPES.some((type) => file.mimeType.includes(type.replace("application/vnd.", ""))) ||
+          file.mimeType.includes("document") ||
+          file.mimeType.includes("text") ||
+          file.mimeType.includes("spreadsheet")
+        ) {
+          return processTextFile(file, accessToken);
+        }
+        // Skip unsupported types
+        return { name: file.name, type: "skipped" as const, error: "Unsupported type" };
+      })
+    );
+
+    for (const result of batchResults) {
+      if (result.content) {
+        parts.push(result.content);
+        analysis.processedFiles++;
+        if (result.type === "image") analysis.images++;
+        if (result.type === "text") analysis.documents++;
+      }
+      if (result.error) {
+        analysis.errors.push(`${result.name}: ${result.error}`);
+      }
+    }
+
+    // Small delay between batches to avoid rate limiting
+    if (i + batchSize < files.length) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+    }
+  }
+
+  return { parts, analysis };
+}
+
+/**
+ * Try multiple Gemini models until one works
+ */
+async function generateWithFallback(
+  prompt: string,
+  parts: Part[]
+): Promise<string> {
+  let lastError: Error | null = null;
+
+  for (const modelName of CONFIG.GEMINI_MODELS) {
+    try {
+      console.log(`Trying Gemini model: ${modelName}`);
+      const model = genAI.getGenerativeModel({ model: modelName });
+      const result = await model.generateContent([prompt, ...parts]);
+      const response = result.response.text();
+      console.log(`Success with model: ${modelName}`);
+      return response;
+    } catch (error: any) {
+      console.error(`Model ${modelName} failed:`, error.message);
+      lastError = error;
+      continue;
+    }
+  }
+
+  throw lastError || new Error("All Gemini models failed");
+}
+
+export async function POST(request: Request) {
+  const startTime = Date.now();
+
+  try {
+    // 1. AUTH VALIDATION
     const session = await getServerSession(authOptions);
-    if (!session?.user?.id) return NextResponse.json({ error: "No session" }, { status: 401 });
+    if (!session?.user?.id) {
+      return NextResponse.json({ error: "No autorizado" }, { status: 401 });
+    }
 
     const account = await prisma.account.findFirst({
       where: { userId: session.user.id, provider: "google" },
     });
 
-    if (!account?.access_token) return NextResponse.json({ error: "No token" }, { status: 401 });
-
-    const { folderId, folderName } = await request.json();
-    const accessToken = account.access_token;
-
-    // 1. ESCANEO RECURSIVO (Sin límites de profundidad por ser Pro)
-    async function scanRecursive(id: string): Promise<any[]> {
-      const res = await fetch(`https://www.googleapis.com/drive/v3/files?q='${id}'+in+parents+and+trashed=false&fields=files(id,name,mimeType)`, {
-        headers: { Authorization: `Bearer ${accessToken}` }
-      });
-      const data = await res.json();
-      const files = data.files || [];
-      
-      let allFound: any[] = [];
-      for (const file of files) {
-        if (file.mimeType === 'application/vnd.google-apps.folder') {
-          allFound = allFound.concat(await scanRecursive(file.id));
-        } else {
-          allFound.push(file);
-        }
-      }
-      return allFound;
+    if (!account?.access_token) {
+      return NextResponse.json({ error: "Token de Google no encontrado" }, { status: 401 });
     }
 
-    const inventory = await scanRecursive(folderId);
-
-    // 2. PROCESAMIENTO MULTIMODAL
-    const promptsParts = await Promise.all(inventory.map(async (file) => {
-      try {
-        if (file.mimeType.startsWith('image/')) {
-          const res = await fetch(`https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`, {
-            headers: { Authorization: `Bearer ${accessToken}` }
-          });
-          const buffer = await res.arrayBuffer();
-          return {
-            inlineData: {
-              data: Buffer.from(buffer).toString("base64"),
-              mimeType: file.mimeType
-            }
-          };
-        } 
-        else if (file.mimeType.includes('document') || file.mimeType.includes('text') || file.mimeType.includes('pdf')) {
-          const exportUrl = file.mimeType.includes('google-apps') 
-            ? `https://www.googleapis.com/drive/v3/files/${file.id}/export?mimeType=text/plain`
-            : `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`;
-          
-          const res = await fetch(exportUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
-          const text = await res.text();
-          return { text: `Contenido del archivo ${file.name}: ${text.substring(0, 5000)}` };
-        }
-      } catch (e) { return null; }
-    }));
-
-    const finalParts = promptsParts.filter(p => p != null);
-
-    // 3. IA - MODELO CORREGIDO (gemini-1.5-flash es el alias estable)
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const { folderId, folderName } = await request.json();
     
-    const mainPrompt = `Analiza profundamente el proyecto "${folderName}" con todos los archivos adjuntos. Identifica objetivos, tendencias (si hay datos de redes sociales), y el progreso actual. Resume todo en un formato profesional para un Dashboard.`;
+    if (!folderId || !folderName) {
+      return NextResponse.json({ error: "folderId y folderName son requeridos" }, { status: 400 });
+    }
 
-    const result = await model.generateContent([mainPrompt, ...finalParts as any]);
-    const responseText = result.response.text();
+    const accessToken = account.access_token;
 
-    // 4. GUARDADO EN NEON
+    // 2. RECURSIVE FOLDER SCAN (subcarpetas)
+    console.log(`Starting recursive scan of folder: ${folderName} (${folderId})`);
+    const allFiles = await scanFolderRecursively(folderId, accessToken);
+    console.log(`Found ${allFiles.length} files in folder hierarchy`);
+
+    if (allFiles.length === 0) {
+      return NextResponse.json({ 
+        error: "La carpeta está vacía o no se pudo acceder" 
+      }, { status: 400 });
+    }
+
+    // 3. MULTIMODAL PROCESSING (Images → Base64, Docs → Text)
+    console.log("Processing files for multimodal analysis...");
+    const { parts, analysis } = await processFilesInBatches(allFiles, accessToken);
+    console.log(`Processed: ${analysis.processedFiles} files (${analysis.images} images, ${analysis.documents} documents)`);
+
+    if (parts.length === 0) {
+      return NextResponse.json({ 
+        error: "No se pudieron procesar archivos compatibles",
+        details: analysis.errors.slice(0, 10)
+      }, { status: 400 });
+    }
+
+    // 4. GEMINI AI ANALYSIS (with model fallback)
+    const analysisPrompt = `
+Eres un consultor de negocios experto. Analiza en profundidad el proyecto "${folderName}" usando todos los archivos proporcionados (imágenes y documentos).
+
+Tu análisis debe incluir las siguientes secciones en formato Markdown:
+
+## 📊 RESUMEN EJECUTIVO
+Un párrafo conciso describiendo el proyecto, su propósito y estado actual.
+
+## 🎯 OBJETIVOS Y CONCEPTO
+- Objetivo principal del proyecto
+- Concepto o idea central
+- Problema que resuelve
+
+## 📈 TENDENCIAS DE MERCADO
+- Análisis de tendencias relevantes (si hay datos de redes sociales, métricas, etc.)
+- Oportunidades identificadas
+- Competencia potencial
+
+## 🔧 ESTADO TÉCNICO
+- Progreso actual del desarrollo/implementación
+- Tecnologías o herramientas identificadas
+- Áreas que necesitan atención
+
+## 💡 RECOMENDACIONES
+- Próximos pasos sugeridos
+- Prioridades a considerar
+- Recursos potencialmente necesarios
+
+## 📋 MÉTRICAS CLAVE
+- KPIs identificados o sugeridos
+- Indicadores de éxito
+
+Archivos analizados: ${analysis.processedFiles} (${analysis.images} imágenes, ${analysis.documents} documentos)
+`;
+
+    console.log("Generating AI analysis with Gemini...");
+    const aiResponse = await generateWithFallback(analysisPrompt, parts);
+    console.log("AI analysis completed");
+
+    // 5. EXTRACT STRUCTURED DATA FROM ANALYSIS
+    // Parse sections from the AI response for framework fields
+    const extractSection = (text: string, sectionName: string): string => {
+      const regex = new RegExp(`##\\s*[^\\n]*${sectionName}[^\\n]*\\n([\\s\\S]*?)(?=##|$)`, "i");
+      const match = text.match(regex);
+      return match ? match[1].trim() : "";
+    };
+
+    const concept = extractSection(aiResponse, "OBJETIVOS|CONCEPTO");
+    const targetMarket = extractSection(aiResponse, "TENDENCIAS|MERCADO");
+    const metrics = extractSection(aiResponse, "MÉTRICAS|KPI");
+    const actionPlan = extractSection(aiResponse, "RECOMENDACIONES|PRÓXIMOS");
+
+    // 6. SAVE TO PROJECT TABLE (NEON DB)
+    console.log("Saving analysis to database...");
     const project = await prisma.project.create({
       data: {
         title: folderName,
-        description: responseText || "Análisis completado.",
+        description: aiResponse,
         status: "active",
+        projectType: "idea",
+        category: "Google Drive Import",
+        priority: "medium",
+        progress: 10,
         userId: session.user.id,
-      }
+        // Framework fields with extracted data
+        concept: concept || `Proyecto importado desde Google Drive: ${folderName}`,
+        targetMarket: targetMarket || null,
+        metrics: metrics || null,
+        actionPlan: actionPlan || null,
+        resources: `Archivos analizados: ${analysis.processedFiles}\nImágenes: ${analysis.images}\nDocumentos: ${analysis.documents}`,
+        currentStep: 1,
+      },
     });
 
-    return NextResponse.json({ success: true, project });
+    const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+    console.log(`Analysis completed in ${duration}s`);
+
+    return NextResponse.json({
+      success: true,
+      project,
+      stats: {
+        totalFiles: analysis.totalFiles,
+        processedFiles: analysis.processedFiles,
+        images: analysis.images,
+        documents: analysis.documents,
+        duration: `${duration}s`,
+        errors: analysis.errors.length > 0 ? analysis.errors.slice(0, 5) : undefined,
+      },
+    });
 
   } catch (error: any) {
-    console.error("Fallo final:", error.message);
-    return NextResponse.json({ error: "Error en el procesamiento", details: error.message }, { status: 500 });
+    const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+    console.error(`Analysis failed after ${duration}s:`, error);
+
+    return NextResponse.json(
+      {
+        error: "Error en el análisis del proyecto",
+        details: error.message,
+        duration: `${duration}s`,
+      },
+      { status: 500 }
+    );
   }
 }
