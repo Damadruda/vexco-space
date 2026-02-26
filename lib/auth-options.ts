@@ -9,19 +9,19 @@ const ALLOWED_DOMAIN = "vexandco.com";
 export const authOptions: NextAuthOptions = {
   adapter: PrismaAdapter(prisma),
   providers: [
-    GoogleProvider({
-      clientId: process.env.GOOGLE_CLIENT_ID!,
-      clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
-      authorization: {
-        params: {
-          prompt: "consent",
-          access_type: "offline",
-          response_type: "code",
-          hd: ALLOWED_DOMAIN,
-          scope: "openid email profile https://www.googleapis.com/auth/drive.readonly"
-        }
-      }
-    })
+  GoogleProvider({
+  clientId: process.env.GOOGLE_CLIENT_ID!,
+  clientSecret: process.env.GOOGLE_CLIENT_SECRET!,
+  authorization: {
+    params: {
+      // ESTA LÍNEA ES LA MÁS IMPORTANTE
+      scope: "openid https://www.googleapis.com/auth/userinfo.email https://www.googleapis.com/auth/userinfo.profile https://www.googleapis.com/auth/drive.readonly",
+      prompt: "consent",
+      access_type: "offline",
+      response_type: "code"
+    }
+  }
+})
   ],
   session: {
     strategy: "jwt"
