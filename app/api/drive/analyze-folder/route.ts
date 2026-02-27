@@ -22,6 +22,8 @@ const CONFIG = {
     "text/plain",
     "text/html",
     "text/csv",
+    "text/markdown",
+    "text/x-markdown",
     "application/json",
     "application/pdf",
   ],
@@ -215,12 +217,14 @@ async function processFilesInBatches(
             file.mimeType.startsWith("image/")) {
           return processImageFile(file, accessToken);
         }
-        // Check if it's a text/document
+        // Check if it's a text/document (including JSON, PDF, HTML, Markdown)
         else if (
-          CONFIG.SUPPORTED_TEXT_TYPES.some((type) => file.mimeType.includes(type.replace("application/vnd.", ""))) ||
+          CONFIG.SUPPORTED_TEXT_TYPES.some((type) => file.mimeType === type || file.mimeType.includes(type.replace("application/vnd.", ""))) ||
           file.mimeType.includes("document") ||
-          file.mimeType.includes("text") ||
-          file.mimeType.includes("spreadsheet")
+          file.mimeType.startsWith("text/") ||
+          file.mimeType.includes("spreadsheet") ||
+          file.mimeType === "application/json" ||
+          file.mimeType === "application/pdf"
         ) {
           return processTextFile(file, accessToken);
         }
@@ -328,7 +332,21 @@ export async function POST(request: Request) {
 
     // 4. GEMINI AI ANALYSIS (with model fallback)
     const analysisPrompt = `
-Eres un consultor de negocios experto. Analiza en profundidad el proyecto "${folderName}" usando todos los archivos proporcionados (imágenes y documentos).
+Eres un consultor de negocios experto. Analiza en profundidad el proyecto "${folderName}" usando todos los archivos proporcionados.
+
+IMPORTANTE: Recibirás archivos estructurados incluyendo:
+- JSON (datos de X/Twitter, APIs, configuraciones) - PRIORIZA extraer tendencias, métricas de engagement, y patrones de crecimiento
+- HTML (páginas web, emails, contenido)
+- Markdown (documentación, notas)
+- PDF (documentos, reportes)
+- Imágenes y Google Docs
+
+Si encuentras datos de X (Twitter) en archivos JSON, analiza especialmente:
+- Métricas de engagement (likes, retweets, replies)
+- Tendencias de crecimiento de seguidores
+- Hashtags y temas más mencionados
+- Horarios de publicación óptimos
+- Contenido de mejor rendimiento
 
 Tu análisis debe incluir las siguientes secciones en formato Markdown:
 
@@ -340,9 +358,10 @@ Un párrafo conciso describiendo el proyecto, su propósito y estado actual.
 - Concepto o idea central
 - Problema que resuelve
 
-## 📈 TENDENCIAS DE MERCADO
-- Análisis de tendencias relevantes (si hay datos de redes sociales, métricas, etc.)
-- Oportunidades identificadas
+## 📈 TENDENCIAS Y MÉTRICAS
+- Análisis de tendencias extraídas de los datos (JSON, métricas de redes sociales)
+- Si hay datos de X/Twitter: engagement rate, crecimiento, mejores posts
+- Oportunidades identificadas basadas en los datos
 - Competencia potencial
 
 ## 🔧 ESTADO TÉCNICO
@@ -351,13 +370,13 @@ Un párrafo conciso describiendo el proyecto, su propósito y estado actual.
 - Áreas que necesitan atención
 
 ## 💡 RECOMENDACIONES
-- Próximos pasos sugeridos
+- Próximos pasos sugeridos basados en los datos analizados
 - Prioridades a considerar
 - Recursos potencialmente necesarios
 
 ## 📋 MÉTRICAS CLAVE
-- KPIs identificados o sugeridos
-- Indicadores de éxito
+- KPIs extraídos de los datos o sugeridos
+- Indicadores de éxito cuantificables
 
 Archivos analizados: ${analysis.processedFiles} (${analysis.images} imágenes, ${analysis.documents} documentos)
 `;
