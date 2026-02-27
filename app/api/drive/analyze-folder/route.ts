@@ -393,6 +393,11 @@ export async function POST(request: Request) {
     }
 
     const accessToken = account.access_token;
+    
+    // TOKEN DEBUGGING - para verificar que el token está sincronizado correctamente
+    console.log('[TOKEN] Token preview (primeros 10 chars):', accessToken?.substring(0, 10));
+    console.log('[TOKEN] Token existe:', !!accessToken, ', Longitud:', accessToken?.length);
+    console.log('[TOKEN] Account expires_at:', account.expires_at, ', Ahora:', Math.floor(Date.now() / 1000));
 
     // 2. RECURSIVE FOLDER SCAN (subcarpetas)
     console.log(`\n${"=".repeat(60)}`);
