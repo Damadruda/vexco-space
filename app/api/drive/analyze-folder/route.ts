@@ -31,6 +31,8 @@ const CONFIG = {
   // File extensions to ALWAYS process as text (regardless of MIME type)
   // This handles Google Drive reporting .json/.md/.html as application/octet-stream
   TEXT_EXTENSIONS: [".json", ".md", ".html", ".pdf", ".txt", ".csv", ".markdown"],
+  // UX/UI Expert Mode folder ID
+  EXPERT_MODE_FOLDER_ID: "1ekDx8PsLfS2Dgn4C7qMTYRcx_yDti2Lh",
 };
 
 interface DriveFile {
@@ -53,6 +55,18 @@ interface FolderAnalysis {
   images: number;
   documents: number;
   errors: string[];
+}
+
+// Pattern/Tool interface for Expert Mode
+interface ExtractedPattern {
+  name: string;
+  description: string;
+  category: "VISUAL_PATTERN" | "TOOL_IMPLEMENTATION";
+  howToApply: string;
+  cssCode?: string;
+  installationCommand?: string;
+  docsUrl?: string;
+  sourceUrl: string;
 }
 
 /**
@@ -382,6 +396,105 @@ async function generateWithFallback(
   throw lastError || new Error("Todos los modelos de Gemini fallaron");
 }
 
+/**
+ * Validate extracted pattern has required fields based on category
+ */
+function validatePattern(pattern: ExtractedPattern): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
+  
+  // Common required fields
+  if (!pattern.name || pattern.name.trim() === "") {
+    errors.push("name is required");
+  }
+  if (!pattern.description || pattern.description.trim() === "") {
+    errors.push("description is required");
+  }
+  if (!pattern.category || !["VISUAL_PATTERN", "TOOL_IMPLEMENTATION"].includes(pattern.category)) {
+    errors.push("category must be VISUAL_PATTERN or TOOL_IMPLEMENTATION");
+  }
+  if (!pattern.sourceUrl || pattern.sourceUrl.trim() === "") {
+    errors.push("sourceUrl is required");
+  }
+  
+  // Category-specific validation
+  if (pattern.category === "VISUAL_PATTERN") {
+    if (!pattern.cssCode || pattern.cssCode.trim() === "") {
+      errors.push("cssCode is required for VISUAL_PATTERN");
+    }
+    if (!pattern.howToApply || pattern.howToApply.trim() === "") {
+      errors.push("howToApply is required for VISUAL_PATTERN");
+    }
+  }
+  
+  if (pattern.category === "TOOL_IMPLEMENTATION") {
+    if (!pattern.installationCommand || pattern.installationCommand.trim() === "") {
+      errors.push("installationCommand is required for TOOL_IMPLEMENTATION");
+    }
+    if (!pattern.docsUrl || pattern.docsUrl.trim() === "") {
+      errors.push("docsUrl is required for TOOL_IMPLEMENTATION");
+    }
+  }
+  
+  return { valid: errors.length === 0, errors };
+}
+
+/**
+ * Process patterns in Expert Mode - check duplicates and save to PatternCard
+ */
+async function processAndSavePatterns(
+  patterns: ExtractedPattern[],
+  projectId: string
+): Promise<{ saved: number; duplicates: number; invalid: number }> {
+  let saved = 0;
+  let duplicates = 0;
+  let invalid = 0;
+  
+  for (const pattern of patterns) {
+    // Validate pattern
+    const validation = validatePattern(pattern);
+    if (!validation.valid) {
+      console.log(`[INVALID] Patrón inválido "${pattern.name}":`, validation.errors.join(", "));
+      invalid++;
+      continue;
+    }
+    
+    // Check for duplicates by sourceUrl
+    const existingPattern = await prisma.patternCard.findFirst({
+      where: { sourceUrl: pattern.sourceUrl }
+    });
+    
+    if (existingPattern) {
+      console.log(`[DUPLICATE] Patrón ya existe: ${pattern.sourceUrl}`);
+      duplicates++;
+      continue;
+    }
+    
+    // Save new pattern
+    try {
+      await prisma.patternCard.create({
+        data: {
+          name: pattern.name,
+          description: pattern.description,
+          category: pattern.category,
+          howToApply: pattern.howToApply || null,
+          cssCode: pattern.cssCode || null,
+          installationCommand: pattern.installationCommand || null,
+          docsUrl: pattern.docsUrl || null,
+          sourceUrl: pattern.sourceUrl,
+          projectId: projectId,
+        }
+      });
+      console.log(`[PATTERN SAVED] ${pattern.name} (${pattern.category})`);
+      saved++;
+    } catch (error: any) {
+      console.error(`[SAVE ERROR] Error guardando patrón "${pattern.name}":`, error.message);
+      invalid++;
+    }
+  }
+  
+  return { saved, duplicates, invalid };
+}
+
 export async function POST(request: Request) {
   const startTime = Date.now();
   let requestFolderId: string | undefined;
@@ -415,6 +528,12 @@ export async function POST(request: Request) {
     console.log('[TOKEN] Token existe:', !!accessToken, ', Longitud:', accessToken?.length);
     console.log('[TOKEN] Account expires_at:', account.expires_at, ', Ahora:', Math.floor(Date.now() / 1000));
 
+    // EXPERT MODE DETECTION
+    const isExpertMode = folderId === CONFIG.EXPERT_MODE_FOLDER_ID;
+    if (isExpertMode) {
+      console.log('[EXPERT MODE] Activado: Motor de Extracción UX/UI');
+    }
+
     // 2. RECURSIVE FOLDER SCAN (subcarpetas)
     console.log(`\n${"=".repeat(60)}`);
     console.log(`[SCAN] Iniciando escaneo recursivo de: "${folderName}" (${folderId})`);
@@ -446,9 +565,116 @@ export async function POST(request: Request) {
       }, { status: 400 });
     }
 
-    // 4. GEMINI AI ANALYSIS (with model fallback)
-    // STRUCTURED JSON PROMPT: Request JSON output for reliable database persistence
-    const analysisPrompt = `Eres un Product Manager experto analizando el proyecto "${folderName}" para la plataforma VEXCO.
+    // 4. GEMINI AI ANALYSIS
+    let aiResponse: string;
+    let parsedResponse: any = {};
+    let patternsExtracted: ExtractedPattern[] = [];
+
+    if (isExpertMode) {
+      // EXPERT MODE PROMPT: Extract patterns and tools
+      const expertPrompt = `Eres un experto en UX/UI Design Systems analizando recursos del proyecto "${folderName}".
+
+Tienes acceso a ${analysis.processedFiles} archivos (${analysis.images} imágenes, ${analysis.documents} documentos).
+
+MISIÓN: Extraer TODOS los patrones de diseño visual y herramientas de implementación encontrados en estos archivos.
+
+INSTRUCCIONES CRÍTICAS:
+1. Tu respuesta DEBE ser ÚNICAMENTE un objeto JSON válido (sin markdown, sin \`\`\`json, sin texto adicional)
+2. Analiza TODOS los archivos buscando:
+   - Patrones visuales de UI (botones, cards, layouts, tipografía, colores, animaciones, etc.)
+   - Herramientas y librerías mencionadas (npm packages, frameworks, APIs)
+3. Si encuentras URLs externas en archivos .json o .md, infiere patrones de diseño de esos sitios basándote en tu conocimiento
+4. Para cada hallazgo, clasifica como VISUAL_PATTERN o TOOL_IMPLEMENTATION
+
+FORMATO DE RESPUESTA (JSON array):
+{
+  "patterns": [
+    {
+      "name": "Nombre descriptivo del patrón o herramienta",
+      "description": "Descripción detallada de qué es y para qué sirve",
+      "category": "VISUAL_PATTERN" | "TOOL_IMPLEMENTATION",
+      "howToApply": "Guía paso a paso de cómo aplicar este patrón (OBLIGATORIO para VISUAL_PATTERN)",
+      "cssCode": "/* Código CSS ejemplo */\\n.clase { ... } (OBLIGATORIO para VISUAL_PATTERN)",
+      "installationCommand": "npm install package-name (OBLIGATORIO para TOOL_IMPLEMENTATION)",
+      "docsUrl": "https://docs.example.com (OBLIGATORIO para TOOL_IMPLEMENTATION)",
+      "sourceUrl": "URL de origen o referencia única del archivo/sitio donde se encontró"
+    }
+  ]
+}
+
+REGLAS:
+- VISUAL_PATTERN DEBE tener: cssCode y howToApply
+- TOOL_IMPLEMENTATION DEBE tener: installationCommand y docsUrl
+- sourceUrl DEBE ser único para cada patrón (usa la URL del archivo o sitio de referencia)
+- Extrae el máximo de patrones posibles (mínimo 5, máximo 50)
+- Si un archivo .json o .md contiene URLs, analiza esas URLs y extrae patrones inferidos
+
+RESPONDE ÚNICAMENTE con el objeto JSON (sin texto antes o después):`;
+
+      console.log("🤖 [EXPERT MODE] Generando extracción de patrones UX/UI...");
+      aiResponse = await generateWithFallback(expertPrompt, parts);
+      console.log("✅ [EXPERT MODE] Extracción completada");
+
+      // Parse Expert Mode response
+      try {
+        let jsonString = aiResponse.trim();
+        if (jsonString.startsWith("```json")) {
+          jsonString = jsonString.replace(/^```json\s*/, "").replace(/\s*```$/, "");
+        } else if (jsonString.startsWith("```")) {
+          jsonString = jsonString.replace(/^```\s*/, "").replace(/\s*```$/, "");
+        }
+        
+        const parsed = JSON.parse(jsonString);
+        patternsExtracted = parsed.patterns || [];
+        console.log(`[EXPERT MODE] ${patternsExtracted.length} patrones extraídos del análisis`);
+      } catch (parseError: any) {
+        console.error("[EXPERT MODE] Error parseando patrones JSON:", parseError.message);
+        console.log("[EXPERT MODE] Respuesta (primeros 500 chars):", aiResponse.substring(0, 500));
+        patternsExtracted = [];
+      }
+
+      // Also generate standard PM analysis for the Project
+      const pmPrompt = `Eres un Product Manager experto analizando el proyecto "${folderName}" para la plataforma VEXCO.
+
+Tienes acceso a ${analysis.processedFiles} archivos del proyecto (${analysis.images} imágenes, ${analysis.documents} documentos).
+
+Este es un proyecto de RECURSOS UX/UI. Resume los recursos encontrados.
+
+INSTRUCCIONES CRÍTICAS:
+- Tu respuesta DEBE ser ÚNICAMENTE un objeto JSON válido (sin markdown, sin \`\`\`json, sin texto adicional)
+
+RESPONDE ÚNICAMENTE con este objeto JSON:
+
+{
+  "concept": "Descripción del tipo de recursos UX/UI encontrados. Máximo 2000 caracteres.",
+  "targetMarket": "Diseñadores y desarrolladores que buscan recursos de UI/UX. Máximo 2000 caracteres.",
+  "metrics": "Cantidad de patrones, herramientas, y categorías encontradas. Máximo 2000 caracteres.",
+  "actionPlan": "Cómo utilizar estos recursos en proyectos. Máximo 2000 caracteres.",
+  "resources": "Lista de las principales herramientas y recursos identificados. Máximo 2000 caracteres.",
+  "description": "Resumen ejecutivo de la colección de recursos UX/UI. Máximo 2000 caracteres."
+}`;
+
+      console.log("🤖 Generando análisis PM para Expert Mode...");
+      const pmResponse = await generateWithFallback(pmPrompt, parts);
+      
+      try {
+        let jsonString = pmResponse.trim();
+        if (jsonString.startsWith("```json")) {
+          jsonString = jsonString.replace(/^```json\s*/, "").replace(/\s*```$/, "");
+        } else if (jsonString.startsWith("```")) {
+          jsonString = jsonString.replace(/^```\s*/, "").replace(/\s*```$/, "");
+        }
+        parsedResponse = JSON.parse(jsonString);
+      } catch (e) {
+        parsedResponse = {
+          concept: `Colección de recursos UX/UI: ${folderName}`,
+          description: pmResponse.substring(0, 2000),
+        };
+      }
+
+    } else {
+      // STANDARD MODE: Original PM analysis prompt
+      const analysisPrompt = `Eres un Product Manager experto analizando el proyecto "${folderName}" para la plataforma VEXCO.
 
 Tienes acceso a ${analysis.processedFiles} archivos del proyecto (${analysis.images} imágenes, ${analysis.documents} documentos).
 
@@ -471,45 +697,29 @@ RESPONDE ÚNICAMENTE con este objeto JSON (sin texto antes o después):
   "description": "Resumen ejecutivo completo del análisis PM. Incluye modelo de negocio, propuesta de valor, y validación de mercado. Máximo 2000 caracteres."
 }`;
 
-    console.log("🤖 Generando análisis PM con Gemini AI (formato JSON estructurado)...");
-    const aiResponse = await generateWithFallback(analysisPrompt, parts);
-    console.log("✅ Análisis PM completado");
+      console.log("🤖 Generando análisis PM con Gemini AI (formato JSON estructurado)...");
+      aiResponse = await generateWithFallback(analysisPrompt, parts);
+      console.log("✅ Análisis PM completado");
 
-    // 5. PARSE JSON RESPONSE FROM AI
-    // Extract JSON from response (handle potential markdown code blocks)
-    let parsedResponse: {
-      concept?: string;
-      targetMarket?: string;
-      metrics?: string;
-      actionPlan?: string;
-      resources?: string;
-      description?: string;
-    } = {};
-
-    try {
-      // Try to extract JSON from the response
-      let jsonString = aiResponse.trim();
-      
-      // Remove markdown code blocks if present
-      if (jsonString.startsWith("```json")) {
-        jsonString = jsonString.replace(/^```json\s*/, "").replace(/\s*```$/, "");
-      } else if (jsonString.startsWith("```")) {
-        jsonString = jsonString.replace(/^```\s*/, "").replace(/\s*```$/, "");
+      // Parse standard response
+      try {
+        let jsonString = aiResponse.trim();
+        if (jsonString.startsWith("```json")) {
+          jsonString = jsonString.replace(/^```json\s*/, "").replace(/\s*```$/, "");
+        } else if (jsonString.startsWith("```")) {
+          jsonString = jsonString.replace(/^```\s*/, "").replace(/\s*```$/, "");
+        }
+        parsedResponse = JSON.parse(jsonString);
+        console.log("[JSON PARSER] ✅ JSON parseado correctamente");
+        console.log("[JSON PARSER] Campos recibidos:", Object.keys(parsedResponse).join(", "));
+      } catch (parseError: any) {
+        console.error("[JSON PARSER] ❌ Error parseando JSON:", parseError.message);
+        console.log("[JSON PARSER] Respuesta original (primeros 500 chars):", aiResponse.substring(0, 500));
+        parsedResponse = {
+          concept: `Proyecto importado desde Google Drive: ${folderName}`,
+          description: aiResponse,
+        };
       }
-      
-      // Parse the JSON
-      parsedResponse = JSON.parse(jsonString);
-      console.log("[JSON PARSER] ✅ JSON parseado correctamente");
-      console.log("[JSON PARSER] Campos recibidos:", Object.keys(parsedResponse).join(", "));
-    } catch (parseError: any) {
-      console.error("[JSON PARSER] ❌ Error parseando JSON:", parseError.message);
-      console.log("[JSON PARSER] Respuesta original (primeros 500 chars):", aiResponse.substring(0, 500));
-      
-      // Fallback: use raw response as description
-      parsedResponse = {
-        concept: `Proyecto importado desde Google Drive: ${folderName}`,
-        description: aiResponse,
-      };
     }
 
     // Truncate fields to prevent database errors (max 2000 chars each)
@@ -524,7 +734,7 @@ RESPONDE ÚNICAMENTE con este objeto JSON (sin texto antes o después):
     const metrics = truncate(parsedResponse.metrics);
     const actionPlan = truncate(parsedResponse.actionPlan);
     const resources = truncate(parsedResponse.resources) || `Archivos analizados: ${analysis.processedFiles}\nImágenes: ${analysis.images}\nDocumentos: ${analysis.documents}`;
-    const description = truncate(parsedResponse.description) || aiResponse.substring(0, 2000);
+    const description = truncate(parsedResponse.description) || (aiResponse ? aiResponse.substring(0, 2000) : "Análisis completado");
 
     console.log("[PM PARSER] Campos mapeados para DB:");
     console.log("  - concept:", concept?.length, "chars");
@@ -534,19 +744,18 @@ RESPONDE ÚNICAMENTE con este objeto JSON (sin texto antes o después):
     console.log("  - resources:", resources?.length || 0, "chars");
     console.log("  - description:", description?.length || 0, "chars");
 
-    // 6. SAVE TO PROJECT TABLE (NEON DB) - Structured JSON mapping
+    // 5. SAVE TO PROJECT TABLE (NEON DB) - Structured JSON mapping
     console.log("💾 Guardando análisis PM en base de datos...");
     const project = await prisma.project.create({
       data: {
         title: folderName,
-        description: description, // AI-generated executive summary
+        description: description,
         status: "active",
-        projectType: "idea",
-        category: "Google Drive Import",
+        projectType: isExpertMode ? "ux_resources" : "idea",
+        category: isExpertMode ? "UX/UI Resources" : "Google Drive Import",
         priority: "medium",
         progress: 10,
         userId: session.user.id,
-        // PM Framework fields - mapped from structured JSON response
         concept: concept,
         targetMarket: targetMarket,
         metrics: metrics,
@@ -556,12 +765,21 @@ RESPONDE ÚNICAMENTE con este objeto JSON (sin texto antes o después):
       },
     });
 
+    // 6. EXPERT MODE: Save patterns to PatternCard table
+    let patternStats = { saved: 0, duplicates: 0, invalid: 0 };
+    if (isExpertMode && patternsExtracted.length > 0) {
+      console.log(`\n[EXPERT MODE] Procesando ${patternsExtracted.length} patrones extraídos...`);
+      patternStats = await processAndSavePatterns(patternsExtracted, project.id);
+      console.log(`[EXPERT MODE] Resultado: ${patternStats.saved} guardados, ${patternStats.duplicates} duplicados, ${patternStats.invalid} inválidos`);
+    }
+
     const duration = ((Date.now() - startTime) / 1000).toFixed(2);
     console.log(`🏁 Análisis completado en ${duration}s`);
 
     return NextResponse.json({
       success: true,
       project,
+      expertMode: isExpertMode,
       stats: {
         totalFiles: analysis.totalFiles,
         processedFiles: analysis.processedFiles,
@@ -569,6 +787,14 @@ RESPONDE ÚNICAMENTE con este objeto JSON (sin texto antes o después):
         documents: analysis.documents,
         duration: `${duration}s`,
         errors: analysis.errors.length > 0 ? analysis.errors.slice(0, 5) : undefined,
+        ...(isExpertMode && {
+          patterns: {
+            extracted: patternsExtracted.length,
+            saved: patternStats.saved,
+            duplicates: patternStats.duplicates,
+            invalid: patternStats.invalid,
+          }
+        }),
       },
     });
 
