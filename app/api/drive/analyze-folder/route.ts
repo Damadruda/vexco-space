@@ -4,14 +4,14 @@ import { authOptions } from "@/lib/auth-options";
 import { prisma } from "@/lib/db";
 import { GoogleGenerativeAI, Part } from "@google/generative-ai";
 
-// Initialize Gemini with the correct model identifier
-// NOTE: "gemini-1.5-flash" causes 404 on v1beta. Use "gemini-1.5-flash-latest" or "gemini-2.0-flash"
+// Initialize Gemini
 const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 
 // Configuration constants
 const CONFIG = {
-  // Model options (try in order if one fails)
-  GEMINI_MODELS: ["gemini-1.5-flash-latest", "gemini-2.0-flash-exp", "gemini-pro-vision"],
+  // Model options optimized for large file processing (try in order if one fails)
+  // Priority: gemini-1.5-pro (large context), gemini-1.5-flash (fast), gemini-pro (fallback)
+  GEMINI_MODELS: ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-pro"],
   MAX_FILE_SIZE_MB: 10,
   MAX_TEXT_LENGTH: 8000,
   MAX_FILES_PER_BATCH: 20,
@@ -341,6 +341,7 @@ async function processFilesInBatches(
 
 /**
  * Try multiple Gemini models until one works
+ * Includes diagnostic logging and model availability check
  */
 async function generateWithFallback(
   prompt: string,
@@ -348,22 +349,36 @@ async function generateWithFallback(
 ): Promise<string> {
   let lastError: Error | null = null;
 
+  // DIAGNOSTIC: List available models before attempting analysis
+  try {
+    console.log('[GEMINI] Listando modelos disponibles...');
+    const modelList = await genAI.listModels();
+    const modelNames = [];
+    for await (const model of modelList) {
+      modelNames.push(model.name);
+    }
+    console.log('[GEMINI] Modelos disponibles:', modelNames.slice(0, 10).join(', '), modelNames.length > 10 ? `... (+${modelNames.length - 10} más)` : '');
+  } catch (listError: any) {
+    console.log('[GEMINI] No se pudo listar modelos (puede continuar):', listError.message);
+  }
+
+  // Try each configured model
   for (const modelName of CONFIG.GEMINI_MODELS) {
     try {
-      console.log(`Trying Gemini model: ${modelName}`);
+      console.log(`[GEMINI] Intentando modelo: ${modelName}`);
       const model = genAI.getGenerativeModel({ model: modelName });
       const result = await model.generateContent([prompt, ...parts]);
       const response = result.response.text();
-      console.log(`Success with model: ${modelName}`);
+      console.log(`[GEMINI] ✅ Éxito con modelo: ${modelName}`);
       return response;
     } catch (error: any) {
-      console.error(`Model ${modelName} failed:`, error.message);
+      console.log(`[GEMINI] Error con modelo: ${modelName}`, error.message);
       lastError = error;
       continue;
     }
   }
 
-  throw lastError || new Error("All Gemini models failed");
+  throw lastError || new Error("Todos los modelos de Gemini fallaron");
 }
 
 export async function POST(request: Request) {
@@ -431,55 +446,31 @@ export async function POST(request: Request) {
     }
 
     // 4. GEMINI AI ANALYSIS (with model fallback)
-    const analysisPrompt = `
-Eres un consultor de negocios experto. Analiza en profundidad el proyecto "${folderName}" usando todos los archivos proporcionados.
+    // OPTIMIZED PROMPT: Concise to handle 66+ files within context window
+    const analysisPrompt = `Analiza el proyecto "${folderName}" (${analysis.processedFiles} archivos: ${analysis.images} imágenes, ${analysis.documents} documentos).
 
-IMPORTANTE: Recibirás archivos estructurados incluyendo:
-- JSON (datos de X/Twitter, APIs, configuraciones) - PRIORIZA extraer tendencias, métricas de engagement, y patrones de crecimiento
-- HTML (páginas web, emails, contenido)
-- Markdown (documentación, notas)
-- PDF (documentos, reportes)
-- Imágenes y Google Docs
-
-Si encuentras datos de X (Twitter) en archivos JSON, analiza especialmente:
-- Métricas de engagement (likes, retweets, replies)
-- Tendencias de crecimiento de seguidores
-- Hashtags y temas más mencionados
-- Horarios de publicación óptimos
-- Contenido de mejor rendimiento
-
-Tu análisis debe incluir las siguientes secciones en formato Markdown:
+Responde en Markdown con estas secciones:
 
 ## 📊 RESUMEN EJECUTIVO
-Un párrafo conciso describiendo el proyecto, su propósito y estado actual.
+Párrafo conciso: propósito, estado actual del proyecto.
 
 ## 🎯 OBJETIVOS Y CONCEPTO
-- Objetivo principal del proyecto
-- Concepto o idea central
+- Objetivo principal
 - Problema que resuelve
 
 ## 📈 TENDENCIAS Y MÉTRICAS
-- Análisis de tendencias extraídas de los datos (JSON, métricas de redes sociales)
-- Si hay datos de X/Twitter: engagement rate, crecimiento, mejores posts
-- Oportunidades identificadas basadas en los datos
-- Competencia potencial
+- Datos clave extraídos (engagement, crecimiento, patrones)
+- Si hay datos de X/Twitter: mejores posts, hashtags, horarios óptimos
 
 ## 🔧 ESTADO TÉCNICO
-- Progreso actual del desarrollo/implementación
-- Tecnologías o herramientas identificadas
-- Áreas que necesitan atención
+- Progreso actual
+- Tecnologías identificadas
 
 ## 💡 RECOMENDACIONES
-- Próximos pasos sugeridos basados en los datos analizados
-- Prioridades a considerar
-- Recursos potencialmente necesarios
+- 3-5 próximos pasos prioritarios
 
 ## 📋 MÉTRICAS CLAVE
-- KPIs extraídos de los datos o sugeridos
-- Indicadores de éxito cuantificables
-
-Archivos analizados: ${analysis.processedFiles} (${analysis.images} imágenes, ${analysis.documents} documentos)
-`;
+- KPIs principales (cuantificables)`;
 
     console.log("🤖 Generando análisis con Gemini AI...");
     const aiResponse = await generateWithFallback(analysisPrompt, parts);
