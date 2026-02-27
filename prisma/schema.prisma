@@ -1,3 +1,13 @@
+// =============================================================================
+// VEXCO-SPACE DATABASE SCHEMA
+// Strategic Intelligence Engine with INVEST Validation System
+// =============================================================================
+// QA AUDIT NOTES:
+// - ProjectStatus enum: Traffic light system for concept validation stages
+// - ConceptInsight: Stores Q&A pairs from Gemini INVEST analysis
+// - Project relations: conceptInsights for validation tracking
+// =============================================================================
+
 generator client {
     provider = "prisma-client-js"
 }
@@ -6,6 +16,11 @@ datasource db {
     provider = "postgresql"
     url      = env("DATABASE_URL")
 }
+
+// =============================================================================
+// USER & AUTHENTICATION MODELS
+// QA: Standard NextAuth.js integration with Google SSO
+// =============================================================================
 
 model User {
   id            String    @id @default(cuid())
@@ -63,6 +78,52 @@ model VerificationToken {
   @@unique([identifier, token])
 }
 
+// =============================================================================
+// STRATEGIC INTELLIGENCE ENGINE - PROJECT STATUS ENUM
+// QA: Traffic light system for validation stages
+// - RED: Not validated, requires attention
+// - YELLOW: In progress, pending validation
+// - GREEN: Validated, ready to proceed
+// =============================================================================
+
+enum ProjectStatus {
+  RED
+  YELLOW
+  GREEN
+}
+
+// =============================================================================
+// STRATEGIC INTELLIGENCE ENGINE - CONCEPT INSIGHT MODEL
+// QA: Stores INVEST validation Q&A pairs from Gemini analysis
+// - question: Gemini-generated question based on INVEST gaps
+// - answer: User's response to the question
+// - stage: Which validation stage (Concepto, Mercado, Negocio, Ejecución)
+// =============================================================================
+
+model ConceptInsight {
+  id        String   @id @default(cuid())
+  projectId String
+  question  String   @db.Text
+  answer    String?  @db.Text
+  stage     String   // Concepto, Mercado, Negocio, Ejecución
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([stage])
+}
+
+// =============================================================================
+// CORE PROJECT MODEL
+// QA: Enhanced with Strategic Intelligence Engine fields
+// - startDate/endDate: Agile sprint tracking (red highlight if overdue)
+// - conceptStatus: Traffic light for Concepto stage
+// - marketStatus: Traffic light for Mercado stage
+// - businessStatus: Traffic light for Negocio stage
+// - executionStatus: Traffic light for Ejecución stage
+// =============================================================================
+
 model Project {
   id          String   @id @default(cuid())
   title       String
@@ -79,7 +140,19 @@ model Project {
   userId      String
   user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  // Framework fields
+  // Strategic Intelligence Engine - Timeline
+  // QA: startDate/endDate for agile metrics, red if currentDate > endDate
+  startDate   DateTime?
+  endDate     DateTime?
+
+  // Strategic Intelligence Engine - 4-Stage Traffic Light System
+  // QA: Each stage must be GREEN before proceeding to next
+  conceptStatus   ProjectStatus @default(RED)   // Stage 1: Concepto
+  marketStatus    ProjectStatus @default(RED)   // Stage 2: Mercado
+  businessStatus  ProjectStatus @default(RED)   // Stage 3: Negocio
+  executionStatus ProjectStatus @default(RED)   // Stage 4: Ejecución
+
+  // Framework fields (legacy)
   concept         String? @db.Text // Step 1
   problemSolved   String? @db.Text
   targetMarket    String? @db.Text // Step 2
@@ -92,25 +165,31 @@ model Project {
   metrics         String? @db.Text
   currentStep     Int     @default(1) // 1-5
 
-  ideas          Idea[]
-  notes          Note[]
-  links          Link[]
-  images         Image[]
-  milestoneItems Milestone[]
-  patternCards   PatternCard[]
+  // Relations
+  ideas           Idea[]
+  notes           Note[]
+  links           Link[]
+  images          Image[]
+  milestoneItems  Milestone[]
+  patternCards    PatternCard[]
+  conceptInsights ConceptInsight[] // Strategic Intelligence Engine Q&A
 
   @@index([userId])
   @@index([status])
   @@index([projectType])
+  @@index([conceptStatus])
 }
 
-// Global Design Engine - Pattern Categories
+// =============================================================================
+// GLOBAL DESIGN ENGINE - PATTERN SYSTEM
+// QA: Extracts UX/UI patterns from Drive folders
+// =============================================================================
+
 enum PatternCategory {
   VISUAL_PATTERN
   TOOL_IMPLEMENTATION
 }
 
-// Global Design Engine - Pattern Card
 model PatternCard {
   id                  String          @id @default(cuid())
   name                String
@@ -129,6 +208,10 @@ model PatternCard {
   @@index([projectId])
   @@index([category])
 }
+
+// =============================================================================
+// SUPPORTING MODELS
+// =============================================================================
 
 model Milestone {
   id          String   @id @default(cuid())
