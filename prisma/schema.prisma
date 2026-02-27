@@ -97,10 +97,37 @@ model Project {
   links          Link[]
   images         Image[]
   milestoneItems Milestone[]
+  patternCards   PatternCard[]
 
   @@index([userId])
   @@index([status])
   @@index([projectType])
+}
+
+// Global Design Engine - Pattern Categories
+enum PatternCategory {
+  VISUAL_PATTERN
+  TOOL_IMPLEMENTATION
+}
+
+// Global Design Engine - Pattern Card
+model PatternCard {
+  id                  String          @id @default(cuid())
+  name                String
+  description         String          @db.Text
+  category            PatternCategory
+  howToApply          String          @db.Text
+  cssCode             String?         @db.Text
+  installationCommand String?
+  docsUrl             String?
+  sourceUrl           String?
+  projectId           String?
+  project             Project?        @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdAt           DateTime        @default(now())
+  updatedAt           DateTime        @updatedAt
+
+  @@index([projectId])
+  @@index([category])
 }
 
 model Milestone {
