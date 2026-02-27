@@ -27,7 +27,8 @@ const CONFIG = {
     "application/json",
     "application/pdf",
   ],
-  // File extensions to process as text (regardless of MIME type)
+  // File extensions to ALWAYS process as text (regardless of MIME type)
+  // This handles Google Drive reporting .json/.md/.html as application/octet-stream
   TEXT_EXTENSIONS: [".json", ".md", ".html", ".pdf", ".txt", ".csv", ".markdown"],
 };
 
@@ -55,7 +56,8 @@ interface FolderAnalysis {
 
 /**
  * Helper function to check if a file should be processed as text based on extension
- * This handles cases where Google Drive reports .json, .md, .html as text/plain or application/octet-stream
+ * CRITICAL: This handles cases where Google Drive reports .json, .md, .html as 
+ * text/plain or application/octet-stream - we ALWAYS process these by extension
  */
 function isTextFileByExtension(filename: string): boolean {
   const lowerName = filename.toLowerCase();
@@ -73,6 +75,7 @@ function isImageFileByExtension(filename: string): boolean {
 
 /**
  * Recursively scan all files in a Google Drive folder and its subfolders
+ * Query explicitly does NOT filter by mimeType to ensure both files AND folders are returned
  */
 async function scanFolderRecursively(
   folderId: string,
@@ -81,53 +84,49 @@ async function scanFolderRecursively(
   maxDepth: number = 10,
   folderName: string = "root"
 ): Promise<DriveFile[]> {
-  // DEBUG: Log current folder being scanned
-  console.log(`\n📂 [Depth ${depth}] Scanning folder: "${folderName}" (ID: ${folderId})`);
+  // TELEMETRY: Log entry into folder with specified format
+  console.log('[SCAN] Entrando en carpeta:', folderName, '(ID:', folderId, ', Profundidad:', depth, ')');
   
   if (depth > maxDepth) {
-    console.log(`⚠️ Max depth ${maxDepth} reached, stopping recursion`);
+    console.log(`[SCAN] Profundidad máxima ${maxDepth} alcanzada, deteniendo recursión`);
     return [];
   }
 
   try {
-    // Query explicitly does NOT filter by mimeType - we want ALL items (files AND folders)
+    // CRITICAL: Query does NOT filter by mimeType - returns ALL items including folders
+    // The query 'folderId' in parents and trashed=false returns:
+    // - Files (any mimeType except folders)
+    // - Folders (mimeType = 'application/vnd.google-apps.folder')
     const query = encodeURIComponent(`'${folderId}' in parents and trashed=false`);
     const fields = encodeURIComponent("files(id,name,mimeType,size)");
     const url = `https://www.googleapis.com/drive/v3/files?q=${query}&fields=${fields}&pageSize=1000`;
-
-    console.log(`   🔍 Query: '${folderId}' in parents and trashed=false`);
 
     const response = await fetch(url, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
 
     if (!response.ok) {
-      console.error(`   ❌ Failed to scan folder ${folderId}: ${response.status}`);
+      console.error(`[SCAN] Error al escanear carpeta ${folderId}: HTTP ${response.status}`);
       return [];
     }
 
     const data = await response.json();
     const items: DriveFile[] = data.files || [];
     
-    // DEBUG: Separate folders and files for logging
+    // Separate folders (mimeType = 'application/vnd.google-apps.folder') from files
     const folders = items.filter(item => item.mimeType === "application/vnd.google-apps.folder");
     const files = items.filter(item => item.mimeType !== "application/vnd.google-apps.folder");
     
-    console.log(`   📊 Found ${items.length} items total: ${folders.length} folders, ${files.length} files`);
+    console.log(`[SCAN] Encontrados: ${items.length} items (${folders.length} carpetas, ${files.length} archivos)`);
     
-    // DEBUG: Log folder names found
+    // TELEMETRY: Log each file found with specified format
+    files.forEach(file => {
+      console.log('[FOUND] Archivo detectado:', file.name, '(', file.mimeType, ')');
+    });
+    
+    // Log subfolder names if any
     if (folders.length > 0) {
-      console.log(`   📁 Subfolders: ${folders.map(f => f.name).join(", ")}`);
-    }
-    
-    // DEBUG: Log file names and MIME types
-    if (files.length > 0) {
-      console.log(`   📄 Files at this level:`);
-      files.forEach(file => {
-        const extMatch = isTextFileByExtension(file.name) ? " ✅(text by ext)" : 
-                        isImageFileByExtension(file.name) ? " ✅(image by ext)" : "";
-        console.log(`      - "${file.name}" [${file.mimeType}]${extMatch}`);
-      });
+      console.log(`[SCAN] Subcarpetas encontradas: ${folders.map(f => f.name).join(", ")}`);
     }
 
     let allFiles: DriveFile[] = [];
@@ -137,9 +136,8 @@ async function scanFolderRecursively(
       allFiles.push(file);
     }
 
-    // Then recursively scan all subfolders
+    // Then recursively scan all subfolders (mimeType = 'application/vnd.google-apps.folder')
     for (const folder of folders) {
-      console.log(`   ➡️ Entering subfolder: "${folder.name}"`);
       const subFiles = await scanFolderRecursively(
         folder.id, 
         accessToken, 
@@ -150,10 +148,10 @@ async function scanFolderRecursively(
       allFiles = allFiles.concat(subFiles);
     }
 
-    console.log(`   ✅ [Depth ${depth}] "${folderName}" total collected: ${allFiles.length} files`);
+    console.log(`[SCAN] Carpeta "${folderName}" completada: ${allFiles.length} archivos recolectados`);
     return allFiles;
   } catch (error: any) {
-    console.error(`   ❌ Error scanning folder ${folderId}:`, error.message);
+    console.error(`[SCAN] Error en carpeta ${folderId}:`, error.message);
     return [];
   }
 }
@@ -263,31 +261,44 @@ async function processFilesInBatches(
   };
 
   const parts: Part[] = [];
+  let totalProcessed = 0;
   
   // Process in batches
   for (let i = 0; i < files.length; i += batchSize) {
     const batch = files.slice(i, i + batchSize);
+    const currentBatchSize = batch.length;
+    
+    // TELEMETRY: Log batch processing start
+    console.log('[BATCH] Procesando lote de', currentBatchSize, 'archivos...');
     
     const batchResults = await Promise.all(
       batch.map(async (file) => {
-        // FIRST: Check by file extension (handles misreported MIME types)
+        // CRITICAL: Check by file extension FIRST (handles misreported MIME types)
+        // If filename ends in .json, .md, or .html, ALWAYS process as text
         const isTextByExt = isTextFileByExtension(file.name);
         const isImageByExt = isImageFileByExtension(file.name);
         
-        // Process as image if extension OR MIME type indicates image
-        if (isImageByExt || 
-            CONFIG.SUPPORTED_IMAGE_TYPES.some((type) => file.mimeType.startsWith(type.split("/")[0]) && file.mimeType.includes(type.split("/")[1])) ||
-            file.mimeType.startsWith("image/")) {
-          console.log(`   🖼️ Processing as IMAGE: "${file.name}" [${file.mimeType}]`);
-          return processImageFile(file, accessToken);
-        }
-        // Process as text if extension indicates text file (regardless of MIME type)
-        else if (isTextByExt) {
-          console.log(`   📝 Processing as TEXT (by extension): "${file.name}" [${file.mimeType}]`);
+        // PRIORITY 1: Extension-based detection for text files (.json, .md, .html)
+        // This OVERRIDES MIME type - even if Google reports application/octet-stream
+        if (isTextByExt) {
+          console.log('[OVERRIDE] Procesando por extensión:', file.name);
           return processTextFile(file, accessToken);
         }
-        // Check if MIME type indicates text/document
-        else if (
+        
+        // PRIORITY 2: Extension-based detection for images
+        if (isImageByExt) {
+          console.log('[OVERRIDE] Procesando por extensión:', file.name);
+          return processImageFile(file, accessToken);
+        }
+        
+        // PRIORITY 3: MIME type based detection for images
+        if (CONFIG.SUPPORTED_IMAGE_TYPES.some((type) => file.mimeType.startsWith(type.split("/")[0]) && file.mimeType.includes(type.split("/")[1])) ||
+            file.mimeType.startsWith("image/")) {
+          return processImageFile(file, accessToken);
+        }
+        
+        // PRIORITY 4: MIME type based detection for text/documents
+        if (
           CONFIG.SUPPORTED_TEXT_TYPES.some((type) => file.mimeType === type || file.mimeType.includes(type.replace("application/vnd.", ""))) ||
           file.mimeType.includes("document") ||
           file.mimeType.startsWith("text/") ||
@@ -295,11 +306,10 @@ async function processFilesInBatches(
           file.mimeType === "application/json" ||
           file.mimeType === "application/pdf"
         ) {
-          console.log(`   📝 Processing as TEXT (by MIME): "${file.name}" [${file.mimeType}]`);
           return processTextFile(file, accessToken);
         }
+        
         // Skip unsupported types
-        console.log(`   ⏭️ Skipping unsupported: "${file.name}" [${file.mimeType}]`);
         return { name: file.name, type: "skipped" as const, error: "Unsupported type" };
       })
     );
@@ -308,6 +318,7 @@ async function processFilesInBatches(
       if (result.content) {
         parts.push(result.content);
         analysis.processedFiles++;
+        totalProcessed++;
         if (result.type === "image") analysis.images++;
         if (result.type === "text") analysis.documents++;
       }
@@ -315,6 +326,9 @@ async function processFilesInBatches(
         analysis.errors.push(`${result.name}: ${result.error}`);
       }
     }
+
+    // TELEMETRY: Log batch completion with total processed count
+    console.log('[BATCH] Lote completado. Total procesado:', totalProcessed);
 
     // Small delay between batches to avoid rate limiting
     if (i + batchSize < files.length) {
@@ -354,6 +368,7 @@ async function generateWithFallback(
 
 export async function POST(request: Request) {
   const startTime = Date.now();
+  let requestFolderId: string | undefined;
 
   try {
     // 1. AUTH VALIDATION
@@ -371,6 +386,7 @@ export async function POST(request: Request) {
     }
 
     const { folderId, folderName } = await request.json();
+    requestFolderId = folderId;
     
     if (!folderId || !folderName) {
       return NextResponse.json({ error: "folderId y folderName son requeridos" }, { status: 400 });
@@ -380,29 +396,31 @@ export async function POST(request: Request) {
 
     // 2. RECURSIVE FOLDER SCAN (subcarpetas)
     console.log(`\n${"=".repeat(60)}`);
-    console.log(`🚀 Starting recursive scan of folder: "${folderName}" (${folderId})`);
+    console.log(`[SCAN] Iniciando escaneo recursivo de: "${folderName}" (${folderId})`);
     console.log(`${"=".repeat(60)}`);
     
     const allFiles = await scanFolderRecursively(folderId, accessToken, 0, 10, folderName);
     
     console.log(`\n${"=".repeat(60)}`);
-    console.log(`📊 SCAN COMPLETE: Found ${allFiles.length} total files in folder hierarchy`);
+    console.log(`[SCAN] ESCANEO COMPLETO: ${allFiles.length} archivos encontrados en toda la jerarquía`);
     console.log(`${"=".repeat(60)}\n`);
 
+    // ENHANCED ERROR: If no files found, include folder ID in error message
     if (allFiles.length === 0) {
       return NextResponse.json({ 
-        error: "La carpeta está vacía o no se pudo acceder" 
+        error: `La carpeta está vacía o no contiene archivos compatibles. Carpeta ID: ${folderId}` 
       }, { status: 400 });
     }
 
     // 3. MULTIMODAL PROCESSING (Images → Base64, Docs → Text)
-    console.log("📥 Processing files for multimodal analysis...");
+    console.log("[BATCH] Iniciando procesamiento multimodal...");
     const { parts, analysis } = await processFilesInBatches(allFiles, accessToken);
-    console.log(`\n✅ Processed: ${analysis.processedFiles} files (${analysis.images} images, ${analysis.documents} documents)`);
+    console.log(`\n[BATCH] Procesamiento completado: ${analysis.processedFiles} archivos (${analysis.images} imágenes, ${analysis.documents} documentos)`);
 
+    // ENHANCED ERROR: If no parts processed, include folder ID in error message
     if (parts.length === 0) {
       return NextResponse.json({ 
-        error: "No se pudieron procesar archivos compatibles",
+        error: `La carpeta está vacía o no contiene archivos compatibles. Carpeta ID: ${folderId}`,
         details: analysis.errors.slice(0, 10)
       }, { status: 400 });
     }
@@ -458,9 +476,9 @@ Un párrafo conciso describiendo el proyecto, su propósito y estado actual.
 Archivos analizados: ${analysis.processedFiles} (${analysis.images} imágenes, ${analysis.documents} documentos)
 `;
 
-    console.log("🤖 Generating AI analysis with Gemini...");
+    console.log("🤖 Generando análisis con Gemini AI...");
     const aiResponse = await generateWithFallback(analysisPrompt, parts);
-    console.log("✅ AI analysis completed");
+    console.log("✅ Análisis AI completado");
 
     // 5. EXTRACT STRUCTURED DATA FROM ANALYSIS
     // Parse sections from the AI response for framework fields
@@ -476,7 +494,7 @@ Archivos analizados: ${analysis.processedFiles} (${analysis.images} imágenes, $
     const actionPlan = extractSection(aiResponse, "RECOMENDACIONES|PRÓXIMOS");
 
     // 6. SAVE TO PROJECT TABLE (NEON DB)
-    console.log("💾 Saving analysis to database...");
+    console.log("💾 Guardando análisis en base de datos...");
     const project = await prisma.project.create({
       data: {
         title: folderName,
@@ -498,7 +516,7 @@ Archivos analizados: ${analysis.processedFiles} (${analysis.images} imágenes, $
     });
 
     const duration = ((Date.now() - startTime) / 1000).toFixed(2);
-    console.log(`🏁 Analysis completed in ${duration}s`);
+    console.log(`🏁 Análisis completado en ${duration}s`);
 
     return NextResponse.json({
       success: true,
@@ -515,12 +533,13 @@ Archivos analizados: ${analysis.processedFiles} (${analysis.images} imágenes, $
 
   } catch (error: any) {
     const duration = ((Date.now() - startTime) / 1000).toFixed(2);
-    console.error(`❌ Analysis failed after ${duration}s:`, error);
+    console.error(`❌ Análisis falló después de ${duration}s:`, error);
 
     return NextResponse.json(
       {
         error: "Error en el análisis del proyecto",
         details: error.message,
+        folderId: requestFolderId,
         duration: `${duration}s`,
       },
       { status: 500 }
