@@ -27,6 +27,8 @@ const CONFIG = {
     "application/json",
     "application/pdf",
   ],
+  // File extensions to process as text (regardless of MIME type)
+  TEXT_EXTENSIONS: [".json", ".md", ".html", ".pdf", ".txt", ".csv", ".markdown"],
 };
 
 interface DriveFile {
@@ -52,50 +54,106 @@ interface FolderAnalysis {
 }
 
 /**
+ * Helper function to check if a file should be processed as text based on extension
+ * This handles cases where Google Drive reports .json, .md, .html as text/plain or application/octet-stream
+ */
+function isTextFileByExtension(filename: string): boolean {
+  const lowerName = filename.toLowerCase();
+  return CONFIG.TEXT_EXTENSIONS.some(ext => lowerName.endsWith(ext));
+}
+
+/**
+ * Helper function to check if a file is an image based on extension
+ */
+function isImageFileByExtension(filename: string): boolean {
+  const imageExtensions = [".jpg", ".jpeg", ".png", ".gif", ".webp"];
+  const lowerName = filename.toLowerCase();
+  return imageExtensions.some(ext => lowerName.endsWith(ext));
+}
+
+/**
  * Recursively scan all files in a Google Drive folder and its subfolders
  */
 async function scanFolderRecursively(
   folderId: string,
   accessToken: string,
   depth: number = 0,
-  maxDepth: number = 10
+  maxDepth: number = 10,
+  folderName: string = "root"
 ): Promise<DriveFile[]> {
+  // DEBUG: Log current folder being scanned
+  console.log(`\n📂 [Depth ${depth}] Scanning folder: "${folderName}" (ID: ${folderId})`);
+  
   if (depth > maxDepth) {
-    console.log(`Max depth ${maxDepth} reached, stopping recursion`);
+    console.log(`⚠️ Max depth ${maxDepth} reached, stopping recursion`);
     return [];
   }
 
   try {
+    // Query explicitly does NOT filter by mimeType - we want ALL items (files AND folders)
     const query = encodeURIComponent(`'${folderId}' in parents and trashed=false`);
     const fields = encodeURIComponent("files(id,name,mimeType,size)");
     const url = `https://www.googleapis.com/drive/v3/files?q=${query}&fields=${fields}&pageSize=1000`;
+
+    console.log(`   🔍 Query: '${folderId}' in parents and trashed=false`);
 
     const response = await fetch(url, {
       headers: { Authorization: `Bearer ${accessToken}` },
     });
 
     if (!response.ok) {
-      console.error(`Failed to scan folder ${folderId}: ${response.status}`);
+      console.error(`   ❌ Failed to scan folder ${folderId}: ${response.status}`);
       return [];
     }
 
     const data = await response.json();
-    const files: DriveFile[] = data.files || [];
-    let allFiles: DriveFile[] = [];
-
-    for (const file of files) {
-      if (file.mimeType === "application/vnd.google-apps.folder") {
-        // Recursively scan subfolders (subcarpetas)
-        const subFiles = await scanFolderRecursively(file.id, accessToken, depth + 1, maxDepth);
-        allFiles = allFiles.concat(subFiles);
-      } else {
-        allFiles.push(file);
-      }
+    const items: DriveFile[] = data.files || [];
+    
+    // DEBUG: Separate folders and files for logging
+    const folders = items.filter(item => item.mimeType === "application/vnd.google-apps.folder");
+    const files = items.filter(item => item.mimeType !== "application/vnd.google-apps.folder");
+    
+    console.log(`   📊 Found ${items.length} items total: ${folders.length} folders, ${files.length} files`);
+    
+    // DEBUG: Log folder names found
+    if (folders.length > 0) {
+      console.log(`   📁 Subfolders: ${folders.map(f => f.name).join(", ")}`);
+    }
+    
+    // DEBUG: Log file names and MIME types
+    if (files.length > 0) {
+      console.log(`   📄 Files at this level:`);
+      files.forEach(file => {
+        const extMatch = isTextFileByExtension(file.name) ? " ✅(text by ext)" : 
+                        isImageFileByExtension(file.name) ? " ✅(image by ext)" : "";
+        console.log(`      - "${file.name}" [${file.mimeType}]${extMatch}`);
+      });
     }
 
+    let allFiles: DriveFile[] = [];
+
+    // First, add all non-folder files
+    for (const file of files) {
+      allFiles.push(file);
+    }
+
+    // Then recursively scan all subfolders
+    for (const folder of folders) {
+      console.log(`   ➡️ Entering subfolder: "${folder.name}"`);
+      const subFiles = await scanFolderRecursively(
+        folder.id, 
+        accessToken, 
+        depth + 1, 
+        maxDepth,
+        folder.name
+      );
+      allFiles = allFiles.concat(subFiles);
+    }
+
+    console.log(`   ✅ [Depth ${depth}] "${folderName}" total collected: ${allFiles.length} files`);
     return allFiles;
   } catch (error: any) {
-    console.error(`Error scanning folder ${folderId}:`, error.message);
+    console.error(`   ❌ Error scanning folder ${folderId}:`, error.message);
     return [];
   }
 }
@@ -212,12 +270,23 @@ async function processFilesInBatches(
     
     const batchResults = await Promise.all(
       batch.map(async (file) => {
-        // Check if it's an image
-        if (CONFIG.SUPPORTED_IMAGE_TYPES.some((type) => file.mimeType.startsWith(type.split("/")[0]) && file.mimeType.includes(type.split("/")[1])) ||
+        // FIRST: Check by file extension (handles misreported MIME types)
+        const isTextByExt = isTextFileByExtension(file.name);
+        const isImageByExt = isImageFileByExtension(file.name);
+        
+        // Process as image if extension OR MIME type indicates image
+        if (isImageByExt || 
+            CONFIG.SUPPORTED_IMAGE_TYPES.some((type) => file.mimeType.startsWith(type.split("/")[0]) && file.mimeType.includes(type.split("/")[1])) ||
             file.mimeType.startsWith("image/")) {
+          console.log(`   🖼️ Processing as IMAGE: "${file.name}" [${file.mimeType}]`);
           return processImageFile(file, accessToken);
         }
-        // Check if it's a text/document (including JSON, PDF, HTML, Markdown)
+        // Process as text if extension indicates text file (regardless of MIME type)
+        else if (isTextByExt) {
+          console.log(`   📝 Processing as TEXT (by extension): "${file.name}" [${file.mimeType}]`);
+          return processTextFile(file, accessToken);
+        }
+        // Check if MIME type indicates text/document
         else if (
           CONFIG.SUPPORTED_TEXT_TYPES.some((type) => file.mimeType === type || file.mimeType.includes(type.replace("application/vnd.", ""))) ||
           file.mimeType.includes("document") ||
@@ -226,9 +295,11 @@ async function processFilesInBatches(
           file.mimeType === "application/json" ||
           file.mimeType === "application/pdf"
         ) {
+          console.log(`   📝 Processing as TEXT (by MIME): "${file.name}" [${file.mimeType}]`);
           return processTextFile(file, accessToken);
         }
         // Skip unsupported types
+        console.log(`   ⏭️ Skipping unsupported: "${file.name}" [${file.mimeType}]`);
         return { name: file.name, type: "skipped" as const, error: "Unsupported type" };
       })
     );
@@ -308,9 +379,15 @@ export async function POST(request: Request) {
     const accessToken = account.access_token;
 
     // 2. RECURSIVE FOLDER SCAN (subcarpetas)
-    console.log(`Starting recursive scan of folder: ${folderName} (${folderId})`);
-    const allFiles = await scanFolderRecursively(folderId, accessToken);
-    console.log(`Found ${allFiles.length} files in folder hierarchy`);
+    console.log(`\n${"=".repeat(60)}`);
+    console.log(`🚀 Starting recursive scan of folder: "${folderName}" (${folderId})`);
+    console.log(`${"=".repeat(60)}`);
+    
+    const allFiles = await scanFolderRecursively(folderId, accessToken, 0, 10, folderName);
+    
+    console.log(`\n${"=".repeat(60)}`);
+    console.log(`📊 SCAN COMPLETE: Found ${allFiles.length} total files in folder hierarchy`);
+    console.log(`${"=".repeat(60)}\n`);
 
     if (allFiles.length === 0) {
       return NextResponse.json({ 
@@ -319,9 +396,9 @@ export async function POST(request: Request) {
     }
 
     // 3. MULTIMODAL PROCESSING (Images → Base64, Docs → Text)
-    console.log("Processing files for multimodal analysis...");
+    console.log("📥 Processing files for multimodal analysis...");
     const { parts, analysis } = await processFilesInBatches(allFiles, accessToken);
-    console.log(`Processed: ${analysis.processedFiles} files (${analysis.images} images, ${analysis.documents} documents)`);
+    console.log(`\n✅ Processed: ${analysis.processedFiles} files (${analysis.images} images, ${analysis.documents} documents)`);
 
     if (parts.length === 0) {
       return NextResponse.json({ 
@@ -381,9 +458,9 @@ Un párrafo conciso describiendo el proyecto, su propósito y estado actual.
 Archivos analizados: ${analysis.processedFiles} (${analysis.images} imágenes, ${analysis.documents} documentos)
 `;
 
-    console.log("Generating AI analysis with Gemini...");
+    console.log("🤖 Generating AI analysis with Gemini...");
     const aiResponse = await generateWithFallback(analysisPrompt, parts);
-    console.log("AI analysis completed");
+    console.log("✅ AI analysis completed");
 
     // 5. EXTRACT STRUCTURED DATA FROM ANALYSIS
     // Parse sections from the AI response for framework fields
@@ -399,7 +476,7 @@ Archivos analizados: ${analysis.processedFiles} (${analysis.images} imágenes, $
     const actionPlan = extractSection(aiResponse, "RECOMENDACIONES|PRÓXIMOS");
 
     // 6. SAVE TO PROJECT TABLE (NEON DB)
-    console.log("Saving analysis to database...");
+    console.log("💾 Saving analysis to database...");
     const project = await prisma.project.create({
       data: {
         title: folderName,
@@ -421,7 +498,7 @@ Archivos analizados: ${analysis.processedFiles} (${analysis.images} imágenes, $
     });
 
     const duration = ((Date.now() - startTime) / 1000).toFixed(2);
-    console.log(`Analysis completed in ${duration}s`);
+    console.log(`🏁 Analysis completed in ${duration}s`);
 
     return NextResponse.json({
       success: true,
@@ -438,7 +515,7 @@ Archivos analizados: ${analysis.processedFiles} (${analysis.images} imágenes, $
 
   } catch (error: any) {
     const duration = ((Date.now() - startTime) / 1000).toFixed(2);
-    console.error(`Analysis failed after ${duration}s:`, error);
+    console.error(`❌ Analysis failed after ${duration}s:`, error);
 
     return NextResponse.json(
       {
