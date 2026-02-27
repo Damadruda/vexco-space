@@ -11,7 +11,8 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 const CONFIG = {
   // Model options optimized for large file processing (try in order if one fails)
   // Priority: gemini-1.5-pro (large context), gemini-1.5-flash (fast), gemini-pro (fallback)
-  GEMINI_MODELS: ["gemini-1.5-pro", "gemini-1.5-flash", "gemini-pro"],
+  // CRITICAL: Models require "models/" prefix for Gemini API
+  GEMINI_MODELS: ["models/gemini-1.5-pro", "models/gemini-1.5-flash", "models/gemini-pro"],
   MAX_FILE_SIZE_MB: 10,
   MAX_TEXT_LENGTH: 8000,
   MAX_FILES_PER_BATCH: 20,
@@ -446,141 +447,111 @@ export async function POST(request: Request) {
     }
 
     // 4. GEMINI AI ANALYSIS (with model fallback)
-    // PM FRAMEWORK PROMPT: 4 mandatory sections for comprehensive project analysis
+    // STRUCTURED JSON PROMPT: Request JSON output for reliable database persistence
     const analysisPrompt = `Eres un Product Manager experto analizando el proyecto "${folderName}" para la plataforma VEXCO.
 
 Tienes acceso a ${analysis.processedFiles} archivos del proyecto (${analysis.images} imágenes, ${analysis.documents} documentos).
 
+IMPORTANTE: Con ${analysis.processedFiles} archivos, debes RESUMIR y SINTETIZAR la información. NO copies texto completo. Extrae insights clave, tendencias y métricas. Mantén cada campo conciso (máximo 2000 caracteres por campo).
+
 INSTRUCCIONES CRÍTICAS:
-- Analiza TODOS los archivos proporcionados, especialmente los JSON de Twitter/X para datos de engagement
-- Responde ÚNICAMENTE en el formato especificado con las 4 secciones obligatorias
-- Cada sección debe ser detallada y completa, no ahorres en análisis
+- Tu respuesta DEBE ser ÚNICAMENTE un objeto JSON válido (sin markdown, sin \`\`\`json, sin texto adicional)
+- El JSON debe poder ser parseado directamente con JSON.parse()
+- Analiza TODOS los archivos proporcionados
+- Para el campo "metrics", da PRIORIDAD ABSOLUTA a los datos de archivos .json de Twitter: engagement, impresiones, likes, retweets, alcance, crecimiento de seguidores, etc.
 
-RESPONDE EXACTAMENTE en este formato (usa estos marcadores exactos):
+RESPONDE ÚNICAMENTE con este objeto JSON (sin texto antes o después):
 
-[CONCEPTO]
-### Problema que Resuelve
-Describe el problema específico que este proyecto aborda. ¿Qué dolor o necesidad del usuario soluciona?
+{
+  "concept": "Descripción del concepto del proyecto. Incluye: problema que resuelve, solución propuesta, y diferenciadores clave. Máximo 2000 caracteres.",
+  "targetMarket": "Define el público objetivo: demografía, psicografía, tamaño estimado del mercado, y tendencias relevantes. Máximo 2000 caracteres.",
+  "metrics": "PRIORIDAD: Datos de Twitter/X JSON (engagement, impresiones, likes, retweets, seguidores, mejores posts, hashtags efectivos). Si no hay datos Twitter, incluye KPIs sugeridos. Máximo 2000 caracteres.",
+  "actionPlan": "Próximos pasos concretos: 1) Esta semana, 2) Este mes, 3) Este trimestre. Incluye timeline estimado. Máximo 2000 caracteres.",
+  "resources": "Recursos necesarios: técnicos (tecnologías), humanos (roles), financieros (estimación). Máximo 2000 caracteres.",
+  "description": "Resumen ejecutivo completo del análisis PM. Incluye modelo de negocio, propuesta de valor, y validación de mercado. Máximo 2000 caracteres."
+}`;
 
-### Solución Propuesta
-Explica la solución técnica y de producto. ¿Cómo resuelve el problema identificado?
-
-### Diferenciadores
-¿Qué hace único a este proyecto frente a alternativas existentes?
-
-[MERCADO]
-### Target Market
-Define el público objetivo con precisión:
-- Demografía (edad, ubicación, profesión)
-- Psicografía (intereses, comportamientos, necesidades)
-- Tamaño estimado del mercado
-
-### Validación de Mercado
-Evidencia de demanda basada en los datos analizados:
-- Si hay archivos JSON de Twitter/X: analiza engagement, followers, mejores posts, hashtags efectivos, horarios óptimos
-- Tendencias identificadas en el contenido
-- Señales de tracción o interés del mercado
-
-### Tendencias Relevantes
-Tendencias del mercado que apoyan este proyecto
-
-[NEGOCIO]
-### Modelo de Negocio
-¿Cómo generará ingresos este proyecto?
-- Fuentes de revenue (suscripciones, ads, transacciones, etc.)
-- Estrategia de monetización
-- Unit economics si es posible inferir
-
-### Propuesta de Valor
-Value proposition clara:
-- ¿Qué valor entrega al usuario?
-- ¿Por qué pagarían por esto?
-- Beneficios tangibles e intangibles
-
-[EJECUCIÓN]
-### Plan de Acción
-Próximos pasos concretos priorizados:
-1. Paso inmediato (esta semana)
-2. Paso corto plazo (este mes)
-3. Paso medio plazo (este trimestre)
-4-5. Pasos adicionales si aplica
-
-### Recursos Necesarios
-- Recursos técnicos (tecnologías, infraestructura)
-- Recursos humanos (roles necesarios)
-- Recursos financieros (estimación si es posible)
-- Timeline estimado
-
-### KPIs y Métricas
-Métricas clave para medir éxito:
-- Métricas de producto (engagement, retención)
-- Métricas de negocio (revenue, CAC, LTV)
-- Métricas de crecimiento`;
-
-    console.log("🤖 Generando análisis PM con Gemini AI...");
+    console.log("🤖 Generando análisis PM con Gemini AI (formato JSON estructurado)...");
     const aiResponse = await generateWithFallback(analysisPrompt, parts);
     console.log("✅ Análisis PM completado");
 
-    // 5. PARSE PM FRAMEWORK SECTIONS FROM AI RESPONSE
-    // Extract each section using the [SECTION] markers
-    const parsePMSection = (text: string, sectionTag: string): string => {
-      const regex = new RegExp(`\\[${sectionTag}\\]([\\s\\S]*?)(?=\\[(?:CONCEPTO|MERCADO|NEGOCIO|EJECUCIÓN)\\]|$)`, "i");
-      const match = text.match(regex);
-      return match ? match[1].trim() : "";
+    // 5. PARSE JSON RESPONSE FROM AI
+    // Extract JSON from response (handle potential markdown code blocks)
+    let parsedResponse: {
+      concept?: string;
+      targetMarket?: string;
+      metrics?: string;
+      actionPlan?: string;
+      resources?: string;
+      description?: string;
+    } = {};
+
+    try {
+      // Try to extract JSON from the response
+      let jsonString = aiResponse.trim();
+      
+      // Remove markdown code blocks if present
+      if (jsonString.startsWith("```json")) {
+        jsonString = jsonString.replace(/^```json\s*/, "").replace(/\s*```$/, "");
+      } else if (jsonString.startsWith("```")) {
+        jsonString = jsonString.replace(/^```\s*/, "").replace(/\s*```$/, "");
+      }
+      
+      // Parse the JSON
+      parsedResponse = JSON.parse(jsonString);
+      console.log("[JSON PARSER] ✅ JSON parseado correctamente");
+      console.log("[JSON PARSER] Campos recibidos:", Object.keys(parsedResponse).join(", "));
+    } catch (parseError: any) {
+      console.error("[JSON PARSER] ❌ Error parseando JSON:", parseError.message);
+      console.log("[JSON PARSER] Respuesta original (primeros 500 chars):", aiResponse.substring(0, 500));
+      
+      // Fallback: use raw response as description
+      parsedResponse = {
+        concept: `Proyecto importado desde Google Drive: ${folderName}`,
+        description: aiResponse,
+      };
+    }
+
+    // Truncate fields to prevent database errors (max 2000 chars each)
+    const truncate = (str: string | undefined, maxLen: number = 2000): string | null => {
+      if (!str) return null;
+      return str.length > maxLen ? str.substring(0, maxLen) + "..." : str;
     };
-
-    // Extract subsections from within a section
-    const extractSubsection = (sectionText: string, subsectionName: string): string => {
-      const regex = new RegExp(`###\\s*${subsectionName}[^\\n]*\\n([\\s\\S]*?)(?=###|$)`, "i");
-      const match = sectionText.match(regex);
-      return match ? match[1].trim() : "";
-    };
-
-    // Parse main sections
-    const conceptoSection = parsePMSection(aiResponse, "CONCEPTO");
-    const mercadoSection = parsePMSection(aiResponse, "MERCADO");
-    const negocioSection = parsePMSection(aiResponse, "NEGOCIO");
-    const ejecucionSection = parsePMSection(aiResponse, "EJECUCIÓN");
-
-    console.log("[PM PARSER] Secciones extraídas:");
-    console.log("  - CONCEPTO:", conceptoSection.length, "chars");
-    console.log("  - MERCADO:", mercadoSection.length, "chars");
-    console.log("  - NEGOCIO:", negocioSection.length, "chars");
-    console.log("  - EJECUCIÓN:", ejecucionSection.length, "chars");
 
     // Map to database fields
-    const concept = conceptoSection || `Proyecto importado desde Google Drive: ${folderName}`;
-    const problemSolved = extractSubsection(conceptoSection, "Problema que Resuelve");
-    const targetMarket = extractSubsection(mercadoSection, "Target Market");
-    const marketValidation = extractSubsection(mercadoSection, "Validación de Mercado");
-    const businessModel = extractSubsection(negocioSection, "Modelo de Negocio");
-    const valueProposition = extractSubsection(negocioSection, "Propuesta de Valor");
-    const actionPlan = extractSubsection(ejecucionSection, "Plan de Acción");
-    const resources = extractSubsection(ejecucionSection, "Recursos Necesarios");
-    const metrics = extractSubsection(ejecucionSection, "KPIs y Métricas");
+    const concept = truncate(parsedResponse.concept) || `Proyecto importado desde Google Drive: ${folderName}`;
+    const targetMarket = truncate(parsedResponse.targetMarket);
+    const metrics = truncate(parsedResponse.metrics);
+    const actionPlan = truncate(parsedResponse.actionPlan);
+    const resources = truncate(parsedResponse.resources) || `Archivos analizados: ${analysis.processedFiles}\nImágenes: ${analysis.images}\nDocumentos: ${analysis.documents}`;
+    const description = truncate(parsedResponse.description) || aiResponse.substring(0, 2000);
 
-    // 6. SAVE TO PROJECT TABLE (NEON DB) - Full PM Framework mapping
+    console.log("[PM PARSER] Campos mapeados para DB:");
+    console.log("  - concept:", concept?.length, "chars");
+    console.log("  - targetMarket:", targetMarket?.length || 0, "chars");
+    console.log("  - metrics:", metrics?.length || 0, "chars");
+    console.log("  - actionPlan:", actionPlan?.length || 0, "chars");
+    console.log("  - resources:", resources?.length || 0, "chars");
+    console.log("  - description:", description?.length || 0, "chars");
+
+    // 6. SAVE TO PROJECT TABLE (NEON DB) - Structured JSON mapping
     console.log("💾 Guardando análisis PM en base de datos...");
     const project = await prisma.project.create({
       data: {
         title: folderName,
-        description: aiResponse, // Full AI response with all sections
+        description: description, // AI-generated executive summary
         status: "active",
         projectType: "idea",
         category: "Google Drive Import",
         priority: "medium",
         progress: 10,
         userId: session.user.id,
-        // PM Framework fields - mapped from parsed sections
+        // PM Framework fields - mapped from structured JSON response
         concept: concept,
-        problemSolved: problemSolved || null,
-        targetMarket: targetMarket || null,
-        marketValidation: marketValidation || null,
-        businessModel: businessModel || null,
-        valueProposition: valueProposition || null,
-        actionPlan: actionPlan || null,
-        resources: resources || `Archivos analizados: ${analysis.processedFiles}\nImágenes: ${analysis.images}\nDocumentos: ${analysis.documents}`,
-        metrics: metrics || null,
+        targetMarket: targetMarket,
+        metrics: metrics,
+        actionPlan: actionPlan,
+        resources: resources,
         currentStep: 1,
       },
     });
