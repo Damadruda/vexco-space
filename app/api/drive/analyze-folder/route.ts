@@ -446,67 +446,141 @@ export async function POST(request: Request) {
     }
 
     // 4. GEMINI AI ANALYSIS (with model fallback)
-    // OPTIMIZED PROMPT: Concise to handle 66+ files within context window
-    const analysisPrompt = `Analiza el proyecto "${folderName}" (${analysis.processedFiles} archivos: ${analysis.images} imágenes, ${analysis.documents} documentos).
+    // PM FRAMEWORK PROMPT: 4 mandatory sections for comprehensive project analysis
+    const analysisPrompt = `Eres un Product Manager experto analizando el proyecto "${folderName}" para la plataforma VEXCO.
 
-Responde en Markdown con estas secciones:
+Tienes acceso a ${analysis.processedFiles} archivos del proyecto (${analysis.images} imágenes, ${analysis.documents} documentos).
 
-## 📊 RESUMEN EJECUTIVO
-Párrafo conciso: propósito, estado actual del proyecto.
+INSTRUCCIONES CRÍTICAS:
+- Analiza TODOS los archivos proporcionados, especialmente los JSON de Twitter/X para datos de engagement
+- Responde ÚNICAMENTE en el formato especificado con las 4 secciones obligatorias
+- Cada sección debe ser detallada y completa, no ahorres en análisis
 
-## 🎯 OBJETIVOS Y CONCEPTO
-- Objetivo principal
-- Problema que resuelve
+RESPONDE EXACTAMENTE en este formato (usa estos marcadores exactos):
 
-## 📈 TENDENCIAS Y MÉTRICAS
-- Datos clave extraídos (engagement, crecimiento, patrones)
-- Si hay datos de X/Twitter: mejores posts, hashtags, horarios óptimos
+[CONCEPTO]
+### Problema que Resuelve
+Describe el problema específico que este proyecto aborda. ¿Qué dolor o necesidad del usuario soluciona?
 
-## 🔧 ESTADO TÉCNICO
-- Progreso actual
-- Tecnologías identificadas
+### Solución Propuesta
+Explica la solución técnica y de producto. ¿Cómo resuelve el problema identificado?
 
-## 💡 RECOMENDACIONES
-- 3-5 próximos pasos prioritarios
+### Diferenciadores
+¿Qué hace único a este proyecto frente a alternativas existentes?
 
-## 📋 MÉTRICAS CLAVE
-- KPIs principales (cuantificables)`;
+[MERCADO]
+### Target Market
+Define el público objetivo con precisión:
+- Demografía (edad, ubicación, profesión)
+- Psicografía (intereses, comportamientos, necesidades)
+- Tamaño estimado del mercado
 
-    console.log("🤖 Generando análisis con Gemini AI...");
+### Validación de Mercado
+Evidencia de demanda basada en los datos analizados:
+- Si hay archivos JSON de Twitter/X: analiza engagement, followers, mejores posts, hashtags efectivos, horarios óptimos
+- Tendencias identificadas en el contenido
+- Señales de tracción o interés del mercado
+
+### Tendencias Relevantes
+Tendencias del mercado que apoyan este proyecto
+
+[NEGOCIO]
+### Modelo de Negocio
+¿Cómo generará ingresos este proyecto?
+- Fuentes de revenue (suscripciones, ads, transacciones, etc.)
+- Estrategia de monetización
+- Unit economics si es posible inferir
+
+### Propuesta de Valor
+Value proposition clara:
+- ¿Qué valor entrega al usuario?
+- ¿Por qué pagarían por esto?
+- Beneficios tangibles e intangibles
+
+[EJECUCIÓN]
+### Plan de Acción
+Próximos pasos concretos priorizados:
+1. Paso inmediato (esta semana)
+2. Paso corto plazo (este mes)
+3. Paso medio plazo (este trimestre)
+4-5. Pasos adicionales si aplica
+
+### Recursos Necesarios
+- Recursos técnicos (tecnologías, infraestructura)
+- Recursos humanos (roles necesarios)
+- Recursos financieros (estimación si es posible)
+- Timeline estimado
+
+### KPIs y Métricas
+Métricas clave para medir éxito:
+- Métricas de producto (engagement, retención)
+- Métricas de negocio (revenue, CAC, LTV)
+- Métricas de crecimiento`;
+
+    console.log("🤖 Generando análisis PM con Gemini AI...");
     const aiResponse = await generateWithFallback(analysisPrompt, parts);
-    console.log("✅ Análisis AI completado");
+    console.log("✅ Análisis PM completado");
 
-    // 5. EXTRACT STRUCTURED DATA FROM ANALYSIS
-    // Parse sections from the AI response for framework fields
-    const extractSection = (text: string, sectionName: string): string => {
-      const regex = new RegExp(`##\\s*[^\\n]*${sectionName}[^\\n]*\\n([\\s\\S]*?)(?=##|$)`, "i");
+    // 5. PARSE PM FRAMEWORK SECTIONS FROM AI RESPONSE
+    // Extract each section using the [SECTION] markers
+    const parsePMSection = (text: string, sectionTag: string): string => {
+      const regex = new RegExp(`\\[${sectionTag}\\]([\\s\\S]*?)(?=\\[(?:CONCEPTO|MERCADO|NEGOCIO|EJECUCIÓN)\\]|$)`, "i");
       const match = text.match(regex);
       return match ? match[1].trim() : "";
     };
 
-    const concept = extractSection(aiResponse, "OBJETIVOS|CONCEPTO");
-    const targetMarket = extractSection(aiResponse, "TENDENCIAS|MERCADO");
-    const metrics = extractSection(aiResponse, "MÉTRICAS|KPI");
-    const actionPlan = extractSection(aiResponse, "RECOMENDACIONES|PRÓXIMOS");
+    // Extract subsections from within a section
+    const extractSubsection = (sectionText: string, subsectionName: string): string => {
+      const regex = new RegExp(`###\\s*${subsectionName}[^\\n]*\\n([\\s\\S]*?)(?=###|$)`, "i");
+      const match = sectionText.match(regex);
+      return match ? match[1].trim() : "";
+    };
 
-    // 6. SAVE TO PROJECT TABLE (NEON DB)
-    console.log("💾 Guardando análisis en base de datos...");
+    // Parse main sections
+    const conceptoSection = parsePMSection(aiResponse, "CONCEPTO");
+    const mercadoSection = parsePMSection(aiResponse, "MERCADO");
+    const negocioSection = parsePMSection(aiResponse, "NEGOCIO");
+    const ejecucionSection = parsePMSection(aiResponse, "EJECUCIÓN");
+
+    console.log("[PM PARSER] Secciones extraídas:");
+    console.log("  - CONCEPTO:", conceptoSection.length, "chars");
+    console.log("  - MERCADO:", mercadoSection.length, "chars");
+    console.log("  - NEGOCIO:", negocioSection.length, "chars");
+    console.log("  - EJECUCIÓN:", ejecucionSection.length, "chars");
+
+    // Map to database fields
+    const concept = conceptoSection || `Proyecto importado desde Google Drive: ${folderName}`;
+    const problemSolved = extractSubsection(conceptoSection, "Problema que Resuelve");
+    const targetMarket = extractSubsection(mercadoSection, "Target Market");
+    const marketValidation = extractSubsection(mercadoSection, "Validación de Mercado");
+    const businessModel = extractSubsection(negocioSection, "Modelo de Negocio");
+    const valueProposition = extractSubsection(negocioSection, "Propuesta de Valor");
+    const actionPlan = extractSubsection(ejecucionSection, "Plan de Acción");
+    const resources = extractSubsection(ejecucionSection, "Recursos Necesarios");
+    const metrics = extractSubsection(ejecucionSection, "KPIs y Métricas");
+
+    // 6. SAVE TO PROJECT TABLE (NEON DB) - Full PM Framework mapping
+    console.log("💾 Guardando análisis PM en base de datos...");
     const project = await prisma.project.create({
       data: {
         title: folderName,
-        description: aiResponse,
+        description: aiResponse, // Full AI response with all sections
         status: "active",
         projectType: "idea",
         category: "Google Drive Import",
         priority: "medium",
         progress: 10,
         userId: session.user.id,
-        // Framework fields with extracted data
-        concept: concept || `Proyecto importado desde Google Drive: ${folderName}`,
+        // PM Framework fields - mapped from parsed sections
+        concept: concept,
+        problemSolved: problemSolved || null,
         targetMarket: targetMarket || null,
-        metrics: metrics || null,
+        marketValidation: marketValidation || null,
+        businessModel: businessModel || null,
+        valueProposition: valueProposition || null,
         actionPlan: actionPlan || null,
-        resources: `Archivos analizados: ${analysis.processedFiles}\nImágenes: ${analysis.images}\nDocumentos: ${analysis.documents}`,
+        resources: resources || `Archivos analizados: ${analysis.processedFiles}\nImágenes: ${analysis.images}\nDocumentos: ${analysis.documents}`,
+        metrics: metrics || null,
         currentStep: 1,
       },
     });
