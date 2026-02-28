@@ -101,17 +101,25 @@ enum ProjectStatus {
 // =============================================================================
 
 model ConceptInsight {
-  id        String   @id @default(cuid())
-  projectId String
-  question  String   @db.Text
-  answer    String?  @db.Text
-  stage     String   // Concepto, Mercado, Negocio, Ejecución
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-  project   Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id                String   @id @default(cuid())
+  projectId         String
+  question          String   @db.Text
+  answer            String?  @db.Text
+  stage             String   // Concepto, Mercado, Negocio, Ejecución
+  // Strategic PM Lab - Enhanced fields
+  userFeedback      String?  @db.Text  // User refinement request ("ajusta X")
+  aiSuggestion      String?  @db.Text  // AI's suggestion/draft
+  alternatives      String?  @db.Text  // JSON array of alternative paths
+  analysisType      String?  // consultation, validation, refinement, cascade
+  costBenefitAnalysis String? @db.Text // Cost/benefit analysis text
+  killSwitchReason  String?  @db.Text  // Reason if kill switch issued
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  project           Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId])
   @@index([stage])
+  @@index([analysisType])
 }
 
 // =============================================================================
@@ -213,18 +221,31 @@ model PatternCard {
 // SUPPORTING MODELS
 // =============================================================================
 
+// =============================================================================
+// MILESTONE MODEL - AI-CERTIFIED ACHIEVEMENT TRACKING
+// QA: Milestones are auto-generated and AI-certified (not manually marked)
+// - certifiedAt: Timestamp when AI audited and certified completion
+// - certificationReason: AI's explanation for certification
+// - projectType: SaaS, Product, Service - influences milestone templates
+// =============================================================================
+
 model Milestone {
-  id          String   @id @default(cuid())
-  title       String
-  description String?  @db.Text
-  isCompleted Boolean  @default(false)
-  order       Int      @default(0)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  projectId   String
-  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id                    String    @id @default(cuid())
+  title                 String
+  description           String?   @db.Text
+  projectType           String?   // SaaS, Product, Service
+  isCompleted           Boolean   @default(false)
+  isCertified           Boolean   @default(false)
+  certifiedAt           DateTime?
+  certificationReason   String?   @db.Text
+  order                 Int       @default(0)
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+  projectId             String
+  project               Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId])
+  @@index([isCertified])
 }
 
 model Idea {
