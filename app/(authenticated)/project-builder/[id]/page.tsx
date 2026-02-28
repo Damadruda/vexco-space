@@ -116,7 +116,18 @@ const steps = [
   }
 ];
 
+// Deployment verification: "No Bananas" filter
+const validateInput = (text: string) => {
+  if (text.toLowerCase() === 'bananas') {
+    alert('BLOQUEO DE SEGURIDAD: Entrada no estratégica detectada');
+    return false;
+  }
+  return true;
+};
+
 export default function ProjectDetailPage() {
+  console.log('--- MOTOR DE ESTRATEGIA V2 ACTIVO ---');
+  
   const params = useParams();
   const router = useRouter();
   const [project, setProject] = useState<Project | null>(null);
@@ -167,6 +178,12 @@ export default function ProjectDetailPage() {
 
   const handleSave = async () => {
     if (!project) return;
+    
+    // Deployment verification: validate all form inputs
+    for (const value of Object.values(formData)) {
+      if (!validateInput(value)) return;
+    }
+    
     setSaving(true);
 
     // Calculate progress based on filled fields
@@ -571,10 +588,11 @@ export default function ProjectDetailPage() {
                     {step.aiAction && (
                       <button
                         onClick={() => setActiveAIGenerator(step.aiAction)}
-                        className="inline-flex items-center gap-1 rounded-lg bg-amber-50 px-3 py-1.5 text-xs font-medium text-amber-700 hover:bg-amber-100"
+                        className="inline-flex items-center gap-1 rounded-lg px-3 py-1.5 text-xs font-medium text-white hover:opacity-90"
+                        style={{ backgroundColor: '#FF6600' }}
                       >
                         <Wand2 className="h-3 w-3" />
-                        Generar con IA
+                        Consultar con el PM
                       </button>
                     )}
                     {isCompleted && (
