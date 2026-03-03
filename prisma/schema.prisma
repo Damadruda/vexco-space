@@ -438,6 +438,9 @@ model KnowledgeBase {
   title        String
   content      String    @db.Text
   contentType  String    @default("markdown") // "markdown", "html", "text"
+  status       String    @default("active") // "active", "pending_review", "archived"
+  route        String?   // AI Triage route: "B" (Tendencia) or "C" (Descubrimiento)
+  summary      String?   @db.Text // AI-generated 2-line summary
   category     String?
   tags         String[]
   sourceUrl    String?
@@ -450,6 +453,7 @@ model KnowledgeBase {
   updatedAt    DateTime  @updatedAt
 
   @@index([authorId])
+  @@index([authorId, status])
   @@index([category])
   @@index([tags])
 }

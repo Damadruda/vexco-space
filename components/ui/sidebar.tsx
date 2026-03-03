@@ -13,6 +13,7 @@ import {
   Settings,
   KanbanSquare,
   Map,
+  Microscope,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -25,7 +26,8 @@ const menuItems = [
   { href: "/inbox", icon: Inbox, label: "Inbox V4", number: "06" },
   { href: "/agile", icon: KanbanSquare, label: "Agile Backlog", number: "07" },
   { href: "/roadmap", icon: Map, label: "Roadmap", number: "08" },
-  { href: "/settings", icon: Settings, label: "Configuración", number: "09" },
+  { href: "/discovery", icon: Microscope, label: "Discovery", number: "09" },
+  { href: "/settings", icon: Settings, label: "Configuración", number: "10" },
 ];
 
 export function Sidebar() {
