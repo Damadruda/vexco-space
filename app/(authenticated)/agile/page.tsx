@@ -1,6 +1,21 @@
 "use client";
 
 import { useState, useEffect, useCallback } from "react";
+import {
+  DndContext,
+  DragEndEvent,
+  DragOverEvent,
+  DragStartEvent,
+  DragOverlay,
+  PointerSensor,
+  KeyboardSensor,
+  useSensor,
+  useSensors,
+  closestCenter,
+  useDroppable,
+  useDraggable,
+} from "@dnd-kit/core";
+import { CSS } from "@dnd-kit/utilities";
 import { Header } from "@/components/ui/header";
 import {
   KanbanSquare,
@@ -12,6 +27,7 @@ import {
   Plus,
   Tag,
   Zap,
+  GripVertical,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -41,6 +57,7 @@ const COLUMNS: {
   bg: string;
   border: string;
   dot: string;
+  dropRing: string;
   nextStatus: TaskStatus | null;
 }[] = [
   {
@@ -51,6 +68,7 @@ const COLUMNS: {
     bg: "bg-gray-50",
     border: "border-gray-200",
     dot: "bg-gray-400",
+    dropRing: "ring-gray-300",
     nextStatus: "todo",
   },
   {
@@ -61,6 +79,7 @@ const COLUMNS: {
     bg: "bg-blue-50/60",
     border: "border-blue-100",
     dot: "bg-blue-400",
+    dropRing: "ring-blue-300",
     nextStatus: "in_progress",
   },
   {
@@ -71,6 +90,7 @@ const COLUMNS: {
     bg: "bg-amber-50/60",
     border: "border-amber-100",
     dot: "bg-amber-400",
+    dropRing: "ring-amber-300",
     nextStatus: "review",
   },
   {
@@ -81,6 +101,7 @@ const COLUMNS: {
     bg: "bg-purple-50/60",
     border: "border-purple-100",
     dot: "bg-purple-400",
+    dropRing: "ring-purple-300",
     nextStatus: "done",
   },
   {
@@ -91,6 +112,7 @@ const COLUMNS: {
     bg: "bg-emerald-50/60",
     border: "border-emerald-100",
     dot: "bg-emerald-400",
+    dropRing: "ring-emerald-300",
     nextStatus: null,
   },
 ];
@@ -109,31 +131,35 @@ const TYPE_ICONS: Record<string, string> = {
   research: "◎",
 };
 
-// ─── Task Card ────────────────────────────────────────────────────────────────
+// ─── Pure Task Card (no DnD — used inside DragOverlay too) ───────────────────
 
-function TaskCard({
+function TaskCardContent({
   task,
   column,
   onMove,
   onDelete,
   moving,
+  isDragging = false,
 }: {
   task: AgileTask;
   column: (typeof COLUMNS)[0];
-  onMove: (id: string, status: TaskStatus) => void;
-  onDelete: (id: string) => void;
+  onMove?: (id: string, status: TaskStatus) => void;
+  onDelete?: (id: string) => void;
   moving: string | null;
+  isDragging?: boolean;
 }) {
   const isMoving = moving === task.id;
   const priority = PRIORITY_CONFIG[task.priority] ?? PRIORITY_CONFIG.medium;
   const expertLabel = task.labels.find((l) =>
-    ["lean-strategist", "tech-futurist", "market-analyst", "risk-assessor",
-      "ux-visionary", "financial-expert", "growth-hacker", "operations-expert"].includes(l)
+    ["lean-strategist","tech-futurist","market-analyst","risk-assessor",
+     "ux-visionary","financial-expert","growth-hacker","operations-expert"].includes(l)
   );
 
   return (
     <div
-      className={`rounded-xl border bg-white p-4 shadow-sm transition-all hover:shadow-md ${column.border}`}
+      className={`rounded-xl border bg-white p-4 shadow-sm transition-all ${
+        isDragging ? "shadow-xl ring-2 ring-indigo-300 rotate-1 scale-105" : "hover:shadow-md"
+      } ${column.border}`}
     >
       {/* Top row */}
       <div className="mb-2.5 flex items-start justify-between gap-2">
@@ -152,10 +178,8 @@ function TaskCard({
         )}
       </div>
 
-      {/* Title */}
       <p className="text-sm font-medium text-gray-900 leading-snug mb-2">{task.title}</p>
 
-      {/* Expert source tag */}
       {expertLabel && (
         <div className="mb-2.5 flex items-center gap-1">
           <Zap className="h-3 w-3 text-indigo-400" />
@@ -165,7 +189,6 @@ function TaskCard({
         </div>
       )}
 
-      {/* Other labels */}
       {task.labels.filter((l) => l !== expertLabel).length > 0 && (
         <div className="mb-2.5 flex flex-wrap gap-1">
           {task.labels.filter((l) => l !== expertLabel).slice(0, 3).map((label) => (
@@ -180,36 +203,163 @@ function TaskCard({
         </div>
       )}
 
-      {/* Actions */}
-      <div className="flex items-center gap-2 pt-2 border-t border-gray-50">
-        {column.nextStatus && (
+      {!isDragging && onMove && onDelete && (
+        <div className="flex items-center gap-2 pt-2 border-t border-gray-50">
+          {column.nextStatus && (
+            <button
+              onClick={() => onMove(task.id, column.nextStatus!)}
+              disabled={isMoving}
+              className={`flex-1 inline-flex items-center justify-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors disabled:opacity-50 ${column.bg} ${column.accent} hover:opacity-80`}
+            >
+              {isMoving ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <ArrowRight className="h-3 w-3" />
+              )}
+              {column.nextStatus === "todo" ? "Priorizar"
+                : column.nextStatus === "in_progress" ? "Iniciar"
+                : column.nextStatus === "review" ? "A Review"
+                : "Completar"}
+            </button>
+          )}
           <button
-            onClick={() => onMove(task.id, column.nextStatus!)}
+            onClick={() => onDelete(task.id)}
             disabled={isMoving}
-            className={`flex-1 inline-flex items-center justify-center gap-1 rounded-lg px-2.5 py-1.5 text-xs font-medium transition-colors disabled:opacity-50 ${column.bg} ${column.accent} hover:opacity-80`}
+            title="Eliminar"
+            className="rounded-lg border border-gray-100 p-1.5 text-gray-400 hover:text-red-500 hover:border-red-200 hover:bg-red-50 transition-colors disabled:opacity-50"
           >
-            {isMoving ? (
-              <Loader2 className="h-3 w-3 animate-spin" />
-            ) : (
-              <ArrowRight className="h-3 w-3" />
-            )}
-            {column.nextStatus === "todo"
-              ? "Priorizar"
-              : column.nextStatus === "in_progress"
-              ? "Iniciar"
-              : column.nextStatus === "review"
-              ? "A Review"
-              : "Completar"}
+            <Trash2 className="h-3.5 w-3.5" />
           </button>
-        )}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Draggable Card Wrapper ───────────────────────────────────────────────────
+
+function DraggableCard({
+  task,
+  column,
+  onMove,
+  onDelete,
+  moving,
+}: {
+  task: AgileTask;
+  column: (typeof COLUMNS)[0];
+  onMove: (id: string, status: TaskStatus) => void;
+  onDelete: (id: string) => void;
+  moving: string | null;
+}) {
+  const { attributes, listeners, setNodeRef, transform, isDragging } = useDraggable({
+    id: task.id,
+    data: { task, columnId: column.id },
+  });
+
+  const style = transform
+    ? { transform: CSS.Translate.toString(transform) }
+    : undefined;
+
+  return (
+    <div
+      ref={setNodeRef}
+      style={style}
+      className={isDragging ? "opacity-30" : ""}
+    >
+      <div className="relative">
+        {/* Drag handle */}
         <button
-          onClick={() => onDelete(task.id)}
-          disabled={isMoving}
-          title="Eliminar"
-          className="rounded-lg border border-gray-100 p-1.5 text-gray-400 hover:text-red-500 hover:border-red-200 hover:bg-red-50 transition-colors disabled:opacity-50"
+          {...listeners}
+          {...attributes}
+          className="absolute -left-1 top-1/2 -translate-y-1/2 z-10 flex h-6 w-4 cursor-grab items-center justify-center rounded text-gray-300 hover:text-gray-500 active:cursor-grabbing touch-none focus:outline-none"
+          title="Arrastrar"
+          tabIndex={-1}
         >
-          <Trash2 className="h-3.5 w-3.5" />
+          <GripVertical className="h-3.5 w-3.5" />
         </button>
+        <div className="pl-3">
+          <TaskCardContent
+            task={task}
+            column={column}
+            onMove={onMove}
+            onDelete={onDelete}
+            moving={moving}
+          />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ─── Droppable Column ─────────────────────────────────────────────────────────
+
+function DroppableColumn({
+  column,
+  tasks,
+  onMove,
+  onDelete,
+  moving,
+  activeTaskId,
+}: {
+  column: (typeof COLUMNS)[0];
+  tasks: AgileTask[];
+  onMove: (id: string, status: TaskStatus) => void;
+  onDelete: (id: string) => void;
+  moving: string | null;
+  activeTaskId: string | null;
+}) {
+  const { setNodeRef, isOver } = useDroppable({ id: column.id });
+
+  return (
+    <div>
+      {/* Header */}
+      <div
+        className={`mb-3 flex items-center justify-between rounded-xl border px-3.5 py-2.5 transition-all ${column.bg} ${column.border} ${
+          isOver ? `ring-2 ${column.dropRing}` : ""
+        }`}
+      >
+        <div className="flex items-center gap-2">
+          <span className={`h-2 w-2 rounded-full ${column.dot}`} />
+          <div>
+            <p className={`text-xs font-semibold ${column.accent}`}>{column.label}</p>
+            <p className="text-xs text-gray-400">{column.sublabel}</p>
+          </div>
+        </div>
+        <span className={`flex h-5 w-5 items-center justify-center rounded-full text-xs font-bold ${column.bg} ${column.accent}`}>
+          {tasks.length}
+        </span>
+      </div>
+
+      {/* Drop area */}
+      <div
+        ref={setNodeRef}
+        className={`min-h-[80px] space-y-2.5 rounded-xl transition-all ${
+          isOver ? `bg-indigo-50/40 ring-2 ring-inset ${column.dropRing}` : ""
+        }`}
+      >
+        {tasks.length === 0 ? (
+          <div
+            className={`flex flex-col items-center justify-center rounded-xl border-2 border-dashed py-8 text-center transition-all ${
+              isOver ? "border-indigo-300 bg-indigo-50" : "border-gray-200"
+            }`}
+          >
+            <Plus className="mb-1 h-4 w-4 text-gray-300" />
+            <p className="text-xs text-gray-400">
+              {isOver ? "Soltar aquí" : "Sin tareas"}
+            </p>
+          </div>
+        ) : (
+          tasks.map((task) => (
+            <DraggableCard
+              key={task.id}
+              task={task}
+              column={column}
+              onMove={onMove}
+              onDelete={onDelete}
+              moving={moving}
+            />
+          ))
+        )}
       </div>
     </div>
   );
@@ -219,15 +369,18 @@ function TaskCard({
 
 export default function AgilePage() {
   const [tasks, setTasks] = useState<Record<TaskStatus, AgileTask[]>>({
-    backlog: [],
-    todo: [],
-    in_progress: [],
-    review: [],
-    done: [],
+    backlog: [], todo: [], in_progress: [], review: [], done: [],
   });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [moving, setMoving] = useState<string | null>(null);
+  const [activeTask, setActiveTask] = useState<AgileTask | null>(null);
+  const [activeColumn, setActiveColumn] = useState<(typeof COLUMNS)[0] | null>(null);
+
+  const sensors = useSensors(
+    useSensor(PointerSensor, { activationConstraint: { distance: 8 } }),
+    useSensor(KeyboardSensor)
+  );
 
   const fetchTasks = useCallback(async () => {
     setLoading(true);
@@ -238,11 +391,7 @@ export default function AgilePage() {
       const { tasks: all } = await res.json();
 
       const grouped: Record<TaskStatus, AgileTask[]> = {
-        backlog: [],
-        todo: [],
-        in_progress: [],
-        review: [],
-        done: [],
+        backlog: [], todo: [], in_progress: [], review: [], done: [],
       };
       for (const task of all as AgileTask[]) {
         if (task.status in grouped) {
@@ -257,11 +406,9 @@ export default function AgilePage() {
     }
   }, []);
 
-  useEffect(() => {
-    fetchTasks();
-  }, [fetchTasks]);
+  useEffect(() => { fetchTasks(); }, [fetchTasks]);
 
-  const handleMove = async (id: string, newStatus: TaskStatus) => {
+  const handleMove = useCallback(async (id: string, newStatus: TaskStatus) => {
     setMoving(id);
     try {
       const res = await fetch(`/api/agile/${id}`, {
@@ -288,7 +435,7 @@ export default function AgilePage() {
     } finally {
       setMoving(null);
     }
-  };
+  }, [fetchTasks]);
 
   const handleDelete = async (id: string) => {
     if (!confirm("¿Eliminar esta tarea?")) return;
@@ -308,6 +455,45 @@ export default function AgilePage() {
       setMoving(null);
     }
   };
+
+  // ── DnD handlers ────────────────────────────────────────────────────────────
+
+  function handleDragStart(event: DragStartEvent) {
+    const { active } = event;
+    const taskId = active.id as string;
+    const allTasks = Object.values(tasks).flat();
+    const task = allTasks.find((t) => t.id === taskId) ?? null;
+    const col = COLUMNS.find((c) => tasks[c.id].some((t) => t.id === taskId)) ?? null;
+    setActiveTask(task);
+    setActiveColumn(col);
+  }
+
+  function handleDragOver(_event: DragOverEvent) {
+    // No-op: we move on dragEnd only
+  }
+
+  function handleDragEnd(event: DragEndEvent) {
+    const { active, over } = event;
+    setActiveTask(null);
+    setActiveColumn(null);
+
+    if (!over) return;
+
+    const taskId = active.id as string;
+    const targetColumnId = over.id as TaskStatus;
+
+    // Validate target is a column
+    if (!COLUMNS.some((c) => c.id === targetColumnId)) return;
+
+    // Find current column
+    const currentColumnId = (Object.keys(tasks) as TaskStatus[]).find((col) =>
+      tasks[col].some((t) => t.id === taskId)
+    );
+
+    if (!currentColumnId || currentColumnId === targetColumnId) return;
+
+    handleMove(taskId, targetColumnId);
+  }
 
   const totalTasks = Object.values(tasks).flat().length;
   const doneTasks = tasks.done.length;
@@ -334,8 +520,9 @@ export default function AgilePage() {
             </button>
           </div>
           <div className="flex items-center gap-2">
+            <GripVertical className="h-4 w-4 text-gray-300" />
             <KanbanSquare className="h-4 w-4 text-gray-400" />
-            <span className="text-xs text-gray-400">Sprint Kanban</span>
+            <span className="text-xs text-gray-400">Drag & Drop activado</span>
           </div>
         </div>
 
@@ -346,56 +533,47 @@ export default function AgilePage() {
           </div>
         )}
 
-        {/* Kanban */}
+        {/* Kanban con DnD */}
         {loading ? (
           <div className="flex items-center justify-center py-32">
             <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
           </div>
         ) : (
-          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
-            {COLUMNS.map((col) => (
-              <div key={col.id}>
-                {/* Column header */}
-                <div
-                  className={`mb-3 flex items-center justify-between rounded-xl border px-3.5 py-2.5 ${col.bg} ${col.border}`}
-                >
-                  <div className="flex items-center gap-2">
-                    <span className={`h-2 w-2 rounded-full ${col.dot}`} />
-                    <div>
-                      <p className={`text-xs font-semibold ${col.accent}`}>{col.label}</p>
-                      <p className="text-xs text-gray-400">{col.sublabel}</p>
-                    </div>
-                  </div>
-                  <span
-                    className={`flex h-5 w-5 items-center justify-center rounded-full text-xs font-bold ${col.bg} ${col.accent}`}
-                  >
-                    {tasks[col.id].length}
-                  </span>
-                </div>
+          <DndContext
+            sensors={sensors}
+            collisionDetection={closestCenter}
+            onDragStart={handleDragStart}
+            onDragOver={handleDragOver}
+            onDragEnd={handleDragEnd}
+          >
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-5">
+              {COLUMNS.map((col) => (
+                <DroppableColumn
+                  key={col.id}
+                  column={col}
+                  tasks={tasks[col.id]}
+                  onMove={handleMove}
+                  onDelete={handleDelete}
+                  moving={moving}
+                  activeTaskId={activeTask?.id ?? null}
+                />
+              ))}
+            </div>
 
-                {/* Cards */}
-                <div className="space-y-2.5">
-                  {tasks[col.id].length === 0 ? (
-                    <div className="flex flex-col items-center justify-center rounded-xl border-2 border-dashed border-gray-200 py-8 text-center">
-                      <Plus className="mb-1 h-4 w-4 text-gray-300" />
-                      <p className="text-xs text-gray-400">Sin tareas</p>
-                    </div>
-                  ) : (
-                    tasks[col.id].map((task) => (
-                      <TaskCard
-                        key={task.id}
-                        task={task}
-                        column={col}
-                        onMove={handleMove}
-                        onDelete={handleDelete}
-                        moving={moving}
-                      />
-                    ))
-                  )}
+            {/* Floating overlay while dragging */}
+            <DragOverlay dropAnimation={{ duration: 200, easing: "ease" }}>
+              {activeTask && activeColumn ? (
+                <div className="w-64 rotate-2">
+                  <TaskCardContent
+                    task={activeTask}
+                    column={activeColumn}
+                    moving={null}
+                    isDragging
+                  />
                 </div>
-              </div>
-            ))}
-          </div>
+              ) : null}
+            </DragOverlay>
+          </DndContext>
         )}
       </div>
     </div>
