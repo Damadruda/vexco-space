@@ -9,12 +9,12 @@
 // =============================================================================
 
 generator client {
-    provider = "prisma-client-js"
+  provider = "prisma-client-js"
 }
 
 datasource db {
-    provider = "postgresql"
-    url      = env("DATABASE_URL")
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 // =============================================================================
@@ -23,22 +23,29 @@ datasource db {
 // =============================================================================
 
 model User {
-  id            String    @id @default(cuid())
-  name          String?
-  email         String    @unique
-  emailVerified DateTime?
-  password      String?
-  image         String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
-  accounts      Account[]
-  sessions      Session[]
-  projects      Project[]
-  ideas         Idea[]
-  notes         Note[]
-  links         Link[]
-  images        Image[]
-  chatMessages  ChatMessage[]
+  id               String            @id @default(cuid())
+  name             String?
+  email            String            @unique
+  emailVerified    DateTime?
+  password         String?
+  image            String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
+  accounts         Account[]
+  sessions         Session[]
+  projects         Project[]
+  ideas            Idea[]
+  notes            Note[]
+  links            Link[]
+  images           Image[]
+  chatMessages     ChatMessage[]
+  // V4 Architecture relations
+  inboxItems       InboxItem[]
+  agileTasks       AgileTask[]
+  roadmapTimelines RoadmapTimeline[]
+  knowledgeBase    KnowledgeBase[]
+  automationLogs   AutomationLog[]
+  userPreferences  UserPreferences?
 }
 
 model Account {
@@ -101,21 +108,21 @@ enum ProjectStatus {
 // =============================================================================
 
 model ConceptInsight {
-  id                String   @id @default(cuid())
-  projectId         String
-  question          String   @db.Text
-  answer            String?  @db.Text
-  stage             String   // Concepto, Mercado, Negocio, Ejecución
+  id                  String   @id @default(cuid())
+  projectId           String
+  question            String   @db.Text
+  answer              String?  @db.Text
+  stage               String // Concepto, Mercado, Negocio, Ejecución
   // Strategic PM Lab - Enhanced fields
-  userFeedback      String?  @db.Text  // User refinement request ("ajusta X")
-  aiSuggestion      String?  @db.Text  // AI's suggestion/draft
-  alternatives      String?  @db.Text  // JSON array of alternative paths
-  analysisType      String?  // consultation, validation, refinement, cascade
-  costBenefitAnalysis String? @db.Text // Cost/benefit analysis text
-  killSwitchReason  String?  @db.Text  // Reason if kill switch issued
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-  project           Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userFeedback        String?  @db.Text // User refinement request ("ajusta X")
+  aiSuggestion        String?  @db.Text // AI's suggestion/draft
+  alternatives        String?  @db.Text // JSON array of alternative paths
+  analysisType        String? // consultation, validation, refinement, cascade
+  costBenefitAnalysis String?  @db.Text // Cost/benefit analysis text
+  killSwitchReason    String?  @db.Text // Reason if kill switch issued
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  project             Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId])
   @@index([stage])
@@ -133,54 +140,57 @@ model ConceptInsight {
 // =============================================================================
 
 model Project {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   title       String
-  description String?  @db.Text
-  status      String   @default("idea") // idea, development, execution, completed
-  projectType String   @default("idea") // idea, active, operational, completed
+  description String?   @db.Text
+  status      String    @default("idea") // idea, development, execution, completed
+  projectType String    @default("idea") // idea, active, operational, completed
   category    String?
-  tags        String[] @default([])
-  priority    String   @default("medium") // low, medium, high
-  progress    Int      @default(0) // 0-100
+  tags        String[]  @default([])
+  priority    String    @default("medium") // low, medium, high
+  progress    Int       @default(0) // 0-100
   dueDate     DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
   userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   // Strategic Intelligence Engine - Timeline
   // QA: startDate/endDate for agile metrics, red if currentDate > endDate
-  startDate   DateTime?
-  endDate     DateTime?
+  startDate DateTime?
+  endDate   DateTime?
 
   // Strategic Intelligence Engine - 4-Stage Traffic Light System
   // QA: Each stage must be GREEN before proceeding to next
-  conceptStatus   ProjectStatus @default(RED)   // Stage 1: Concepto
-  marketStatus    ProjectStatus @default(RED)   // Stage 2: Mercado
-  businessStatus  ProjectStatus @default(RED)   // Stage 3: Negocio
-  executionStatus ProjectStatus @default(RED)   // Stage 4: Ejecución
+  conceptStatus   ProjectStatus @default(RED) // Stage 1: Concepto
+  marketStatus    ProjectStatus @default(RED) // Stage 2: Mercado
+  businessStatus  ProjectStatus @default(RED) // Stage 3: Negocio
+  executionStatus ProjectStatus @default(RED) // Stage 4: Ejecución
 
   // Framework fields (legacy)
-  concept         String? @db.Text // Step 1
-  problemSolved   String? @db.Text
-  targetMarket    String? @db.Text // Step 2
+  concept          String? @db.Text // Step 1
+  problemSolved    String? @db.Text
+  targetMarket     String? @db.Text // Step 2
   marketValidation String? @db.Text
-  businessModel   String? @db.Text // Step 3
+  businessModel    String? @db.Text // Step 3
   valueProposition String? @db.Text
-  actionPlan      String? @db.Text // Step 4
-  milestones      String? @db.Text
-  resources       String? @db.Text // Step 5
-  metrics         String? @db.Text
-  currentStep     Int     @default(1) // 1-5
+  actionPlan       String? @db.Text // Step 4
+  milestones       String? @db.Text
+  resources        String? @db.Text // Step 5
+  metrics          String? @db.Text
+  currentStep      Int     @default(1) // 1-5
 
   // Relations
-  ideas           Idea[]
-  notes           Note[]
-  links           Link[]
-  images          Image[]
-  milestoneItems  Milestone[]
-  patternCards    PatternCard[]
-  conceptInsights ConceptInsight[] // Strategic Intelligence Engine Q&A
+  ideas            Idea[]
+  notes            Note[]
+  links            Link[]
+  images           Image[]
+  milestoneItems   Milestone[]
+  patternCards     PatternCard[]
+  conceptInsights  ConceptInsight[] // Strategic Intelligence Engine Q&A
+  // V4 Architecture relations
+  agileTasks       AgileTask[]
+  roadmapTimelines RoadmapTimeline[]
 
   @@index([userId])
   @@index([status])
@@ -230,55 +240,55 @@ model PatternCard {
 // =============================================================================
 
 model Milestone {
-  id                    String    @id @default(cuid())
-  title                 String
-  description           String?   @db.Text
-  projectType           String?   // SaaS, Product, Service
-  isCompleted           Boolean   @default(false)
-  isCertified           Boolean   @default(false)
-  certifiedAt           DateTime?
-  certificationReason   String?   @db.Text
-  order                 Int       @default(0)
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
-  projectId             String
-  project               Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id                  String    @id @default(cuid())
+  title               String
+  description         String?   @db.Text
+  projectType         String? // SaaS, Product, Service
+  isCompleted         Boolean   @default(false)
+  isCertified         Boolean   @default(false)
+  certifiedAt         DateTime?
+  certificationReason String?   @db.Text
+  order               Int       @default(0)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  projectId           String
+  project             Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId])
   @@index([isCertified])
 }
 
 model Idea {
-  id          String   @id @default(cuid())
-  title       String
-  content     String   @db.Text
-  category    String?
-  tags        String[] @default([])
-  isFavorite  Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  projectId   String?
-  project     Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  id         String   @id @default(cuid())
+  title      String
+  content    String   @db.Text
+  category   String?
+  tags       String[] @default([])
+  isFavorite Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId  String?
+  project    Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([projectId])
 }
 
 model Note {
-  id          String   @id @default(cuid())
-  title       String
-  content     String   @db.Text
-  category    String?
-  tags        String[] @default([])
-  isFavorite  Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  projectId   String?
-  project     Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  id         String   @id @default(cuid())
+  title      String
+  content    String   @db.Text
+  category   String?
+  tags       String[] @default([])
+  isFavorite Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId  String?
+  project    Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([projectId])
@@ -305,20 +315,20 @@ model Link {
 }
 
 model Image {
-  id              String   @id @default(cuid())
-  title           String?
-  description     String?  @db.Text
+  id               String   @id @default(cuid())
+  title            String?
+  description      String?  @db.Text
   cloudStoragePath String
-  isPublic        Boolean  @default(false)
-  category        String?
-  tags            String[] @default([])
-  isFavorite      Boolean  @default(false)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  userId          String
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  projectId       String?
-  project         Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  isPublic         Boolean  @default(false)
+  category         String?
+  tags             String[] @default([])
+  isFavorite       Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId        String?
+  project          Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([projectId])
@@ -326,7 +336,7 @@ model Image {
 
 model ChatMessage {
   id        String   @id @default(cuid())
-  role      String   // user, assistant
+  role      String // user, assistant
   content   String   @db.Text
   context   String?  @db.Text // context about what project/idea was being discussed
   createdAt DateTime @default(now())
@@ -335,3 +345,152 @@ model ChatMessage {
 
   @@index([userId])
 }
+
+// ============================================
+// V4 ARCHITECTURE - NUEVOS MODELOS
+// ============================================
+
+model InboxItem {
+  id             String          @id @default(cuid())
+  type           String // "link", "note", "idea", "file"
+  rawContent     String          @db.Text
+  sourceUrl      String?
+  sourceTitle    String?
+  status         String          @default("pending") // "pending", "processing", "analyzed", "archived"
+  priority       Int             @default(0)
+  tags           String[]
+  userId         String
+  user           User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  analysisResult AnalysisResult?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  @@index([userId, status])
+  @@index([createdAt])
+}
+
+model AnalysisResult {
+  id               String    @id @default(cuid())
+  inboxItemId      String    @unique
+  inboxItem        InboxItem @relation(fields: [inboxItemId], references: [id], onDelete: Cascade)
+  summary          String    @db.Text
+  keyInsights      String[]
+  suggestedTags    String[]
+  category         String?
+  sentiment        String? // "positive", "neutral", "negative"
+  relevanceScore   Float     @default(0)
+  rawAiResponse    String?   @db.Text
+  modelUsed        String?
+  processingTimeMs Int?
+  createdAt        DateTime  @default(now())
+  updatedAt        DateTime  @updatedAt
+}
+
+model AgileTask {
+  id          String    @id @default(cuid())
+  title       String
+  description String?   @db.Text
+  status      String    @default("backlog") // "backlog", "todo", "in_progress", "review", "done"
+  priority    String    @default("medium") // "low", "medium", "high", "critical"
+  type        String    @default("task") // "task", "bug", "feature", "research"
+  sprint      Int?
+  storyPoints Int?
+  dueDate     DateTime?
+  completedAt DateTime?
+  projectId   String?
+  project     Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  assigneeId  String?
+  assignee    User?     @relation(fields: [assigneeId], references: [id], onDelete: SetNull)
+  labels      String[]
+  blockedBy   String[] // IDs of blocking tasks
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([projectId, status])
+  @@index([assigneeId])
+  @@index([sprint])
+}
+
+model RoadmapTimeline {
+  id          String    @id @default(cuid())
+  title       String
+  description String?   @db.Text
+  phase       String // "q1", "q2", "q3", "q4" or custom
+  year        Int
+  status      String    @default("planned") // "planned", "in_progress", "completed", "cancelled"
+  startDate   DateTime?
+  endDate     DateTime?
+  milestones  Json? // Array of milestone objects
+  projectId   String?
+  project     Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  ownerId     String
+  owner       User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  color       String? // HEX color for UI display
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([projectId])
+  @@index([year, phase])
+}
+
+model KnowledgeBase {
+  id           String    @id @default(cuid())
+  title        String
+  content      String    @db.Text
+  contentType  String    @default("markdown") // "markdown", "html", "text"
+  category     String?
+  tags         String[]
+  sourceUrl    String?
+  isPublic     Boolean   @default(false)
+  authorId     String
+  author       User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  viewCount    Int       @default(0)
+  lastViewedAt DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([authorId])
+  @@index([category])
+  @@index([tags])
+}
+
+model AutomationLog {
+  id             String    @id @default(cuid())
+  jobName        String // "raindrop_sync", "jina_analysis", "inbox_processing"
+  status         String // "started", "success", "failed", "partial"
+  itemsProcessed Int       @default(0)
+  itemsFailed    Int       @default(0)
+  errorMessage   String?   @db.Text
+  metadata       Json?
+  durationMs     Int?
+  triggeredBy    String    @default("cron") // "cron", "manual", "webhook"
+  userId         String?
+  user           User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
+  startedAt      DateTime  @default(now())
+  completedAt    DateTime?
+
+  @@index([jobName, status])
+  @@index([startedAt])
+}
+
+model UserPreferences {
+  id                   String    @id @default(cuid())
+  userId               String    @unique
+  user                 User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  raindropToken        String? // Encrypted
+  raindropLastSync     DateTime?
+  jinaApiKey           String? // Encrypted
+  defaultInboxView     String    @default("list") // "list", "kanban", "timeline"
+  aiAnalysisEnabled    Boolean   @default(true)
+  autoTagging          Boolean   @default(true)
+  emailDigestEnabled   Boolean   @default(false)
+  emailDigestFrequency String    @default("weekly")
+  theme                String    @default("system")
+  timezone             String    @default("America/Mexico_City")
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
+}
+
+// ============================================
+// FIN DE NUEVOS MODELOS V4
+// ============================================
