@@ -11,6 +11,8 @@ import {
   MessageSquare,
   Inbox,
   Settings,
+  KanbanSquare,
+  Map,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -21,7 +23,9 @@ const menuItems = [
   { href: "/search", icon: Search, label: "Búsqueda", number: "04" },
   { href: "/assistant", icon: MessageSquare, label: "Asistente IA", number: "05" },
   { href: "/inbox", icon: Inbox, label: "Inbox V4", number: "06" },
-  { href: "/settings", icon: Settings, label: "Configuración", number: "07" },
+  { href: "/agile", icon: KanbanSquare, label: "Agile Backlog", number: "07" },
+  { href: "/roadmap", icon: Map, label: "Roadmap", number: "08" },
+  { href: "/settings", icon: Settings, label: "Configuración", number: "09" },
 ];
 
 export function Sidebar() {

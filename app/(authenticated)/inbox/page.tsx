@@ -16,6 +16,7 @@ import {
   AlertCircle,
   Settings,
   ChevronRight,
+  Zap,
 } from "lucide-react";
 import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
@@ -189,18 +190,30 @@ function InboxCard({
       {/* Actions */}
       <div className="flex items-center gap-2 pt-1 border-t border-gray-50">
         {column.nextStatus && column.nextLabel && (
-          <button
-            onClick={() => onMove(item.id, column.nextStatus!)}
-            disabled={isProcessing}
-            className={`flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50 ${column.bg} ${column.accent} hover:opacity-80`}
-          >
-            {isProcessing ? (
-              <Loader2 className="h-3 w-3 animate-spin" />
-            ) : (
-              <ArrowRight className="h-3 w-3" />
-            )}
-            {column.nextLabel}
-          </button>
+          column.id === "pending" ? (
+            // Raw Inbox → navigate to War Room
+            <Link
+              href={`/war-room/${item.id}`}
+              className={`flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${column.bg} ${column.accent} hover:opacity-80`}
+            >
+              <Zap className="h-3 w-3" />
+              {column.nextLabel}
+            </Link>
+          ) : (
+            // Other columns → move status in-place
+            <button
+              onClick={() => onMove(item.id, column.nextStatus!)}
+              disabled={isProcessing}
+              className={`flex-1 inline-flex items-center justify-center gap-1.5 rounded-lg px-3 py-1.5 text-xs font-medium transition-colors disabled:opacity-50 ${column.bg} ${column.accent} hover:opacity-80`}
+            >
+              {isProcessing ? (
+                <Loader2 className="h-3 w-3 animate-spin" />
+              ) : (
+                <ArrowRight className="h-3 w-3" />
+              )}
+              {column.nextLabel}
+            </button>
+          )
         )}
         <button
           onClick={() => onArchive(item.id)}
