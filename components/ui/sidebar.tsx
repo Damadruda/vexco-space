@@ -8,7 +8,9 @@ import {
   Lightbulb,
   FolderKanban,
   Search,
-  MessageSquare
+  MessageSquare,
+  Inbox,
+  Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -17,7 +19,9 @@ const menuItems = [
   { href: "/idea-vault", icon: Lightbulb, label: "Idea Vault", number: "02" },
   { href: "/project-builder", icon: FolderKanban, label: "Project Builder", number: "03" },
   { href: "/search", icon: Search, label: "Búsqueda", number: "04" },
-  { href: "/assistant", icon: MessageSquare, label: "Asistente IA", number: "05" }
+  { href: "/assistant", icon: MessageSquare, label: "Asistente IA", number: "05" },
+  { href: "/inbox", icon: Inbox, label: "Inbox V4", number: "06" },
+  { href: "/settings", icon: Settings, label: "Configuración", number: "07" },
 ];
 
 export function Sidebar() {
