@@ -3,7 +3,6 @@
 import { useState } from "react";
 import { signIn } from "next-auth/react";
 import Image from "next/image";
-import Link from "next/link";
 import { Loader2, Shield } from "lucide-react";
 
 export default function LoginPage() {
@@ -78,16 +77,6 @@ export default function LoginPage() {
             <p className="text-xs">Acceso restringido a @vexandco.com</p>
           </div>
         </div>
-
-        {/* 🔧 DEV BYPASS — eliminar antes de producción */}
-        {process.env.NODE_ENV === "development" && (
-          <Link
-            href="/inbox"
-            className="mt-4 w-full flex items-center justify-center gap-2 py-4 px-6 bg-amber-400 hover:bg-amber-300 text-black font-bold text-lg rounded-xl border-2 border-amber-500 shadow-lg transition-all"
-          >
-            🚀 ENTRAR AL LAB (DEV MODE)
-          </Link>
-        )}
 
         {/* Footer */}
         <p className="text-center mt-6 text-gray-400 text-sm">
