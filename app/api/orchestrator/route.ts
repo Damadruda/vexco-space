@@ -1,12 +1,13 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { GoogleGenerativeAI } from '@google/generative-ai'
+import Anthropic from '@anthropic-ai/sdk'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-interface GeminiTask {
+interface OrchestrationTask {
   title: string
   description: string
   priority: 'Must' | 'Should' | 'Could' | "Won't"
@@ -15,16 +16,23 @@ interface GeminiTask {
   status: 'Backlog' | 'Todo' | 'In Progress'
 }
 
-interface GeminiMilestone {
+interface OrchestrationMilestone {
   title: string
   date: string
   description: string
 }
 
-interface GeminiOutput {
+interface OrchestrationOutput {
   analysis: string
-  tasks: GeminiTask[]
-  milestones: GeminiMilestone[]
+  tasks: OrchestrationTask[]
+  milestones: OrchestrationMilestone[]
+}
+
+type IdeaItem = {
+  rawContent: string
+  sourceTitle: string | null
+  sourceUrl: string | null
+  tags: string[]
 }
 
 // ─── Mappers ──────────────────────────────────────────────────────────────────
@@ -56,19 +64,22 @@ function getCurrentQuarter(): string {
   return 'q4'
 }
 
-// ─── Gemini Prompt ────────────────────────────────────────────────────────────
+// ─── Phase A: Gemini Multi-Agent Debate ───────────────────────────────────────
 
-function buildPrompt(item: { rawContent: string; sourceTitle: string | null; sourceUrl: string | null; tags: string[] }): string {
-  return `You are "The Closer" — a senior Agile PM Expert who synthesizes strategic analysis from 8 specialized AI agents:
+async function runGeminiAgents(item: IdeaItem): Promise<string> {
+  const apiKey = process.env.GEMINI_API_KEY
+  if (!apiKey) throw new Error('GEMINI_API_KEY not set')
 
-1. Lean Strategist — validates the value proposition and problem-solution fit
-2. Tech Futurist — evaluates technical feasibility and stack choices
-3. Market Analyst — analyzes market size, trends, and competition
-4. Risk Assessor — identifies critical risks and mitigation strategies
-5. UX Visionary — designs the user experience and interaction model
-6. Financial Expert — projects the financial model and unit economics
-7. Growth Hacker — defines acquisition channels and growth loops
-8. Operations Expert — plans the execution roadmap and team structure
+  const genAI = new GoogleGenerativeAI(apiKey)
+  const model = genAI.getGenerativeModel({
+    model: process.env.GEMINI_MODEL ?? 'gemini-2.5-flash',
+    generationConfig: {
+      temperature: 0.8,
+      maxOutputTokens: 2048,
+    } as Parameters<typeof genAI.getGenerativeModel>[0]['generationConfig'],
+  })
+
+  const prompt = `You are facilitating a strategic debate between 3 specialized AI experts analyzing a business idea. Each expert provides their unique perspective.
 
 IDEA TO ANALYZE:
 Title: ${item.sourceTitle || 'Untitled idea'}
@@ -76,25 +87,116 @@ Content: ${item.rawContent}
 ${item.sourceUrl ? `Source: ${item.sourceUrl}` : ''}
 ${item.tags.length > 0 ? `Tags: ${item.tags.join(', ')}` : ''}
 
-YOUR TASK:
-Synthesize all 8 agents' perspectives and produce a rigorous strategic analysis with actionable deliverables.
+Provide a detailed analysis from each expert's perspective:
 
-REQUIRED OUTPUT (strict JSON — no markdown, no explanation, just the JSON object):
+1. LEAN STRATEGIST: Evaluate the value proposition, problem-solution fit, and customer segment. Is the problem real and urgent? What is the minimum viable solution?
+
+2. TECH FUTURIST: Assess technical feasibility, emerging tech leverage, stack recommendations, and scalability. What technology bets should be placed?
+
+3. UX ARCHITECT: Define the ideal user journey, key interaction patterns, and experience differentiators. What will make users love this product?
+
+Write a rich, detailed debate (3-4 paragraphs per expert). Be specific and avoid generic advice. Focus on this exact idea.`
+
+  const result = await model.generateContent(prompt)
+  return result.response.text()
+}
+
+// ─── Phase B: Perplexity Real-Time Market Research ────────────────────────────
+
+async function runPerplexityResearch(geminiAnalysis: string, item: IdeaItem): Promise<string> {
+  const apiKey = process.env.PERPLEXITY_API_KEY
+  if (!apiKey) throw new Error('PERPLEXITY_API_KEY not set')
+
+  const res = await fetch('https://api.perplexity.ai/chat/completions', {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${apiKey}`,
+      'Content-Type': 'application/json',
+    },
+    body: JSON.stringify({
+      model: 'sonar',
+      messages: [
+        {
+          role: 'system',
+          content:
+            'You are a market research analyst with access to real-time data. Provide specific, data-driven insights with current numbers, company names, and market facts.',
+        },
+        {
+          role: 'user',
+          content: `Based on this strategic analysis of a business idea, perform a real-time market research report:
+
+IDEA: ${item.sourceTitle || item.rawContent.slice(0, 200)}
+
+STRATEGIC CONTEXT FROM EXPERT AGENTS:
+${geminiAnalysis.slice(0, 1500)}
+
+Your research must cover:
+1. Current market size and growth rate (with specific numbers and sources)
+2. Top 3-5 direct competitors (with their current status, funding, and differentiators)
+3. B2B viability: who are the buyers, what is the typical deal size, and sales cycle
+4. Recent market trends (last 6-12 months) that validate or challenge this idea
+5. Regulatory or macro risks in this space
+
+Be specific, cite real companies and data points. Avoid vague statements.`,
+        },
+      ],
+      max_tokens: 1500,
+    }),
+  })
+
+  if (!res.ok) {
+    const err = await res.text()
+    throw new Error(`Perplexity API error ${res.status}: ${err}`)
+  }
+
+  const data = await res.json()
+  return data.choices?.[0]?.message?.content ?? ''
+}
+
+// ─── Phase C: Claude The Closer — Final JSON Synthesis ────────────────────────
+
+async function runClaudeCloser(
+  item: IdeaItem,
+  geminiAnalysis: string,
+  perplexityResearch: string
+): Promise<OrchestrationOutput> {
+  const apiKey = process.env.ANTHROPIC_API_KEY
+  if (!apiKey) throw new Error('ANTHROPIC_API_KEY not set')
+
+  const anthropic = new Anthropic({ apiKey })
+
+  const userMessage = `ORIGINAL IDEA:
+Title: ${item.sourceTitle || 'Untitled'}
+Content: ${item.rawContent}
+${item.sourceUrl ? `Source: ${item.sourceUrl}` : ''}
+${item.tags.length > 0 ? `Tags: ${item.tags.join(', ')}` : ''}
+
+---
+EXPERT AGENTS ANALYSIS (Gemini):
+${geminiAnalysis}
+
+---
+REAL-TIME MARKET RESEARCH (Perplexity):
+${perplexityResearch}
+
+---
+Now synthesize all of this into an executable action plan. Respond ONLY with a valid JSON object — no markdown, no explanation, no code fences:
+
 {
-  "analysis": "A comprehensive 3-4 paragraph strategic synthesis covering: (1) problem/opportunity validation, (2) technical and market viability, (3) key risks and differentiators, (4) recommended path forward. Be specific, not generic.",
+  "analysis": "A comprehensive 3-4 paragraph strategic synthesis covering: (1) problem/opportunity validation with market evidence, (2) technical and market viability informed by real data, (3) key risks and competitive differentiators, (4) recommended path forward. Be specific and integrate the market research data.",
   "tasks": [
     {
       "title": "Specific actionable task title (max 80 chars)",
       "description": "Detailed description of what to do and why (2-3 sentences)",
       "priority": "Must|Should|Could|Won't",
       "effort": 1,
-      "expertSource": "Name of the agent who proposed this task",
+      "expertSource": "Name of the expert who proposed this task",
       "status": "Backlog|Todo|In Progress"
     }
   ],
   "milestones": [
     {
-      "title": "Phase name (e.g. 'Discovery & Validation')",
+      "title": "Phase name (e.g. Discovery & Validation)",
       "date": "YYYY-MM-DD",
       "description": "What will be achieved by this milestone"
     }
@@ -104,10 +206,112 @@ REQUIRED OUTPUT (strict JSON — no markdown, no explanation, just the JSON obje
 CONSTRAINTS:
 - Generate exactly 6-8 tasks covering different expert areas
 - Generate exactly 3-4 milestones spanning the next 6 months
-- Tasks marked "Must" should be in "Todo" status; others in "Backlog"
-- effort is Fibonacci story points (1, 2, 3, 5, 8, 13)
-- Be specific to the idea — no generic advice
+- Tasks marked "Must" should have status "Todo"; others "Backlog"
+- effort uses Fibonacci points: 1, 2, 3, 5, 8, 13
+- Integrate the market research findings into the analysis and tasks
 - Respond ONLY with the JSON object, nothing else`
+
+  const message = await anthropic.messages.create({
+    model: 'claude-3-5-sonnet-latest',
+    max_tokens: 4096,
+    system:
+      'Eres el Agile PM Expert. Sintetiza la visión de los agentes estratégicos y la investigación de mercado en tiempo real. Genera un plan de acción ejecutable, concreto y diferenciado. Responde ÚNICAMENTE con el objeto JSON solicitado, sin markdown ni explicaciones adicionales.',
+    messages: [{ role: 'user', content: userMessage }],
+  })
+
+  const rawText = message.content[0].type === 'text' ? message.content[0].text : ''
+  console.log('[ORCHESTRATOR] Claude raw response length:', rawText.length)
+
+  // Strip potential code fences if Claude wraps the JSON
+  const cleaned = rawText
+    .replace(/^```(?:json)?\s*/i, '')
+    .replace(/\s*```$/i, '')
+    .trim()
+
+  return JSON.parse(cleaned) as OrchestrationOutput
+}
+
+// ─── Persist Results ──────────────────────────────────────────────────────────
+
+async function persistResults(
+  inboxItemId: string,
+  userId: string,
+  output: OrchestrationOutput,
+  modelChain: string,
+  startTime: number,
+  inboxItem: { tags: string[]; sourceTitle: string | null }
+) {
+  const analysisResult = await prisma.analysisResult.create({
+    data: {
+      inboxItemId,
+      summary: output.analysis,
+      keyInsights: output.tasks
+        .filter((t) => t.priority === 'Must')
+        .map((t) => t.title)
+        .slice(0, 5),
+      suggestedTags: inboxItem.tags,
+      category: 'ai-generated',
+      sentiment: 'positive',
+      relevanceScore: 0.95,
+      rawAiResponse: JSON.stringify(output),
+      modelUsed: modelChain,
+      processingTimeMs: Date.now() - startTime,
+    },
+  })
+
+  const agileTasks = await Promise.all(
+    output.tasks.map((task) =>
+      prisma.agileTask.create({
+        data: {
+          title: task.title,
+          description: task.description,
+          status: mapStatus(task.status),
+          priority: mapPriority(task.priority),
+          type: 'task',
+          storyPoints: task.effort ?? 3,
+          labels: [
+            task.expertSource
+              .toLowerCase()
+              .replace(/\s+/g, '-')
+              .replace(/[^a-z0-9-]/g, ''),
+          ],
+          assigneeId: userId,
+        },
+      })
+    )
+  )
+
+  const roadmapTimeline = await prisma.roadmapTimeline.create({
+    data: {
+      title: `${getCurrentQuarter().toUpperCase()} ${new Date().getFullYear()} · ${
+        inboxItem.sourceTitle?.slice(0, 40) ?? 'Nuevo Roadmap'
+      }`,
+      description: output.analysis.slice(0, 300) + '…',
+      phase: getCurrentQuarter(),
+      year: new Date().getFullYear(),
+      status: 'planned',
+      startDate: output.milestones[0]?.date
+        ? new Date(output.milestones[0].date)
+        : new Date(),
+      endDate: output.milestones[output.milestones.length - 1]?.date
+        ? new Date(output.milestones[output.milestones.length - 1].date)
+        : new Date(Date.now() + 6 * 30 * 24 * 60 * 60 * 1000),
+      milestones: output.milestones.map((m) => ({
+        name: m.title,
+        date: m.date,
+        description: m.description,
+      })),
+      ownerId: userId,
+      color: '#6366f1',
+    },
+  })
+
+  await prisma.inboxItem.update({
+    where: { id: inboxItemId },
+    data: { status: 'analyzed' },
+  })
+
+  return { analysisResult, agileTasks, roadmapTimeline }
 }
 
 // ─── Endpoint ─────────────────────────────────────────────────────────────────
@@ -121,35 +325,23 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
     }
 
-    const user = await prisma.user.findUnique({
-      where: { email: session.user.email },
-    })
-
+    const user = await prisma.user.findUnique({ where: { email: session.user.email } })
     if (!user) {
       return NextResponse.json({ error: 'User not found' }, { status: 404 })
     }
 
-    const body = await request.json()
-    const { inboxItemId } = body
-
+    const { inboxItemId } = await request.json()
     if (!inboxItemId) {
       return NextResponse.json({ error: 'inboxItemId is required' }, { status: 400 })
     }
 
-    // Verify ownership
-    const inboxItem = await prisma.inboxItem.findUnique({
-      where: { id: inboxItemId },
-    })
-
+    const inboxItem = await prisma.inboxItem.findUnique({ where: { id: inboxItemId } })
     if (!inboxItem || inboxItem.userId !== user.id) {
       return NextResponse.json({ error: 'Item not found' }, { status: 404 })
     }
 
-    // If already analyzed, return existing data
-    const existingAnalysis = await prisma.analysisResult.findUnique({
-      where: { inboxItemId },
-    })
-
+    // Return cached analysis if already validated
+    const existingAnalysis = await prisma.analysisResult.findUnique({ where: { inboxItemId } })
     if (existingAnalysis && inboxItem.status === 'analyzed') {
       const existingTasks = await prisma.agileTask.findMany({
         where: { assigneeId: user.id },
@@ -166,123 +358,96 @@ export async function POST(request: NextRequest) {
       })
     }
 
-    // ── Gemini API call ──────────────────────────────────────────────────────
+    // ── Phase A: Gemini Agents Debate ────────────────────────────────────────
 
-    const apiKey = process.env.GEMINI_API_KEY
-    if (!apiKey) {
-      console.error('[ORCHESTRATOR] GEMINI_API_KEY not set — falling back to mock')
+    if (!process.env.GEMINI_API_KEY) {
+      console.warn('[ORCHESTRATOR] No GEMINI_API_KEY — using mock fallback')
       return runMockOrchestrator(inboxItemId, user.id, startTime)
     }
 
-    let geminiOutput: GeminiOutput
-
+    let geminiAnalysis: string
     try {
-      const genAI = new GoogleGenerativeAI(apiKey)
-      const model = genAI.getGenerativeModel({
-        model: process.env.GEMINI_MODEL ?? 'gemini-2.5-flash',
-        generationConfig: {
-          responseMimeType: 'application/json',
-          temperature: 0.7,
-          maxOutputTokens: 4096,
-        } as Parameters<typeof genAI.getGenerativeModel>[0]['generationConfig'],
-      })
-
-      const prompt = buildPrompt({
+      console.log('[ORCHESTRATOR] Phase A: Gemini agents debating...')
+      geminiAnalysis = await runGeminiAgents({
         rawContent: inboxItem.rawContent,
         sourceTitle: inboxItem.sourceTitle,
         sourceUrl: inboxItem.sourceUrl,
         tags: inboxItem.tags,
       })
-
-      const result = await model.generateContent(prompt)
-      const rawText = result.response.text()
-
-      console.log('[ORCHESTRATOR] Gemini raw response length:', rawText.length)
-      geminiOutput = JSON.parse(rawText) as GeminiOutput
-    } catch (geminiError) {
-      console.error('[ORCHESTRATOR] Gemini error, falling back to mock:', geminiError)
+      console.log('[ORCHESTRATOR] Phase A complete — Gemini output length:', geminiAnalysis.length)
+    } catch (err) {
+      console.error('[ORCHESTRATOR] Phase A (Gemini) failed:', err)
       return runMockOrchestrator(inboxItemId, user.id, startTime)
     }
 
-    // ── Persist results ──────────────────────────────────────────────────────
+    // ── Phase B: Perplexity Market Research ──────────────────────────────────
 
-    const analysisResult = existingAnalysis
-      ? existingAnalysis
-      : await prisma.analysisResult.create({
-          data: {
-            inboxItemId,
-            summary: geminiOutput.analysis,
-            keyInsights: geminiOutput.tasks
-              .filter((t) => t.priority === 'Must')
-              .map((t) => t.title)
-              .slice(0, 5),
-            suggestedTags: inboxItem.tags,
-            category: 'ai-generated',
-            sentiment: 'positive',
-            relevanceScore: 0.9,
-            rawAiResponse: JSON.stringify(geminiOutput),
-            modelUsed: process.env.GEMINI_MODEL ?? 'gemini-2.5-flash',
-            processingTimeMs: Date.now() - startTime,
-          },
+    let perplexityResearch = '(Market research not available — PERPLEXITY_API_KEY not configured)'
+    if (process.env.PERPLEXITY_API_KEY) {
+      try {
+        console.log('[ORCHESTRATOR] Phase B: Perplexity market research...')
+        perplexityResearch = await runPerplexityResearch(geminiAnalysis, {
+          rawContent: inboxItem.rawContent,
+          sourceTitle: inboxItem.sourceTitle,
+          sourceUrl: inboxItem.sourceUrl,
+          tags: inboxItem.tags,
         })
+        console.log('[ORCHESTRATOR] Phase B complete — Perplexity output length:', perplexityResearch.length)
+      } catch (err) {
+        console.warn('[ORCHESTRATOR] Phase B (Perplexity) failed, continuing without market data:', err)
+        perplexityResearch = '(Market research unavailable due to API error)'
+      }
+    } else {
+      console.warn('[ORCHESTRATOR] Phase B: PERPLEXITY_API_KEY not set, skipping market research')
+    }
 
-    const agileTasks = await Promise.all(
-      geminiOutput.tasks.map((task) =>
-        prisma.agileTask.create({
-          data: {
-            title: task.title,
-            description: task.description,
-            status: mapStatus(task.status),
-            priority: mapPriority(task.priority),
-            type: 'task',
-            storyPoints: task.effort ?? 3,
-            labels: [
-              task.expertSource
-                .toLowerCase()
-                .replace(/\s+/g, '-')
-                .replace(/[^a-z0-9-]/g, ''),
-            ],
-            assigneeId: user.id,
-          },
-        })
+    // ── Phase C: Claude The Closer ────────────────────────────────────────────
+
+    if (!process.env.ANTHROPIC_API_KEY) {
+      console.warn('[ORCHESTRATOR] No ANTHROPIC_API_KEY — falling back to mock')
+      return runMockOrchestrator(inboxItemId, user.id, startTime)
+    }
+
+    let finalOutput: OrchestrationOutput
+    try {
+      console.log('[ORCHESTRATOR] Phase C: Claude synthesizing final plan...')
+      finalOutput = await runClaudeCloser(
+        {
+          rawContent: inboxItem.rawContent,
+          sourceTitle: inboxItem.sourceTitle,
+          sourceUrl: inboxItem.sourceUrl,
+          tags: inboxItem.tags,
+        },
+        geminiAnalysis,
+        perplexityResearch
       )
+      console.log('[ORCHESTRATOR] Phase C complete — Claude output tasks:', finalOutput.tasks?.length)
+    } catch (err) {
+      console.error('[ORCHESTRATOR] Phase C (Claude) failed:', err)
+      return runMockOrchestrator(inboxItemId, user.id, startTime)
+    }
+
+    // ── Persist & return ──────────────────────────────────────────────────────
+
+    const modelChain = [
+      process.env.GEMINI_MODEL ?? 'gemini-2.5-flash',
+      'sonar',
+      'claude-3-5-sonnet-latest',
+    ].join(' → ')
+
+    const { analysisResult, agileTasks, roadmapTimeline } = await persistResults(
+      inboxItemId,
+      user.id,
+      finalOutput,
+      modelChain,
+      startTime,
+      { tags: inboxItem.tags, sourceTitle: inboxItem.sourceTitle }
     )
-
-    const roadmapTimeline = await prisma.roadmapTimeline.create({
-      data: {
-        title: `${getCurrentQuarter().toUpperCase()} ${new Date().getFullYear()} · ${
-          inboxItem.sourceTitle?.slice(0, 40) ?? 'Nuevo Roadmap'
-        }`,
-        description: geminiOutput.analysis.slice(0, 300) + '…',
-        phase: getCurrentQuarter(),
-        year: new Date().getFullYear(),
-        status: 'planned',
-        startDate: geminiOutput.milestones[0]?.date
-          ? new Date(geminiOutput.milestones[0].date)
-          : new Date(),
-        endDate: geminiOutput.milestones[geminiOutput.milestones.length - 1]?.date
-          ? new Date(
-              geminiOutput.milestones[geminiOutput.milestones.length - 1].date
-            )
-          : new Date(Date.now() + 6 * 30 * 24 * 60 * 60 * 1000),
-        milestones: geminiOutput.milestones.map((m) => ({
-          name: m.title,
-          date: m.date,
-          description: m.description,
-        })),
-        ownerId: user.id,
-        color: '#6366f1',
-      },
-    })
-
-    await prisma.inboxItem.update({
-      where: { id: inboxItemId },
-      data: { status: 'analyzed' },
-    })
 
     return NextResponse.json({
       success: true,
       cached: false,
+      pipeline: ['gemini-agents', 'perplexity-research', 'claude-closer'],
       processingTimeMs: Date.now() - startTime,
       analysisResult,
       agileTasks,
@@ -294,46 +459,56 @@ export async function POST(request: NextRequest) {
   }
 }
 
-// ─── Mock fallback (no API key / Gemini error) ─────────────────────────────────
+// ─── Mock fallback ────────────────────────────────────────────────────────────
 
 async function runMockOrchestrator(inboxItemId: string, userId: string, startTime: number) {
   const existingAnalysis = await prisma.analysisResult.findUnique({ where: { inboxItemId } })
 
-  const analysisResult = existingAnalysis ?? (await prisma.analysisResult.create({
-    data: {
-      inboxItemId,
-      summary:
-        'Alta viabilidad detectada (modo demo — configura GEMINI_API_KEY para análisis real). El concepto muestra diferenciadores claros en el mercado objetivo.',
-      keyInsights: [
-        'Mercado en crecimiento sostenido del 22% anual',
-        'Competencia fragmentada con baja retención',
-        'Ventana de entrada favorable en los próximos 6 meses',
-      ],
-      suggestedTags: ['validation-required', 'demo-mode'],
-      category: 'technology',
-      sentiment: 'positive',
-      relevanceScore: 0.75,
-      rawAiResponse: JSON.stringify({ mock: true }),
-      modelUsed: 'mock-fallback',
-      processingTimeMs: Date.now() - startTime,
-    },
-  }))
+  const analysisResult =
+    existingAnalysis ??
+    (await prisma.analysisResult.create({
+      data: {
+        inboxItemId,
+        summary:
+          'Alta viabilidad detectada (modo demo — configura GEMINI_API_KEY, PERPLEXITY_API_KEY y ANTHROPIC_API_KEY para el pipeline Multi-LLM completo). El concepto muestra diferenciadores claros en el mercado objetivo.',
+        keyInsights: [
+          'Mercado en crecimiento sostenido del 22% anual',
+          'Competencia fragmentada con baja retención',
+          'Ventana de entrada favorable en los próximos 6 meses',
+        ],
+        suggestedTags: ['validation-required', 'demo-mode'],
+        category: 'technology',
+        sentiment: 'positive',
+        relevanceScore: 0.75,
+        rawAiResponse: JSON.stringify({ mock: true }),
+        modelUsed: 'mock-fallback',
+        processingTimeMs: Date.now() - startTime,
+      },
+    }))
 
   const agileTasks = await Promise.all([
     prisma.agileTask.create({
       data: {
         title: '[Demo] Validar propuesta de valor con 5 usuarios target',
         description: 'Entrevistar usuarios potenciales para confirmar el problema.',
-        status: 'todo', priority: 'critical', type: 'research', storyPoints: 3,
-        labels: ['lean-strategist'], assigneeId: userId,
+        status: 'todo',
+        priority: 'critical',
+        type: 'research',
+        storyPoints: 3,
+        labels: ['lean-strategist'],
+        assigneeId: userId,
       },
     }),
     prisma.agileTask.create({
       data: {
         title: '[Demo] Construir landing page de captura',
         description: 'Landing para medir interés antes de construir el producto.',
-        status: 'todo', priority: 'high', type: 'feature', storyPoints: 5,
-        labels: ['growth-hacker'], assigneeId: userId,
+        status: 'todo',
+        priority: 'high',
+        type: 'feature',
+        storyPoints: 5,
+        labels: ['growth-hacker'],
+        assigneeId: userId,
       },
     }),
   ])
@@ -341,13 +516,20 @@ async function runMockOrchestrator(inboxItemId: string, userId: string, startTim
   const roadmapTimeline = await prisma.roadmapTimeline.create({
     data: {
       title: `${getCurrentQuarter().toUpperCase()} ${new Date().getFullYear()} · Demo Roadmap`,
-      description: 'Roadmap generado en modo demo. Configura GEMINI_API_KEY para análisis real.',
+      description:
+        'Roadmap generado en modo demo. Configura las API keys para el pipeline Multi-LLM real.',
       phase: getCurrentQuarter(),
       year: new Date().getFullYear(),
       status: 'planned',
       milestones: [
-        { name: 'Entrevistas completadas', date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10) },
-        { name: 'MVP Beta', date: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10) },
+        {
+          name: 'Entrevistas completadas',
+          date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+        },
+        {
+          name: 'MVP Beta',
+          date: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
+        },
       ],
       ownerId: userId,
       color: '#94a3b8',
@@ -360,6 +542,7 @@ async function runMockOrchestrator(inboxItemId: string, userId: string, startTim
     success: true,
     cached: false,
     demo: true,
+    pipeline: ['mock-fallback'],
     processingTimeMs: Date.now() - startTime,
     analysisResult,
     agileTasks,

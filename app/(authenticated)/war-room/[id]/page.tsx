@@ -230,6 +230,33 @@ function AgentCard({
   );
 }
 
+// ─── Pipeline Phase ───────────────────────────────────────────────────────────
+
+type PipelinePhase = "idle" | "gemini" | "perplexity" | "claude" | "done";
+
+const PIPELINE_PHASES: Record<
+  PipelinePhase,
+  { label: string; color: string; icon: string }
+> = {
+  idle: { label: "", color: "", icon: "" },
+  gemini: {
+    label: "1. Agentes debatiendo (Gemini)...",
+    color: "text-blue-400",
+    icon: "🤖",
+  },
+  perplexity: {
+    label: "2. Investigando mercado (Perplexity)...",
+    color: "text-emerald-400",
+    icon: "🌐",
+  },
+  claude: {
+    label: "3. Sintetizando Roadmap (Claude)...",
+    color: "text-violet-400",
+    icon: "✨",
+  },
+  done: { label: "Análisis completado", color: "text-emerald-400", icon: "✅" },
+};
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function WarRoomPage() {
@@ -242,6 +269,7 @@ export default function WarRoomPage() {
     Object.fromEntries(AGENTS.map((a) => [a.id, "idle"]))
   );
   const [orchestrating, setOrchestrating] = useState(false);
+  const [pipelinePhase, setPipelinePhase] = useState<PipelinePhase>("idle");
   const [result, setResult] = useState<OrchestratorResult | null>(null);
   const [orchestrateError, setOrchestrateError] = useState<string | null>(null);
 
@@ -271,27 +299,31 @@ export default function WarRoomPage() {
     setOrchestrating(true);
     setOrchestrateError(null);
     setResult(null);
+    setPipelinePhase("gemini");
 
-    // Animate agents sequentially
     const agentIds = AGENTS.map((a) => a.id);
 
-    // Start all analyzing with staggered delays
+    // Phase A: agents analyzing (staggered, ~5s window)
     for (let i = 0; i < agentIds.length; i++) {
       setTimeout(() => {
         setAgentStatuses((prev) => ({ ...prev, [agentIds[i]]: "analyzing" }));
       }, i * 200);
     }
 
+    // Phase B label at ~5s
+    const t1 = setTimeout(() => setPipelinePhase("perplexity"), 5000);
+    // Phase C label at ~11s
+    const t2 = setTimeout(() => setPipelinePhase("claude"), 11000);
+
     try {
-      // Wait a minimum of 2.5s for the animation to feel real
-      const [res] = await Promise.all([
-        fetch("/api/orchestrator", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ inboxItemId: params.id }),
-        }),
-        new Promise((resolve) => setTimeout(resolve, 2800)),
-      ]);
+      const res = await fetch("/api/orchestrator", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ inboxItemId: params.id }),
+      });
+
+      clearTimeout(t1);
+      clearTimeout(t2);
 
       if (!res.ok) {
         const err = await res.json();
@@ -299,18 +331,21 @@ export default function WarRoomPage() {
       }
 
       const data = await res.json();
+      setPipelinePhase("done");
 
-      // Mark agents as done sequentially
+      // Mark agents done sequentially
       for (let i = 0; i < agentIds.length; i++) {
         setTimeout(() => {
           setAgentStatuses((prev) => ({ ...prev, [agentIds[i]]: "done" }));
         }, i * 150);
       }
 
-      // Update item status
-      setItem((prev) => prev ? { ...prev, status: "analyzed" } : prev);
+      setItem((prev) => (prev ? { ...prev, status: "analyzed" } : prev));
       setResult(data);
     } catch (err) {
+      clearTimeout(t1);
+      clearTimeout(t2);
+      setPipelinePhase("idle");
       setOrchestrateError(err instanceof Error ? err.message : "Error al orquestar");
       setAgentStatuses(Object.fromEntries(AGENTS.map((a) => [a.id, "idle"])));
     } finally {
@@ -441,23 +476,46 @@ export default function WarRoomPage() {
 
             {/* Orchestrate button / status */}
             {!result && (
-              <button
-                onClick={handleOrchestrate}
-                disabled={orchestrating}
-                className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 py-3.5 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-60 transition-all active:scale-95"
-              >
-                {orchestrating ? (
-                  <>
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    Orquestando análisis…
-                  </>
-                ) : (
-                  <>
-                    <Zap className="h-4 w-4" />
-                    Activar Orquestador
-                  </>
+              <div className="space-y-2">
+                <button
+                  onClick={handleOrchestrate}
+                  disabled={orchestrating}
+                  className="w-full inline-flex items-center justify-center gap-2 rounded-xl bg-indigo-600 px-5 py-3.5 text-sm font-semibold text-white hover:bg-indigo-500 disabled:opacity-60 transition-all active:scale-95"
+                >
+                  {orchestrating ? (
+                    <>
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      Orquestando análisis…
+                    </>
+                  ) : (
+                    <>
+                      <Zap className="h-4 w-4" />
+                      Activar Orquestador Multi-LLM
+                    </>
+                  )}
+                </button>
+
+                {/* Pipeline phase indicator */}
+                {orchestrating && pipelinePhase !== "idle" && (
+                  <motion.div
+                    key={pipelinePhase}
+                    initial={{ opacity: 0, y: 4 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ duration: 0.3 }}
+                    className="flex items-center gap-2 rounded-lg border border-gray-800 bg-gray-900/80 px-3 py-2"
+                  >
+                    <span className="text-sm">{PIPELINE_PHASES[pipelinePhase].icon}</span>
+                    <span className={`text-xs font-medium ${PIPELINE_PHASES[pipelinePhase].color}`}>
+                      {PIPELINE_PHASES[pipelinePhase].label}
+                    </span>
+                    <motion.div
+                      className="ml-auto h-1.5 w-1.5 rounded-full bg-current"
+                      animate={{ opacity: [1, 0.3, 1] }}
+                      transition={{ duration: 1, repeat: Infinity }}
+                    />
+                  </motion.div>
                 )}
-              </button>
+              </div>
             )}
 
             {orchestrateError && (
@@ -496,7 +554,13 @@ export default function WarRoomPage() {
                   Panel de Expertos
                 </p>
                 <span className="ml-auto text-xs text-gray-600">
-                  {Object.values(agentStatuses).filter((s) => s === "done").length}/{AGENTS.length} completados
+                  {pipelinePhase !== "idle" && pipelinePhase !== "done" && orchestrating ? (
+                    <span className={`font-medium ${PIPELINE_PHASES[pipelinePhase].color}`}>
+                      {PIPELINE_PHASES[pipelinePhase].icon} {pipelinePhase === "gemini" ? "Gemini" : pipelinePhase === "perplexity" ? "Perplexity" : "Claude"}
+                    </span>
+                  ) : (
+                    `${Object.values(agentStatuses).filter((s) => s === "done").length}/${AGENTS.length} completados`
+                  )}
                 </span>
               </div>
 
