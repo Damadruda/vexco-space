@@ -13,7 +13,7 @@ export default function LoginPage() {
     setLoading(true);
     setError("");
     try {
-      await signIn("google", { callbackUrl: "/dashboard" });
+      await signIn("google", { callbackUrl: "/inbox" });
     } catch (err) {
       setError("Error al iniciar sesión con Google");
       setLoading(false);
