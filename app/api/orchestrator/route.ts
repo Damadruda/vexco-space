@@ -64,9 +64,64 @@ function getCurrentQuarter(): string {
   return 'q4'
 }
 
-// ─── Phase A: Gemini Multi-Agent Debate ───────────────────────────────────────
+// ─── RAG: Knowledge Base Context Builder ──────────────────────────────────────
 
-async function runGeminiAgents(item: IdeaItem): Promise<string> {
+interface KnowledgeEntry {
+  title: string
+  summary: string | null
+  category: string | null
+  route: string | null
+  tags: string[]
+}
+
+function buildKnowledgeContext(entries: KnowledgeEntry[]): string {
+  if (entries.length === 0) {
+    return '(No hay conocimiento guardado aún — usa tu criterio experto de vanguardia)'
+  }
+
+  const designEntries = entries.filter(
+    (e) =>
+      e.route === 'B' ||
+      e.category?.toLowerCase().includes('design') ||
+      e.category?.toLowerCase().includes('ux') ||
+      e.category?.toLowerCase().includes('ui') ||
+      e.tags.some((t) => ['design', 'ux', 'ui', 'trend', 'tendencia'].includes(t.toLowerCase()))
+  )
+
+  const devEntries = entries.filter(
+    (e) =>
+      e.route === 'C' ||
+      e.category?.toLowerCase().includes('tech') ||
+      e.category?.toLowerCase().includes('dev') ||
+      e.category?.toLowerCase().includes('tool') ||
+      e.tags.some((t) => ['tech', 'dev', 'tool', 'herramienta', 'stack'].includes(t.toLowerCase()))
+  )
+
+  const otherEntries = entries.filter(
+    (e) => !designEntries.includes(e) && !devEntries.includes(e)
+  )
+
+  const fmt = (list: KnowledgeEntry[]) =>
+    list.map((e) => `  · ${e.title}${e.summary ? ` — ${e.summary}` : ''}`).join('\n')
+
+  const sections: string[] = []
+
+  if (designEntries.length > 0) {
+    sections.push(`TENDENCIAS DE DISEÑO Y UX GUARDADAS:\n${fmt(designEntries)}`)
+  }
+  if (devEntries.length > 0) {
+    sections.push(`HERRAMIENTAS Y ACELERADORES DEV GUARDADOS:\n${fmt(devEntries)}`)
+  }
+  if (otherEntries.length > 0) {
+    sections.push(`OTROS CONOCIMIENTOS GUARDADOS:\n${fmt(otherEntries)}`)
+  }
+
+  return sections.join('\n\n')
+}
+
+// ─── Phase A: Gemini Multi-Agent Debate (RAG-Enhanced) ────────────────────────
+
+async function runGeminiAgents(item: IdeaItem, knowledgeContext: string): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY
   if (!apiKey) throw new Error('GEMINI_API_KEY not set')
 
@@ -87,13 +142,18 @@ Content: ${item.rawContent}
 ${item.sourceUrl ? `Source: ${item.sourceUrl}` : ''}
 ${item.tags.length > 0 ? `Tags: ${item.tags.join(', ')}` : ''}
 
+---
+USER'S KNOWLEDGE BASE (style DNA & preferred tools):
+${knowledgeContext}
+---
+
 Provide a detailed analysis from each expert's perspective:
 
 1. LEAN STRATEGIST: Evaluate the value proposition, problem-solution fit, and customer segment. Is the problem real and urgent? What is the minimum viable solution?
 
-2. TECH FUTURIST: Assess technical feasibility, emerging tech leverage, stack recommendations, and scalability. What technology bets should be placed?
+2. TECH FUTURIST: You are the Tech Futurist. Take the saved development accelerators from the USER'S KNOWLEDGE BASE above as your starting point. If they apply to this idea, integrate them. If the knowledge base is scarce or you know of more efficient tools for this specific project, use your expert AI judgment to suggest the best possible technology stack, complementing the user's known preferences. Never limit yourself to only what's in the knowledge base — evolve it.
 
-3. UX ARCHITECT: Define the ideal user journey, key interaction patterns, and experience differentiators. What will make users love this product?
+3. CREATIVE UX/UI & TREND ARCHITECT: You are the Creative UX/UI & Trend Architect. Use the design trends and UX tendencies from the USER'S KNOWLEDGE BASE as your primary inspiration and style DNA. If the context is scarce, expand and evolve these ideas using your own vast knowledge of cutting-edge design (Bento UI, Glassmorphism, Spatial UI, Motion Design, Variable Fonts, Radix-based design systems). MANDATORY: Reject generic corporate designs. Push for bold, opinionated, delightful experiences that users will remember.
 
 Write a rich, detailed debate (3-4 paragraphs per expert). Be specific and avoid generic advice. Focus on this exact idea.`
 
@@ -358,6 +418,22 @@ export async function POST(request: NextRequest) {
       })
     }
 
+    // ── RAG: Build Knowledge Base context ────────────────────────────────────
+
+    let knowledgeContext = '(No hay conocimiento guardado aún — usa tu criterio experto de vanguardia)'
+    try {
+      const knowledgeEntries = await prisma.knowledgeBase.findMany({
+        where: { authorId: user.id, status: 'active' },
+        select: { title: true, summary: true, category: true, route: true, tags: true },
+        orderBy: { updatedAt: 'desc' },
+        take: 30,
+      })
+      knowledgeContext = buildKnowledgeContext(knowledgeEntries)
+      console.log('[ORCHESTRATOR] RAG: loaded', knowledgeEntries.length, 'knowledge entries')
+    } catch (err) {
+      console.warn('[ORCHESTRATOR] RAG query failed, continuing without context:', err)
+    }
+
     // ── Phase A: Gemini Agents Debate ────────────────────────────────────────
 
     if (!process.env.GEMINI_API_KEY) {
@@ -367,13 +443,16 @@ export async function POST(request: NextRequest) {
 
     let geminiAnalysis: string
     try {
-      console.log('[ORCHESTRATOR] Phase A: Gemini agents debating...')
-      geminiAnalysis = await runGeminiAgents({
-        rawContent: inboxItem.rawContent,
-        sourceTitle: inboxItem.sourceTitle,
-        sourceUrl: inboxItem.sourceUrl,
-        tags: inboxItem.tags,
-      })
+      console.log('[ORCHESTRATOR] Phase A: Gemini agents debating (with RAG context)...')
+      geminiAnalysis = await runGeminiAgents(
+        {
+          rawContent: inboxItem.rawContent,
+          sourceTitle: inboxItem.sourceTitle,
+          sourceUrl: inboxItem.sourceUrl,
+          tags: inboxItem.tags,
+        },
+        knowledgeContext
+      )
       console.log('[ORCHESTRATOR] Phase A complete — Gemini output length:', geminiAnalysis.length)
     } catch (err) {
       console.error('[ORCHESTRATOR] Phase A (Gemini) failed:', err)

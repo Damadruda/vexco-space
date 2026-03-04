@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { Header } from "@/components/ui/header";
 import {
   Inbox,
@@ -17,7 +17,10 @@ import {
   Settings,
   ChevronRight,
   Zap,
+  Lightbulb,
+  X,
 } from "lucide-react";
+import * as Dialog from "@radix-ui/react-dialog";
 import Link from "next/link";
 import { formatDistanceToNow } from "date-fns";
 import { es } from "date-fns/locale";
@@ -236,6 +239,159 @@ function InboxCard({
   );
 }
 
+// ─── Quick Idea Modal ─────────────────────────────────────────────────────────
+
+function QuickIdeaModal({
+  onCreated,
+}: {
+  onCreated: (item: InboxItem) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const [title, setTitle] = useState("");
+  const [content, setContent] = useState("");
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const titleRef = useRef<HTMLInputElement>(null);
+
+  const reset = () => {
+    setTitle("");
+    setContent("");
+    setError(null);
+  };
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!content.trim()) return;
+    setSaving(true);
+    setError(null);
+    try {
+      const res = await fetch("/api/inbox", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "idea",
+          rawContent: content.trim(),
+          sourceTitle: title.trim() || null,
+          status: "pending",
+        }),
+      });
+      if (!res.ok) throw new Error("Error al crear la idea");
+      const newItem = await res.json();
+      onCreated(newItem);
+      reset();
+      setOpen(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Error inesperado");
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Dialog.Root
+      open={open}
+      onOpenChange={(v) => {
+        setOpen(v);
+        if (!v) reset();
+      }}
+    >
+      <Dialog.Trigger asChild>
+        <button className="inline-flex items-center gap-1.5 rounded-lg border border-blue-200 bg-blue-50 px-3 py-1.5 text-xs font-medium text-blue-700 hover:bg-blue-100 transition-colors">
+          <Lightbulb className="h-3.5 w-3.5" />
+          Nueva Idea Rápida
+        </button>
+      </Dialog.Trigger>
+
+      <Dialog.Portal>
+        <Dialog.Overlay className="fixed inset-0 z-40 bg-black/40 backdrop-blur-sm data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0" />
+        <Dialog.Content
+          onOpenAutoFocus={(e) => {
+            e.preventDefault();
+            titleRef.current?.focus();
+          }}
+          className="fixed left-1/2 top-1/2 z-50 w-full max-w-md -translate-x-1/2 -translate-y-1/2 rounded-2xl border border-gray-200 bg-white p-6 shadow-2xl data-[state=open]:animate-in data-[state=closed]:animate-out data-[state=closed]:fade-out-0 data-[state=open]:fade-in-0 data-[state=closed]:zoom-out-95 data-[state=open]:zoom-in-95"
+        >
+          {/* Header */}
+          <div className="mb-5 flex items-start justify-between">
+            <div>
+              <Dialog.Title className="text-base font-semibold text-gray-900">
+                Nueva Idea Rápida
+              </Dialog.Title>
+              <Dialog.Description className="mt-0.5 text-xs text-gray-500">
+                Captura tu idea ahora, el War Room la analizará después.
+              </Dialog.Description>
+            </div>
+            <Dialog.Close className="rounded-lg p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors">
+              <X className="h-4 w-4" />
+            </Dialog.Close>
+          </div>
+
+          {/* Form */}
+          <form onSubmit={handleSubmit} className="space-y-4">
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-gray-700">
+                Título <span className="text-gray-400">(opcional)</span>
+              </label>
+              <input
+                ref={titleRef}
+                type="text"
+                value={title}
+                onChange={(e) => setTitle(e.target.value)}
+                placeholder="Ej: App de gestión de freelancers con IA"
+                className="w-full rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100 transition-all"
+              />
+            </div>
+
+            <div>
+              <label className="mb-1.5 block text-xs font-medium text-gray-700">
+                Resumen / Contexto <span className="text-red-400">*</span>
+              </label>
+              <textarea
+                value={content}
+                onChange={(e) => setContent(e.target.value)}
+                required
+                rows={5}
+                placeholder="Describe tu idea: qué problema resuelve, a quién va dirigida, qué la hace diferente…"
+                className="w-full resize-none rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100 transition-all"
+              />
+            </div>
+
+            {error && (
+              <p className="flex items-center gap-1.5 text-xs text-red-600">
+                <AlertCircle className="h-3.5 w-3.5 shrink-0" />
+                {error}
+              </p>
+            )}
+
+            <div className="flex justify-end gap-2 pt-1">
+              <Dialog.Close asChild>
+                <button
+                  type="button"
+                  className="rounded-lg border border-gray-200 px-4 py-2 text-xs font-medium text-gray-600 hover:bg-gray-50 transition-colors"
+                >
+                  Cancelar
+                </button>
+              </Dialog.Close>
+              <button
+                type="submit"
+                disabled={saving || !content.trim()}
+                className="inline-flex items-center gap-1.5 rounded-lg bg-blue-600 px-4 py-2 text-xs font-semibold text-white hover:bg-blue-500 disabled:opacity-50 transition-colors"
+              >
+                {saving ? (
+                  <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                ) : (
+                  <Plus className="h-3.5 w-3.5" />
+                )}
+                Capturar Idea
+              </button>
+            </div>
+          </form>
+        </Dialog.Content>
+      </Dialog.Portal>
+    </Dialog.Root>
+  );
+}
+
 // ─── Empty Column ──────────────────────────────────────────────────────────────
 
 function EmptyColumn({ column }: { column: (typeof COLUMNS)[0] }) {
@@ -372,6 +528,13 @@ export default function InboxPage() {
     }
   };
 
+  const handleQuickCreate = (newItem: InboxItem) => {
+    setItems((prev) => ({
+      ...prev,
+      pending: [newItem, ...prev.pending],
+    }));
+  };
+
   const handleRaindropSync = async () => {
     setSyncing(true);
     try {
@@ -471,11 +634,16 @@ export default function InboxPage() {
                       <p className="text-xs text-gray-400">{col.sublabel}</p>
                     </div>
                   </div>
-                  <span
-                    className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${col.bg} ${col.accent} border ${col.border}`}
-                  >
-                    {items[col.id].length}
-                  </span>
+                  <div className="flex items-center gap-2">
+                    {col.id === "pending" && (
+                      <QuickIdeaModal onCreated={handleQuickCreate} />
+                    )}
+                    <span
+                      className={`flex h-6 w-6 items-center justify-center rounded-full text-xs font-bold ${col.bg} ${col.accent} border ${col.border}`}
+                    >
+                      {items[col.id].length}
+                    </span>
+                  </div>
                 </div>
 
                 {/* Cards */}
