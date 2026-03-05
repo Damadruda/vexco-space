@@ -318,7 +318,7 @@ ${perplexityResearch}
 Genera el plan de acción ejecutable llamando a la herramienta generate_action_plan.`
 
   const response = await anthropic.messages.create({
-    model: 'claude-3-5-sonnet-20241022',
+    model: 'claude-3-haiku-20240307',
     max_tokens: 4096,
     system: systemPrompt,
     tools: [ORCHESTRATION_TOOL],
@@ -539,7 +539,7 @@ export async function POST(request: NextRequest) {
     const modelChain = [
       ...(geminiAnalysis ? [process.env.GEMINI_MODEL ?? 'gemini-2.5-flash'] : []),
       ...(perplexityResearch ? ['sonar'] : []),
-      'claude-3-5-sonnet-20241022',
+      'claude-3-haiku-20240307',
     ].join(' → ')
 
     const { analysisResult, agileTasks, roadmapTimeline } = await persistResults(
