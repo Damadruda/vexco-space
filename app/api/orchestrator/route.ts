@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { GoogleGenerativeAI } from '@google/generative-ai'
-import Anthropic from '@anthropic-ai/sdk'
+import { google } from '@ai-sdk/google'
+import { generateObject } from 'ai'
+import { z } from 'zod'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 
@@ -209,83 +211,54 @@ Be specific, cite real companies and data points. Avoid vague statements.`,
   return data.choices?.[0]?.message?.content ?? ''
 }
 
-// ─── Phase C: Claude Arquitecto VexCo — Structured Output via tool_use ────────
+// ─── Phase C: Gemini Arquitecto VexCo — Structured Output via generateObject ──
 
-const ORCHESTRATION_TOOL: Anthropic.Tool = {
-  name: 'generate_action_plan',
-  description: 'Genera el plan de acción ejecutable estructurado para el proyecto analizado',
-  input_schema: {
-    type: 'object' as const,
-    properties: {
-      analysis: {
-        type: 'string',
-        description:
-          'Síntesis estratégica de 3-4 párrafos: validación del problema, viabilidad técnica/mercado, riesgos y path recomendado. Integra toda la información disponible.',
-      },
-      tasks: {
-        type: 'array',
-        description: 'Entre 6 y 8 tareas técnicas concretas y accionables',
-        items: {
-          type: 'object',
-          properties: {
-            title: { type: 'string', description: 'Título de la tarea (máx 80 caracteres)' },
-            description: {
-              type: 'string',
-              description: 'Qué hacer y por qué, en 2-3 frases concretas',
-            },
-            priority: {
-              type: 'string',
-              enum: ['Must', 'Should', 'Could', "Won't"],
-            },
-            effort: {
-              type: 'number',
-              description: 'Story points en Fibonacci: 1, 2, 3, 5, 8 ó 13',
-            },
-            expertSource: {
-              type: 'string',
-              description: 'Área o rol responsable (ej. Arquitectura, Backend, Frontend, DevOps)',
-            },
-            status: {
-              type: 'string',
-              enum: ['Backlog', 'Todo', 'In Progress'],
-              description: "Las tareas Must van a Todo, el resto a Backlog",
-            },
-          },
-          required: ['title', 'description', 'priority', 'effort', 'expertSource', 'status'],
-        },
-        minItems: 6,
-        maxItems: 8,
-      },
-      milestones: {
-        type: 'array',
-        description: 'Entre 3 y 4 hitos que abarquen los próximos 6 meses',
-        items: {
-          type: 'object',
-          properties: {
-            title: { type: 'string', description: 'Nombre de la fase (ej. MVP Alpha)' },
-            date: { type: 'string', description: 'Fecha en formato YYYY-MM-DD' },
-            description: { type: 'string', description: 'Qué se logra en este hito' },
-          },
-          required: ['title', 'date', 'description'],
-        },
-        minItems: 3,
-        maxItems: 4,
-      },
-    },
-    required: ['analysis', 'tasks', 'milestones'],
-  },
-}
+const orchestrationSchema = z.object({
+  analysis: z
+    .string()
+    .describe(
+      'Síntesis estratégica de 3-4 párrafos: validación del problema, viabilidad técnica/mercado, riesgos y path recomendado. Integra toda la información disponible.'
+    ),
+  tasks: z
+    .array(
+      z.object({
+        title: z.string().describe('Título de la tarea (máx 80 caracteres)'),
+        description: z.string().describe('Qué hacer y por qué, en 2-3 frases concretas'),
+        priority: z.enum(['Must', 'Should', 'Could', "Won't"]),
+        effort: z.number().describe('Story points en Fibonacci: 1, 2, 3, 5, 8 ó 13'),
+        expertSource: z
+          .string()
+          .describe('Área o rol responsable (ej. Arquitectura, Backend, Frontend, DevOps)'),
+        status: z
+          .enum(['Backlog', 'Todo', 'In Progress'])
+          .describe("Las tareas Must van a Todo, el resto a Backlog"),
+      })
+    )
+    .min(6)
+    .max(8)
+    .describe('Entre 6 y 8 tareas técnicas concretas y accionables'),
+  milestones: z
+    .array(
+      z.object({
+        title: z.string().describe('Nombre de la fase (ej. MVP Alpha)'),
+        date: z.string().describe('Fecha en formato YYYY-MM-DD'),
+        description: z.string().describe('Qué se logra en este hito'),
+      })
+    )
+    .min(3)
+    .max(4)
+    .describe('Entre 3 y 4 hitos que abarquen los próximos 6 meses'),
+})
 
-async function runClaudeArquitecto(
+async function runGeminiArquitecto(
   item: IdeaItem,
   geminiAnalysis: string,
   perplexityResearch: string,
   knowledgeContext: string
-): Promise<OrchestrationOutput> {
-  const apiKey = process.env.ANTHROPIC_API_KEY
-  if (!apiKey) throw new Error('ANTHROPIC_API_KEY no configurada — integración AI real requerida')
-
-  const anthropic = new Anthropic({ apiKey })
+): Promise<z.infer<typeof orchestrationSchema>> {
+  if (!process.env.GEMINI_API_KEY) {
+    throw new Error('GEMINI_API_KEY no configurada — integración AI real requerida')
+  }
 
   const systemPrompt = `Eres el Arquitecto de Software de VexCo. Analiza la idea. Si detectas que es un proyecto para un cliente (ej. menciona marcas como Enprotech o automatizaciones B2B), IGNORA las fases de validación de mercado o PMF. Devuelve directamente tareas técnicas reales: Arquitectura, Stack, Endpoints, Base de Datos y Despliegue.
 
@@ -315,25 +288,18 @@ ${perplexityResearch}
     : ''
 }
 ---
-Genera el plan de acción ejecutable llamando a la herramienta generate_action_plan.`
+Genera el plan de acción ejecutable estructurado.`
 
-  const response = await anthropic.messages.create({
-    model: 'claude-3-haiku-20240307',
-    max_tokens: 4096,
+  const result = await generateObject({
+    model: google('gemini-1.5-pro'),
+    schema: orchestrationSchema,
     system: systemPrompt,
-    tools: [ORCHESTRATION_TOOL],
-    tool_choice: { type: 'tool', name: 'generate_action_plan' },
-    messages: [{ role: 'user', content: userMessage }],
+    prompt: userMessage,
   })
 
-  const toolUseBlock = response.content.find((block) => block.type === 'tool_use')
-  if (!toolUseBlock || toolUseBlock.type !== 'tool_use') {
-    throw new Error('Claude no devolvió un bloque tool_use válido')
-  }
-
-  const output = toolUseBlock.input as OrchestrationOutput
-  console.log('[ORCHESTRATOR] Claude tool_use — tasks:', output.tasks?.length)
-  return output
+  const object = result.object as z.infer<typeof orchestrationSchema>
+  console.log('[ORCHESTRATOR] Gemini generateObject — tasks:', object.tasks?.length)
+  return object
 }
 
 // ─── Persist Results ──────────────────────────────────────────────────────────
@@ -517,10 +483,10 @@ export async function POST(request: NextRequest) {
       console.warn('[ORCHESTRATOR] Phase B: PERPLEXITY_API_KEY not set, skipping')
     }
 
-    // ── Phase C: Claude Arquitecto VexCo (required) ───────────────────────────
+    // ── Phase C: Gemini Arquitecto VexCo (required) ───────────────────────────
 
-    console.log('[ORCHESTRATOR] Phase C: Claude Arquitecto generating structured plan...')
-    const finalOutput = await runClaudeArquitecto(
+    console.log('[ORCHESTRATOR] Phase C: Gemini Arquitecto generating structured plan...')
+    const finalOutput = await runGeminiArquitecto(
       ideaItem,
       geminiAnalysis,
       perplexityResearch,
@@ -533,13 +499,13 @@ export async function POST(request: NextRequest) {
     const pipelineSteps = [
       ...(geminiAnalysis ? ['gemini-agents'] : []),
       ...(perplexityResearch ? ['perplexity-research'] : []),
-      'claude-arquitecto-vexco',
+      'gemini-arquitecto-vexco',
     ]
 
     const modelChain = [
       ...(geminiAnalysis ? [process.env.GEMINI_MODEL ?? 'gemini-2.5-flash'] : []),
       ...(perplexityResearch ? ['sonar'] : []),
-      'claude-3-haiku-20240307',
+      'gemini-1.5-pro',
     ].join(' → ')
 
     const { analysisResult, agileTasks, roadmapTimeline } = await persistResults(
