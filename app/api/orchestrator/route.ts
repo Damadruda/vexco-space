@@ -1,9 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { GoogleGenerativeAI } from '@google/generative-ai'
-import { google } from '@ai-sdk/google'
-import { generateObject } from 'ai'
-import { z } from 'zod'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 
@@ -211,61 +208,57 @@ Be specific, cite real companies and data points. Avoid vague statements.`,
   return data.choices?.[0]?.message?.content ?? ''
 }
 
-// ─── Phase C: Gemini Arquitecto VexCo — Structured Output via generateObject ──
+// ─── Phase C: Gemini Arquitecto VexCo — Structured JSON via native SDK ────────
 
-const orchestrationSchema = z.object({
-  analysis: z
-    .string()
-    .describe(
-      'Síntesis estratégica de 3-4 párrafos: validación del problema, viabilidad técnica/mercado, riesgos y path recomendado. Integra toda la información disponible.'
-    ),
-  tasks: z
-    .array(
-      z.object({
-        title: z.string().describe('Título de la tarea (máx 80 caracteres)'),
-        description: z.string().describe('Qué hacer y por qué, en 2-3 frases concretas'),
-        priority: z.enum(['Must', 'Should', 'Could', "Won't"]),
-        effort: z.number().describe('Story points en Fibonacci: 1, 2, 3, 5, 8 ó 13'),
-        expertSource: z
-          .string()
-          .describe('Área o rol responsable (ej. Arquitectura, Backend, Frontend, DevOps)'),
-        status: z
-          .enum(['Backlog', 'Todo', 'In Progress'])
-          .describe("Las tareas Must van a Todo, el resto a Backlog"),
-      })
-    )
-    .min(6)
-    .max(8)
-    .describe('Entre 6 y 8 tareas técnicas concretas y accionables'),
-  milestones: z
-    .array(
-      z.object({
-        title: z.string().describe('Nombre de la fase (ej. MVP Alpha)'),
-        date: z.string().describe('Fecha en formato YYYY-MM-DD'),
-        description: z.string().describe('Qué se logra en este hito'),
-      })
-    )
-    .min(3)
-    .max(4)
-    .describe('Entre 3 y 4 hitos que abarquen los próximos 6 meses'),
-})
+const ORCHESTRATION_JSON_SCHEMA = `{
+  "analysis": "string — síntesis estratégica de 3-4 párrafos",
+  "tasks": [
+    {
+      "title": "string — máx 80 caracteres",
+      "description": "string — qué hacer y por qué, 2-3 frases",
+      "priority": "Must | Should | Could | Won't",
+      "effort": "number — Fibonacci: 1, 2, 3, 5, 8 ó 13",
+      "expertSource": "string — área responsable (ej. Arquitectura, Backend, Frontend, DevOps)",
+      "status": "Backlog | Todo | In Progress — Must va a Todo, resto a Backlog"
+    }
+  ],
+  "milestones": [
+    {
+      "title": "string — nombre de la fase (ej. MVP Alpha)",
+      "date": "string — YYYY-MM-DD",
+      "description": "string — qué se logra en este hito"
+    }
+  ]
+}`
 
 async function runGeminiArquitecto(
   item: IdeaItem,
   geminiAnalysis: string,
   perplexityResearch: string,
   knowledgeContext: string
-): Promise<z.infer<typeof orchestrationSchema>> {
+): Promise<OrchestrationOutput> {
   if (!process.env.GEMINI_API_KEY) {
     throw new Error('GEMINI_API_KEY no configurada — integración AI real requerida')
   }
 
-  const systemPrompt = `Eres el Arquitecto de Software de VexCo. Analiza la idea. Si detectas que es un proyecto para un cliente (ej. menciona marcas como Enprotech o automatizaciones B2B), IGNORA las fases de validación de mercado o PMF. Devuelve directamente tareas técnicas reales: Arquitectura, Stack, Endpoints, Base de Datos y Despliegue.
+  const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
+  const model = genAI.getGenerativeModel({
+    model: 'gemini-1.5-pro',
+    generationConfig: {
+      temperature: 0.4,
+      maxOutputTokens: 4096,
+      responseMimeType: 'application/json',
+    } as Parameters<typeof genAI.getGenerativeModel>[0]['generationConfig'],
+    systemInstruction: `Eres el Arquitecto de Software de VexCo. Analiza la idea. Si detectas que es un proyecto para un cliente (ej. menciona marcas como Enprotech o automatizaciones B2B), IGNORA las fases de validación de mercado o PMF. Devuelve directamente tareas técnicas reales: Arquitectura, Stack, Endpoints, Base de Datos y Despliegue.
 
 BASE DE CONOCIMIENTO DEL EQUIPO (contexto RAG):
-${knowledgeContext}`
+${knowledgeContext}
 
-  const userMessage = `IDEA A ANALIZAR:
+RESPONDE ÚNICAMENTE con un JSON válido que siga exactamente este schema (entre 6 y 8 tasks, entre 3 y 4 milestones):
+${ORCHESTRATION_JSON_SCHEMA}`,
+  })
+
+  const prompt = `IDEA A ANALIZAR:
 Título: ${item.sourceTitle || 'Sin título'}
 Contenido: ${item.rawContent}
 ${item.sourceUrl ? `Fuente: ${item.sourceUrl}` : ''}
@@ -288,18 +281,14 @@ ${perplexityResearch}
     : ''
 }
 ---
-Genera el plan de acción ejecutable estructurado.`
+Genera el plan de acción ejecutable estructurado como JSON.`
 
-  const result = await generateObject({
-    model: google('gemini-1.5-pro'),
-    schema: orchestrationSchema,
-    system: systemPrompt,
-    prompt: userMessage,
-  })
+  const result = await model.generateContent(prompt)
+  const text = result.response.text()
 
-  const object = result.object as z.infer<typeof orchestrationSchema>
-  console.log('[ORCHESTRATOR] Gemini generateObject — tasks:', object.tasks?.length)
-  return object
+  const output = JSON.parse(text) as OrchestrationOutput
+  console.log('[ORCHESTRATOR] Gemini native JSON — tasks:', output.tasks?.length)
+  return output
 }
 
 // ─── Persist Results ──────────────────────────────────────────────────────────

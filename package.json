@@ -32,7 +32,6 @@
     "typescript": "5.2.2"
   },
   "dependencies": {
-    "@ai-sdk/google": "^3.0.43",
     "@anthropic-ai/sdk": "^0.78.0",
     "@aws-sdk/client-s3": "^3.0.0",
     "@aws-sdk/s3-request-presigner": "^3.0.0",
@@ -77,7 +76,6 @@
     "@types/jsonwebtoken": "9.0.5",
     "@types/plotly.js": "2.35.5",
     "@types/react-plotly.js": "2.6.3",
-    "ai": "^6.0.116",
     "autoprefixer": "10.4.15",
     "axios": "^1.13.6",
     "bcryptjs": "2.4.3",
