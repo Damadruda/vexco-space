@@ -105,21 +105,17 @@ function buildKnowledgeContext(entries: KnowledgeEntry[]): string {
     list.map((e) => `  · ${e.title}${e.summary ? ` — ${e.summary}` : ''}`).join('\n')
 
   const sections: string[] = []
-
-  if (designEntries.length > 0) {
+  if (designEntries.length > 0)
     sections.push(`TENDENCIAS DE DISEÑO Y UX GUARDADAS:\n${fmt(designEntries)}`)
-  }
-  if (devEntries.length > 0) {
+  if (devEntries.length > 0)
     sections.push(`HERRAMIENTAS Y ACELERADORES DEV GUARDADOS:\n${fmt(devEntries)}`)
-  }
-  if (otherEntries.length > 0) {
+  if (otherEntries.length > 0)
     sections.push(`OTROS CONOCIMIENTOS GUARDADOS:\n${fmt(otherEntries)}`)
-  }
 
   return sections.join('\n\n')
 }
 
-// ─── Phase A: Gemini Multi-Agent Debate (RAG-Enhanced) ────────────────────────
+// ─── Phase A: Gemini Multi-Agent Debate (RAG-Enhanced, optional) ──────────────
 
 async function runGeminiAgents(item: IdeaItem, knowledgeContext: string): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY
@@ -151,17 +147,17 @@ Provide a detailed analysis from each expert's perspective:
 
 1. LEAN STRATEGIST: Evaluate the value proposition, problem-solution fit, and customer segment. Is the problem real and urgent? What is the minimum viable solution?
 
-2. TECH FUTURIST: You are the Tech Futurist. Take the saved development accelerators from the USER'S KNOWLEDGE BASE above as your starting point. If they apply to this idea, integrate them. If the knowledge base is scarce or you know of more efficient tools for this specific project, use your expert AI judgment to suggest the best possible technology stack, complementing the user's known preferences. Never limit yourself to only what's in the knowledge base — evolve it.
+2. TECH FUTURIST: Take the saved development accelerators from the USER'S KNOWLEDGE BASE above as your starting point. Suggest the best possible technology stack, complementing the user's known preferences.
 
-3. CREATIVE UX/UI & TREND ARCHITECT: You are the Creative UX/UI & Trend Architect. Use the design trends and UX tendencies from the USER'S KNOWLEDGE BASE as your primary inspiration and style DNA. If the context is scarce, expand and evolve these ideas using your own vast knowledge of cutting-edge design (Bento UI, Glassmorphism, Spatial UI, Motion Design, Variable Fonts, Radix-based design systems). MANDATORY: Reject generic corporate designs. Push for bold, opinionated, delightful experiences that users will remember.
+3. CREATIVE UX/UI & TREND ARCHITECT: Use the design trends from the USER'S KNOWLEDGE BASE as your primary inspiration. Push for bold, opinionated, delightful experiences that users will remember.
 
-Write a rich, detailed debate (3-4 paragraphs per expert). Be specific and avoid generic advice. Focus on this exact idea.`
+Write a rich, detailed debate (3-4 paragraphs per expert). Be specific and avoid generic advice.`
 
   const result = await model.generateContent(prompt)
   return result.response.text()
 }
 
-// ─── Phase B: Perplexity Real-Time Market Research ────────────────────────────
+// ─── Phase B: Perplexity Real-Time Market Research (optional) ─────────────────
 
 async function runPerplexityResearch(geminiAnalysis: string, item: IdeaItem): Promise<string> {
   const apiKey = process.env.PERPLEXITY_API_KEY
@@ -213,82 +209,131 @@ Be specific, cite real companies and data points. Avoid vague statements.`,
   return data.choices?.[0]?.message?.content ?? ''
 }
 
-// ─── Phase C: Claude The Closer — Final JSON Synthesis ────────────────────────
+// ─── Phase C: Claude Arquitecto VexCo — Structured Output via tool_use ────────
 
-async function runClaudeCloser(
+const ORCHESTRATION_TOOL: Anthropic.Tool = {
+  name: 'generate_action_plan',
+  description: 'Genera el plan de acción ejecutable estructurado para el proyecto analizado',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      analysis: {
+        type: 'string',
+        description:
+          'Síntesis estratégica de 3-4 párrafos: validación del problema, viabilidad técnica/mercado, riesgos y path recomendado. Integra toda la información disponible.',
+      },
+      tasks: {
+        type: 'array',
+        description: 'Entre 6 y 8 tareas técnicas concretas y accionables',
+        items: {
+          type: 'object',
+          properties: {
+            title: { type: 'string', description: 'Título de la tarea (máx 80 caracteres)' },
+            description: {
+              type: 'string',
+              description: 'Qué hacer y por qué, en 2-3 frases concretas',
+            },
+            priority: {
+              type: 'string',
+              enum: ['Must', 'Should', 'Could', "Won't"],
+            },
+            effort: {
+              type: 'number',
+              description: 'Story points en Fibonacci: 1, 2, 3, 5, 8 ó 13',
+            },
+            expertSource: {
+              type: 'string',
+              description: 'Área o rol responsable (ej. Arquitectura, Backend, Frontend, DevOps)',
+            },
+            status: {
+              type: 'string',
+              enum: ['Backlog', 'Todo', 'In Progress'],
+              description: "Las tareas Must van a Todo, el resto a Backlog",
+            },
+          },
+          required: ['title', 'description', 'priority', 'effort', 'expertSource', 'status'],
+        },
+        minItems: 6,
+        maxItems: 8,
+      },
+      milestones: {
+        type: 'array',
+        description: 'Entre 3 y 4 hitos que abarquen los próximos 6 meses',
+        items: {
+          type: 'object',
+          properties: {
+            title: { type: 'string', description: 'Nombre de la fase (ej. MVP Alpha)' },
+            date: { type: 'string', description: 'Fecha en formato YYYY-MM-DD' },
+            description: { type: 'string', description: 'Qué se logra en este hito' },
+          },
+          required: ['title', 'date', 'description'],
+        },
+        minItems: 3,
+        maxItems: 4,
+      },
+    },
+    required: ['analysis', 'tasks', 'milestones'],
+  },
+}
+
+async function runClaudeArquitecto(
   item: IdeaItem,
   geminiAnalysis: string,
-  perplexityResearch: string
+  perplexityResearch: string,
+  knowledgeContext: string
 ): Promise<OrchestrationOutput> {
   const apiKey = process.env.ANTHROPIC_API_KEY
-  if (!apiKey) throw new Error('ANTHROPIC_API_KEY not set')
+  if (!apiKey) throw new Error('ANTHROPIC_API_KEY no configurada — integración AI real requerida')
 
   const anthropic = new Anthropic({ apiKey })
 
-  const userMessage = `ORIGINAL IDEA:
-Title: ${item.sourceTitle || 'Untitled'}
-Content: ${item.rawContent}
-${item.sourceUrl ? `Source: ${item.sourceUrl}` : ''}
+  const systemPrompt = `Eres el Arquitecto de Software de VexCo. Analiza la idea. Si detectas que es un proyecto para un cliente (ej. menciona marcas como Enprotech o automatizaciones B2B), IGNORA las fases de validación de mercado o PMF. Devuelve directamente tareas técnicas reales: Arquitectura, Stack, Endpoints, Base de Datos y Despliegue.
+
+BASE DE CONOCIMIENTO DEL EQUIPO (contexto RAG):
+${knowledgeContext}`
+
+  const userMessage = `IDEA A ANALIZAR:
+Título: ${item.sourceTitle || 'Sin título'}
+Contenido: ${item.rawContent}
+${item.sourceUrl ? `Fuente: ${item.sourceUrl}` : ''}
 ${item.tags.length > 0 ? `Tags: ${item.tags.join(', ')}` : ''}
-
+${
+  geminiAnalysis
+    ? `
 ---
-EXPERT AGENTS ANALYSIS (Gemini):
+DEBATE DE EXPERTOS (Gemini Multi-Agent):
 ${geminiAnalysis}
-
+`
+    : ''
+}${
+  perplexityResearch
+    ? `
 ---
-REAL-TIME MARKET RESEARCH (Perplexity):
+INVESTIGACIÓN DE MERCADO EN TIEMPO REAL (Perplexity):
 ${perplexityResearch}
-
----
-Now synthesize all of this into an executable action plan. Respond ONLY with a valid JSON object — no markdown, no explanation, no code fences:
-
-{
-  "analysis": "A comprehensive 3-4 paragraph strategic synthesis covering: (1) problem/opportunity validation with market evidence, (2) technical and market viability informed by real data, (3) key risks and competitive differentiators, (4) recommended path forward. Be specific and integrate the market research data.",
-  "tasks": [
-    {
-      "title": "Specific actionable task title (max 80 chars)",
-      "description": "Detailed description of what to do and why (2-3 sentences)",
-      "priority": "Must|Should|Could|Won't",
-      "effort": 1,
-      "expertSource": "Name of the expert who proposed this task",
-      "status": "Backlog|Todo|In Progress"
-    }
-  ],
-  "milestones": [
-    {
-      "title": "Phase name (e.g. Discovery & Validation)",
-      "date": "YYYY-MM-DD",
-      "description": "What will be achieved by this milestone"
-    }
-  ]
+`
+    : ''
 }
+---
+Genera el plan de acción ejecutable llamando a la herramienta generate_action_plan.`
 
-CONSTRAINTS:
-- Generate exactly 6-8 tasks covering different expert areas
-- Generate exactly 3-4 milestones spanning the next 6 months
-- Tasks marked "Must" should have status "Todo"; others "Backlog"
-- effort uses Fibonacci points: 1, 2, 3, 5, 8, 13
-- Integrate the market research findings into the analysis and tasks
-- Respond ONLY with the JSON object, nothing else`
-
-  const message = await anthropic.messages.create({
+  const response = await anthropic.messages.create({
     model: 'claude-3-5-sonnet-latest',
     max_tokens: 4096,
-    system:
-      'Eres el Agile PM Expert. Sintetiza la visión de los agentes estratégicos y la investigación de mercado en tiempo real. Genera un plan de acción ejecutable, concreto y diferenciado. Responde ÚNICAMENTE con el objeto JSON solicitado, sin markdown ni explicaciones adicionales.',
+    system: systemPrompt,
+    tools: [ORCHESTRATION_TOOL],
+    tool_choice: { type: 'tool', name: 'generate_action_plan' },
     messages: [{ role: 'user', content: userMessage }],
   })
 
-  const rawText = message.content[0].type === 'text' ? message.content[0].text : ''
-  console.log('[ORCHESTRATOR] Claude raw response length:', rawText.length)
+  const toolUseBlock = response.content.find((block) => block.type === 'tool_use')
+  if (!toolUseBlock || toolUseBlock.type !== 'tool_use') {
+    throw new Error('Claude no devolvió un bloque tool_use válido')
+  }
 
-  // Strip potential code fences if Claude wraps the JSON
-  const cleaned = rawText
-    .replace(/^```(?:json)?\s*/i, '')
-    .replace(/\s*```$/i, '')
-    .trim()
-
-  return JSON.parse(cleaned) as OrchestrationOutput
+  const output = toolUseBlock.input as OrchestrationOutput
+  console.log('[ORCHESTRATOR] Claude tool_use — tasks:', output.tasks?.length)
+  return output
 }
 
 // ─── Persist Results ──────────────────────────────────────────────────────────
@@ -418,9 +463,17 @@ export async function POST(request: NextRequest) {
       })
     }
 
+    const ideaItem: IdeaItem = {
+      rawContent: inboxItem.rawContent,
+      sourceTitle: inboxItem.sourceTitle,
+      sourceUrl: inboxItem.sourceUrl,
+      tags: inboxItem.tags,
+    }
+
     // ── RAG: Build Knowledge Base context ────────────────────────────────────
 
-    let knowledgeContext = '(No hay conocimiento guardado aún — usa tu criterio experto de vanguardia)'
+    let knowledgeContext =
+      '(No hay conocimiento guardado aún — usa tu criterio experto de vanguardia)'
     try {
       const knowledgeEntries = await prisma.knowledgeBase.findMany({
         where: { authorId: user.id, status: 'active' },
@@ -434,83 +487,58 @@ export async function POST(request: NextRequest) {
       console.warn('[ORCHESTRATOR] RAG query failed, continuing without context:', err)
     }
 
-    // ── Phase A: Gemini Agents Debate ────────────────────────────────────────
+    // ── Phase A: Gemini Agents Debate (optional) ──────────────────────────────
 
-    if (!process.env.GEMINI_API_KEY) {
-      console.warn('[ORCHESTRATOR] No GEMINI_API_KEY — using mock fallback')
-      return runMockOrchestrator(inboxItemId, user.id, startTime)
+    let geminiAnalysis = ''
+    if (process.env.GEMINI_API_KEY) {
+      try {
+        console.log('[ORCHESTRATOR] Phase A: Gemini agents debating...')
+        geminiAnalysis = await runGeminiAgents(ideaItem, knowledgeContext)
+        console.log('[ORCHESTRATOR] Phase A complete — length:', geminiAnalysis.length)
+      } catch (err) {
+        console.warn('[ORCHESTRATOR] Phase A (Gemini) failed, continuing without it:', err)
+      }
+    } else {
+      console.warn('[ORCHESTRATOR] Phase A: GEMINI_API_KEY not set, skipping')
     }
 
-    let geminiAnalysis: string
-    try {
-      console.log('[ORCHESTRATOR] Phase A: Gemini agents debating (with RAG context)...')
-      geminiAnalysis = await runGeminiAgents(
-        {
-          rawContent: inboxItem.rawContent,
-          sourceTitle: inboxItem.sourceTitle,
-          sourceUrl: inboxItem.sourceUrl,
-          tags: inboxItem.tags,
-        },
-        knowledgeContext
-      )
-      console.log('[ORCHESTRATOR] Phase A complete — Gemini output length:', geminiAnalysis.length)
-    } catch (err) {
-      console.error('[ORCHESTRATOR] Phase A (Gemini) failed:', err)
-      return runMockOrchestrator(inboxItemId, user.id, startTime)
-    }
+    // ── Phase B: Perplexity Market Research (optional) ────────────────────────
 
-    // ── Phase B: Perplexity Market Research ──────────────────────────────────
-
-    let perplexityResearch = '(Market research not available — PERPLEXITY_API_KEY not configured)'
+    let perplexityResearch = ''
     if (process.env.PERPLEXITY_API_KEY) {
       try {
         console.log('[ORCHESTRATOR] Phase B: Perplexity market research...')
-        perplexityResearch = await runPerplexityResearch(geminiAnalysis, {
-          rawContent: inboxItem.rawContent,
-          sourceTitle: inboxItem.sourceTitle,
-          sourceUrl: inboxItem.sourceUrl,
-          tags: inboxItem.tags,
-        })
-        console.log('[ORCHESTRATOR] Phase B complete — Perplexity output length:', perplexityResearch.length)
+        perplexityResearch = await runPerplexityResearch(geminiAnalysis, ideaItem)
+        console.log('[ORCHESTRATOR] Phase B complete — length:', perplexityResearch.length)
       } catch (err) {
-        console.warn('[ORCHESTRATOR] Phase B (Perplexity) failed, continuing without market data:', err)
-        perplexityResearch = '(Market research unavailable due to API error)'
+        console.warn('[ORCHESTRATOR] Phase B (Perplexity) failed, continuing without it:', err)
       }
     } else {
-      console.warn('[ORCHESTRATOR] Phase B: PERPLEXITY_API_KEY not set, skipping market research')
+      console.warn('[ORCHESTRATOR] Phase B: PERPLEXITY_API_KEY not set, skipping')
     }
 
-    // ── Phase C: Claude The Closer ────────────────────────────────────────────
+    // ── Phase C: Claude Arquitecto VexCo (required) ───────────────────────────
 
-    if (!process.env.ANTHROPIC_API_KEY) {
-      console.warn('[ORCHESTRATOR] No ANTHROPIC_API_KEY — falling back to mock')
-      return runMockOrchestrator(inboxItemId, user.id, startTime)
-    }
-
-    let finalOutput: OrchestrationOutput
-    try {
-      console.log('[ORCHESTRATOR] Phase C: Claude synthesizing final plan...')
-      finalOutput = await runClaudeCloser(
-        {
-          rawContent: inboxItem.rawContent,
-          sourceTitle: inboxItem.sourceTitle,
-          sourceUrl: inboxItem.sourceUrl,
-          tags: inboxItem.tags,
-        },
-        geminiAnalysis,
-        perplexityResearch
-      )
-      console.log('[ORCHESTRATOR] Phase C complete — Claude output tasks:', finalOutput.tasks?.length)
-    } catch (err) {
-      console.error('[ORCHESTRATOR] Phase C (Claude) failed:', err)
-      return runMockOrchestrator(inboxItemId, user.id, startTime)
-    }
+    console.log('[ORCHESTRATOR] Phase C: Claude Arquitecto generating structured plan...')
+    const finalOutput = await runClaudeArquitecto(
+      ideaItem,
+      geminiAnalysis,
+      perplexityResearch,
+      knowledgeContext
+    )
+    console.log('[ORCHESTRATOR] Phase C complete — tasks:', finalOutput.tasks.length)
 
     // ── Persist & return ──────────────────────────────────────────────────────
 
+    const pipelineSteps = [
+      ...(geminiAnalysis ? ['gemini-agents'] : []),
+      ...(perplexityResearch ? ['perplexity-research'] : []),
+      'claude-arquitecto-vexco',
+    ]
+
     const modelChain = [
-      process.env.GEMINI_MODEL ?? 'gemini-2.5-flash',
-      'sonar',
+      ...(geminiAnalysis ? [process.env.GEMINI_MODEL ?? 'gemini-2.5-flash'] : []),
+      ...(perplexityResearch ? ['sonar'] : []),
       'claude-3-5-sonnet-latest',
     ].join(' → ')
 
@@ -526,7 +554,8 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({
       success: true,
       cached: false,
-      pipeline: ['gemini-agents', 'perplexity-research', 'claude-closer'],
+      pipeline: pipelineSteps,
+      modelChain,
       processingTimeMs: Date.now() - startTime,
       analysisResult,
       agileTasks,
@@ -534,97 +563,7 @@ export async function POST(request: NextRequest) {
     })
   } catch (error) {
     console.error('[ORCHESTRATOR]', error)
-    return NextResponse.json({ error: 'Orchestration failed' }, { status: 500 })
+    const message = error instanceof Error ? error.message : 'Orchestration failed'
+    return NextResponse.json({ error: message }, { status: 500 })
   }
-}
-
-// ─── Mock fallback ────────────────────────────────────────────────────────────
-
-async function runMockOrchestrator(inboxItemId: string, userId: string, startTime: number) {
-  const existingAnalysis = await prisma.analysisResult.findUnique({ where: { inboxItemId } })
-
-  const analysisResult =
-    existingAnalysis ??
-    (await prisma.analysisResult.create({
-      data: {
-        inboxItemId,
-        summary:
-          'Alta viabilidad detectada (modo demo — configura GEMINI_API_KEY, PERPLEXITY_API_KEY y ANTHROPIC_API_KEY para el pipeline Multi-LLM completo). El concepto muestra diferenciadores claros en el mercado objetivo.',
-        keyInsights: [
-          'Mercado en crecimiento sostenido del 22% anual',
-          'Competencia fragmentada con baja retención',
-          'Ventana de entrada favorable en los próximos 6 meses',
-        ],
-        suggestedTags: ['validation-required', 'demo-mode'],
-        category: 'technology',
-        sentiment: 'positive',
-        relevanceScore: 0.75,
-        rawAiResponse: JSON.stringify({ mock: true }),
-        modelUsed: 'mock-fallback',
-        processingTimeMs: Date.now() - startTime,
-      },
-    }))
-
-  const agileTasks = await Promise.all([
-    prisma.agileTask.create({
-      data: {
-        title: '[Demo] Validar propuesta de valor con 5 usuarios target',
-        description: 'Entrevistar usuarios potenciales para confirmar el problema.',
-        status: 'todo',
-        priority: 'critical',
-        type: 'research',
-        storyPoints: 3,
-        labels: ['lean-strategist'],
-        assigneeId: userId,
-      },
-    }),
-    prisma.agileTask.create({
-      data: {
-        title: '[Demo] Construir landing page de captura',
-        description: 'Landing para medir interés antes de construir el producto.',
-        status: 'todo',
-        priority: 'high',
-        type: 'feature',
-        storyPoints: 5,
-        labels: ['growth-hacker'],
-        assigneeId: userId,
-      },
-    }),
-  ])
-
-  const roadmapTimeline = await prisma.roadmapTimeline.create({
-    data: {
-      title: `${getCurrentQuarter().toUpperCase()} ${new Date().getFullYear()} · Demo Roadmap`,
-      description:
-        'Roadmap generado en modo demo. Configura las API keys para el pipeline Multi-LLM real.',
-      phase: getCurrentQuarter(),
-      year: new Date().getFullYear(),
-      status: 'planned',
-      milestones: [
-        {
-          name: 'Entrevistas completadas',
-          date: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
-        },
-        {
-          name: 'MVP Beta',
-          date: new Date(Date.now() + 90 * 24 * 60 * 60 * 1000).toISOString().slice(0, 10),
-        },
-      ],
-      ownerId: userId,
-      color: '#94a3b8',
-    },
-  })
-
-  await prisma.inboxItem.update({ where: { id: inboxItemId }, data: { status: 'analyzed' } })
-
-  return NextResponse.json({
-    success: true,
-    cached: false,
-    demo: true,
-    pipeline: ['mock-fallback'],
-    processingTimeMs: Date.now() - startTime,
-    analysisResult,
-    agileTasks,
-    roadmapTimeline,
-  })
 }
