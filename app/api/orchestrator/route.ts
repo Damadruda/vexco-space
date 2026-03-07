@@ -251,7 +251,7 @@ Sé específico. Cita empresas reales y datos concretos. Evita afirmaciones vaga
   return data.choices?.[0]?.message?.content ?? ''
 }
 
-// ─── Phase C: Claude 3.5 Sonnet — Agile PM Synthesis ─────────────────────────
+// ─── Phase C: Claude Sonnet 4.6 — Agile PM Synthesis ─────────────────────────
 
 async function runClaudeAgilepm(
   item: IdeaItem,
@@ -491,9 +491,9 @@ export async function POST(request: NextRequest) {
       console.warn('[ORCHESTRATOR] Phase B: PERPLEXITY_API_KEY not set, skipping')
     }
 
-    // ── Phase C: Claude 3.5 Sonnet — Agile PM Synthesis ──────────────────────
+    // ── Phase C: Claude Sonnet 4.6 — Agile PM Synthesis ──────────────────────
 
-    console.log('[ORCHESTRATOR] Phase C: Claude 3.5 Sonnet synthesizing structured plan...')
+    console.log('[ORCHESTRATOR] Phase C: Claude Sonnet 4.6 synthesizing structured plan...')
     const finalOutput = await runClaudeAgilepm(ideaItem, geminiDebate, perplexityResearch)
     console.log('[ORCHESTRATOR] Phase C complete — tasks:', finalOutput.tasks.length)
 
