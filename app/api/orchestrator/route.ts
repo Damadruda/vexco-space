@@ -124,6 +124,27 @@ function buildKnowledgeContext(entries: KnowledgeEntry[]): string {
 
 // ─── Phase A: Gemini 2.5 Flash — Enterprise Agents Debate ────────────────────
 
+// Agent IDs that receive KB context as design inspiration (UX / Innovation)
+const UX_AGENT_IDS = [5, 6] // Frictionless Workflow Designer, Innovation Architect
+// Agent IDs that receive KB context as tech stack starting point
+const TECH_AGENT_IDS = [1, 4] // Autonomous Strategist, Infrastructure Lead
+
+function buildAgentRagDirective(agent: AgentProfile, knowledgeContext: string): string {
+  if (UX_AGENT_IDS.includes(agent.id)) {
+    return `
+  CONTEXTO RAG — INSPIRACIÓN DE ESTILO Y DISEÑO DEL USUARIO:
+  ${knowledgeContext}
+  DIRECTIVA: Utiliza las tendencias guardadas arriba como tu inspiración principal y ADN de estilo. Si el contexto es escaso o poco relevante para este proyecto, amplía y evoluciona estas ideas usando tu vasto conocimiento en diseño de vanguardia (Bento UI, Glassmorphism, Spatial UI, Motion Design). OBLIGATORIO: Rechaza diseños corporativos genéricos y aburridos.`
+  }
+  if (TECH_AGENT_IDS.includes(agent.id)) {
+    return `
+  CONTEXTO RAG — ACELERADORES DE DESARROLLO DEL EQUIPO:
+  ${knowledgeContext}
+  DIRECTIVA: Toma los aceleradores de desarrollo guardados arriba como tu punto de partida. Si aplican al proyecto, intégralos de forma concreta. Si el contexto es escaso o existen herramientas más eficientes para este proyecto específico, usa tu criterio experto de IA para sugerir el mejor stack posible, complementando las preferencias conocidas del usuario.`
+  }
+  return ''
+}
+
 async function runGeminiAgents(
   item: IdeaItem,
   knowledgeContext: string,
@@ -137,18 +158,19 @@ async function runGeminiAgents(
     model: process.env.GEMINI_MODEL ?? 'gemini-2.5-flash',
     generationConfig: {
       temperature: 0.8,
-      maxOutputTokens: 2048,
+      maxOutputTokens: 2560,
     } as Parameters<typeof genAI.getGenerativeModel>[0]['generationConfig'],
   })
 
   const agentDescriptions = selectedAgents
-    .map(
-      (a, i) =>
-        `${i + 1}. **${a.name}** (${a.role}): ${a.systemPrompt}`
-    )
-    .join('\n')
+    .map((a, i) => {
+      const ragDirective = buildAgentRagDirective(a, knowledgeContext)
+      return `${i + 1}. **${a.name}** (${a.role})
+  Misión: ${a.systemPrompt}${ragDirective}`
+    })
+    .join('\n\n')
 
-  const prompt = `Eres el facilitador de una sala de guerra estratégica. Los siguientes agentes especializados de VexCo deben debatir esta idea de negocio. Cada agente aporta su perspectiva única, sin repetir lo que otro ya dijo.
+  const prompt = `Eres el facilitador de una sala de guerra estratégica (War Room). Los siguientes agentes especializados de VexCo deben debatir esta idea de negocio. Cada agente aporta su perspectiva única y complementaria — sin repetir lo que otro ya dijo.
 
 IDEA A ANALIZAR:
 Título: ${item.sourceTitle || 'Sin título'}
@@ -156,24 +178,22 @@ Contenido: ${item.rawContent}
 ${item.sourceUrl ? `Fuente: ${item.sourceUrl}` : ''}
 ${item.tags.length > 0 ? `Tags: ${item.tags.join(', ')}` : ''}
 
-BASE DE CONOCIMIENTO DEL EQUIPO (contexto RAG):
-${knowledgeContext}
-
-AGENTES SELECCIONADOS PARA ESTE DEBATE:
+AGENTES SELECCIONADOS Y SUS DIRECTIVAS:
 ${agentDescriptions}
 
-INSTRUCCIONES:
-- Cada agente debe hablar en primera persona y con su voz única.
-- Sé específico: evita consejos genéricos. Cita tecnologías, métricas, empresas reales.
-- El debate debe ser rico y profundo: 3-4 párrafos por agente.
-- Al final, incluye una sección "SÍNTESIS DEL DEBATE" de 1 párrafo.
+REGLAS DEL DEBATE:
+- Cada agente habla en primera persona, con su voz única y opinionada.
+- Sé específico y valiente: cita tecnologías, métricas, empresas reales, frameworks concretos.
+- Escribe 3-4 párrafos sustanciales por agente. Cero genéricos. Cero filler.
+- Los agentes con CONTEXTO RAG deben citar o referenciar explícitamente ese conocimiento en su análisis.
+- Al final, incluye "SÍNTESIS DEL DEBATE" de 1 párrafo que integre los puntos de mayor consenso y los conflictos clave.
 
-Estructura tu respuesta así:
+FORMATO DE RESPUESTA:
 [NOMBRE DEL AGENTE — ROL]
-<su análisis>
+<análisis del agente>
 
 [SÍNTESIS DEL DEBATE]
-<síntesis>`
+<síntesis integradora>`
 
   const result = await model.generateContent(prompt)
   return result.response.text()

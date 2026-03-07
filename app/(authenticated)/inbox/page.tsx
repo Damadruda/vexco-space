@@ -28,6 +28,7 @@ import { es } from "date-fns/locale";
 // ─── Types ───────────────────────────────────────────────────────────────────
 
 type InboxStatus = "pending" | "processing" | "analyzed" | "archived";
+type ProjectType = "MVP" | "INTERNAL_PROCESS";
 
 interface InboxItem {
   id: string;
@@ -249,6 +250,7 @@ function QuickIdeaModal({
   const [open, setOpen] = useState(false);
   const [title, setTitle] = useState("");
   const [content, setContent] = useState("");
+  const [projectType, setProjectType] = useState<ProjectType>("MVP");
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const titleRef = useRef<HTMLInputElement>(null);
@@ -256,6 +258,7 @@ function QuickIdeaModal({
   const reset = () => {
     setTitle("");
     setContent("");
+    setProjectType("MVP");
     setError(null);
   };
 
@@ -273,6 +276,7 @@ function QuickIdeaModal({
           rawContent: content.trim(),
           sourceTitle: title.trim() || null,
           status: "pending",
+          tags: [projectType.toLowerCase().replace("_", "-")],
         }),
       });
       if (!res.ok) throw new Error("Error al crear la idea");
@@ -354,6 +358,35 @@ function QuickIdeaModal({
                 placeholder="Describe tu idea: qué problema resuelve, a quién va dirigida, qué la hace diferente…"
                 className="w-full resize-none rounded-lg border border-gray-200 bg-gray-50 px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:border-blue-400 focus:bg-white focus:outline-none focus:ring-2 focus:ring-blue-100 transition-all"
               />
+            </div>
+
+            <div>
+              <label className="mb-2 block text-xs font-medium text-gray-700">
+                Tipo de Proyecto
+              </label>
+              <div className="grid grid-cols-2 gap-2">
+                {(["MVP", "INTERNAL_PROCESS"] as ProjectType[]).map((type) => (
+                  <button
+                    key={type}
+                    type="button"
+                    onClick={() => setProjectType(type)}
+                    className={`flex flex-col items-start rounded-lg border px-3 py-2.5 text-left transition-all ${
+                      projectType === type
+                        ? "border-blue-400 bg-blue-50 ring-2 ring-blue-100"
+                        : "border-gray-200 bg-gray-50 hover:border-gray-300 hover:bg-gray-100"
+                    }`}
+                  >
+                    <span className={`text-xs font-semibold ${projectType === type ? "text-blue-700" : "text-gray-700"}`}>
+                      {type === "MVP" ? "MVP" : "Proceso Interno"}
+                    </span>
+                    <span className="mt-0.5 text-xs text-gray-400">
+                      {type === "MVP"
+                        ? "Producto para el mercado"
+                        : "Automatización interna"}
+                    </span>
+                  </button>
+                ))}
+              </div>
             </div>
 
             {error && (
@@ -596,13 +629,7 @@ export default function InboxPage() {
                 Sync Raindrop
               </button>
             )}
-            <Link
-              href="/api/inbox"
-              className="inline-flex items-center gap-1.5 rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-xs text-gray-600 hover:bg-gray-50 transition-colors"
-            >
-              <Plus className="h-3.5 w-3.5" />
-              Añadir item
-            </Link>
+            <QuickIdeaModal onCreated={handleQuickCreate} />
           </div>
         </div>
 
