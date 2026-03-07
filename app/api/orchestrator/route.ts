@@ -1,8 +1,16 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { getServerSession } from 'next-auth'
 import { GoogleGenerativeAI } from '@google/generative-ai'
+import Anthropic from '@anthropic-ai/sdk'
 import { authOptions } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import {
+  ENTERPRISE_AGENTS,
+  AGILE_PM_SYSTEM_PROMPT,
+  detectRoutingMode,
+  getAgentsForMode,
+  type AgentProfile,
+} from '@/lib/agents-config'
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -114,9 +122,13 @@ function buildKnowledgeContext(entries: KnowledgeEntry[]): string {
   return sections.join('\n\n')
 }
 
-// ─── Phase A: Gemini Multi-Agent Debate (RAG-Enhanced, optional) ──────────────
+// ─── Phase A: Gemini 2.5 Flash — Enterprise Agents Debate ────────────────────
 
-async function runGeminiAgents(item: IdeaItem, knowledgeContext: string): Promise<string> {
+async function runGeminiAgents(
+  item: IdeaItem,
+  knowledgeContext: string,
+  selectedAgents: AgentProfile[]
+): Promise<string> {
   const apiKey = process.env.GEMINI_API_KEY
   if (!apiKey) throw new Error('GEMINI_API_KEY not set')
 
@@ -129,34 +141,45 @@ async function runGeminiAgents(item: IdeaItem, knowledgeContext: string): Promis
     } as Parameters<typeof genAI.getGenerativeModel>[0]['generationConfig'],
   })
 
-  const prompt = `You are facilitating a strategic debate between 3 specialized AI experts analyzing a business idea. Each expert provides their unique perspective.
+  const agentDescriptions = selectedAgents
+    .map(
+      (a, i) =>
+        `${i + 1}. **${a.name}** (${a.role}): ${a.systemPrompt}`
+    )
+    .join('\n')
 
-IDEA TO ANALYZE:
-Title: ${item.sourceTitle || 'Untitled idea'}
-Content: ${item.rawContent}
-${item.sourceUrl ? `Source: ${item.sourceUrl}` : ''}
+  const prompt = `Eres el facilitador de una sala de guerra estratégica. Los siguientes agentes especializados de VexCo deben debatir esta idea de negocio. Cada agente aporta su perspectiva única, sin repetir lo que otro ya dijo.
+
+IDEA A ANALIZAR:
+Título: ${item.sourceTitle || 'Sin título'}
+Contenido: ${item.rawContent}
+${item.sourceUrl ? `Fuente: ${item.sourceUrl}` : ''}
 ${item.tags.length > 0 ? `Tags: ${item.tags.join(', ')}` : ''}
 
----
-USER'S KNOWLEDGE BASE (style DNA & preferred tools):
+BASE DE CONOCIMIENTO DEL EQUIPO (contexto RAG):
 ${knowledgeContext}
----
 
-Provide a detailed analysis from each expert's perspective:
+AGENTES SELECCIONADOS PARA ESTE DEBATE:
+${agentDescriptions}
 
-1. LEAN STRATEGIST: Evaluate the value proposition, problem-solution fit, and customer segment. Is the problem real and urgent? What is the minimum viable solution?
+INSTRUCCIONES:
+- Cada agente debe hablar en primera persona y con su voz única.
+- Sé específico: evita consejos genéricos. Cita tecnologías, métricas, empresas reales.
+- El debate debe ser rico y profundo: 3-4 párrafos por agente.
+- Al final, incluye una sección "SÍNTESIS DEL DEBATE" de 1 párrafo.
 
-2. TECH FUTURIST: Take the saved development accelerators from the USER'S KNOWLEDGE BASE above as your starting point. Suggest the best possible technology stack, complementing the user's known preferences.
+Estructura tu respuesta así:
+[NOMBRE DEL AGENTE — ROL]
+<su análisis>
 
-3. CREATIVE UX/UI & TREND ARCHITECT: Use the design trends from the USER'S KNOWLEDGE BASE as your primary inspiration. Push for bold, opinionated, delightful experiences that users will remember.
-
-Write a rich, detailed debate (3-4 paragraphs per expert). Be specific and avoid generic advice.`
+[SÍNTESIS DEL DEBATE]
+<síntesis>`
 
   const result = await model.generateContent(prompt)
   return result.response.text()
 }
 
-// ─── Phase B: Perplexity Real-Time Market Research (optional) ─────────────────
+// ─── Phase B: Perplexity — Real-Time Market Research ─────────────────────────
 
 async function runPerplexityResearch(geminiAnalysis: string, item: IdeaItem): Promise<string> {
   const apiKey = process.env.PERPLEXITY_API_KEY
@@ -174,25 +197,25 @@ async function runPerplexityResearch(geminiAnalysis: string, item: IdeaItem): Pr
         {
           role: 'system',
           content:
-            'You are a market research analyst with access to real-time data. Provide specific, data-driven insights with current numbers, company names, and market facts.',
+            'Eres un analista de mercado B2B con acceso a datos en tiempo real. Proporciona insights específicos y basados en datos: números actuales, nombres de empresas y hechos de mercado verificables.',
         },
         {
           role: 'user',
-          content: `Based on this strategic analysis of a business idea, perform a real-time market research report:
+          content: `Basado en este análisis estratégico, realiza un informe de investigación de mercado B2B en tiempo real:
 
 IDEA: ${item.sourceTitle || item.rawContent.slice(0, 200)}
 
-STRATEGIC CONTEXT FROM EXPERT AGENTS:
+CONTEXTO ESTRATÉGICO (debate de agentes expertos):
 ${geminiAnalysis.slice(0, 1500)}
 
-Your research must cover:
-1. Current market size and growth rate (with specific numbers and sources)
-2. Top 3-5 direct competitors (with their current status, funding, and differentiators)
-3. B2B viability: who are the buyers, what is the typical deal size, and sales cycle
-4. Recent market trends (last 6-12 months) that validate or challenge this idea
-5. Regulatory or macro risks in this space
+Tu investigación debe cubrir:
+1. Tamaño de mercado actual y tasa de crecimiento (con números específicos y fuentes)
+2. Top 3-5 competidores directos (estado actual, funding y diferenciadores)
+3. Viabilidad B2B: quiénes son los compradores, ticket promedio y ciclo de venta
+4. Tendencias de mercado recientes (últimos 6-12 meses) que validen o cuestionen esta idea
+5. Barreras de entrada y riesgos regulatorios o macro en este espacio
 
-Be specific, cite real companies and data points. Avoid vague statements.`,
+Sé específico. Cita empresas reales y datos concretos. Evita afirmaciones vagas.`,
         },
       ],
       max_tokens: 1500,
@@ -208,86 +231,52 @@ Be specific, cite real companies and data points. Avoid vague statements.`,
   return data.choices?.[0]?.message?.content ?? ''
 }
 
-// ─── Phase C: Gemini Arquitecto VexCo — Structured JSON via native SDK ────────
+// ─── Phase C: Claude 3.5 Sonnet — Agile PM Synthesis ─────────────────────────
 
-const ORCHESTRATION_JSON_SCHEMA = `{
-  "analysis": "string — síntesis estratégica de 3-4 párrafos",
-  "tasks": [
-    {
-      "title": "string — máx 80 caracteres",
-      "description": "string — qué hacer y por qué, 2-3 frases",
-      "priority": "Must | Should | Could | Won't",
-      "effort": "number — Fibonacci: 1, 2, 3, 5, 8 ó 13",
-      "expertSource": "string — área responsable (ej. Arquitectura, Backend, Frontend, DevOps)",
-      "status": "Backlog | Todo | In Progress — Must va a Todo, resto a Backlog"
-    }
-  ],
-  "milestones": [
-    {
-      "title": "string — nombre de la fase (ej. MVP Alpha)",
-      "date": "string — YYYY-MM-DD",
-      "description": "string — qué se logra en este hito"
-    }
-  ]
-}`
-
-async function runGeminiArquitecto(
+async function runClaudeAgilepm(
   item: IdeaItem,
-  geminiAnalysis: string,
-  perplexityResearch: string,
-  knowledgeContext: string
+  geminiDebate: string,
+  perplexityResearch: string
 ): Promise<OrchestrationOutput> {
-  if (!process.env.GEMINI_API_KEY) {
-    throw new Error('GEMINI_API_KEY no configurada — integración AI real requerida')
-  }
+  const apiKey = process.env.ANTHROPIC_API_KEY
+  if (!apiKey) throw new Error('ANTHROPIC_API_KEY not set')
 
-  const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
-  const model = genAI.getGenerativeModel({
-    model: 'gemini-1.5-pro',
-    generationConfig: {
-      temperature: 0.4,
-      maxOutputTokens: 4096,
-      responseMimeType: 'application/json',
-    } as Parameters<typeof genAI.getGenerativeModel>[0]['generationConfig'],
-    systemInstruction: `Eres el Arquitecto de Software de VexCo. Analiza la idea. Si detectas que es un proyecto para un cliente (ej. menciona marcas como Enprotech o automatizaciones B2B), IGNORA las fases de validación de mercado o PMF. Devuelve directamente tareas técnicas reales: Arquitectura, Stack, Endpoints, Base de Datos y Despliegue.
+  const anthropic = new Anthropic({ apiKey })
 
-BASE DE CONOCIMIENTO DEL EQUIPO (contexto RAG):
-${knowledgeContext}
-
-RESPONDE ÚNICAMENTE con un JSON válido que siga exactamente este schema (entre 6 y 8 tasks, entre 3 y 4 milestones):
-${ORCHESTRATION_JSON_SCHEMA}`,
-  })
-
-  const prompt = `IDEA A ANALIZAR:
+  const userMessage = `IDEA ORIGINAL:
 Título: ${item.sourceTitle || 'Sin título'}
 Contenido: ${item.rawContent}
 ${item.sourceUrl ? `Fuente: ${item.sourceUrl}` : ''}
 ${item.tags.length > 0 ? `Tags: ${item.tags.join(', ')}` : ''}
-${
-  geminiAnalysis
-    ? `
----
-DEBATE DE EXPERTOS (Gemini Multi-Agent):
-${geminiAnalysis}
-`
-    : ''
-}${
-  perplexityResearch
-    ? `
----
-INVESTIGACIÓN DE MERCADO EN TIEMPO REAL (Perplexity):
-${perplexityResearch}
-`
-    : ''
-}
----
-Genera el plan de acción ejecutable estructurado como JSON.`
 
-  const result = await model.generateContent(prompt)
-  const text = result.response.text()
+---
+DEBATE ESTRATÉGICO DE AGENTES (Gemini 2.5 Flash):
+${geminiDebate}
 
-  const output = JSON.parse(text) as OrchestrationOutput
-  console.log('[ORCHESTRATOR] Gemini native JSON — tasks:', output.tasks?.length)
+---
+INVESTIGACIÓN DE MERCADO B2B EN TIEMPO REAL (Perplexity Sonar):
+${perplexityResearch || '(No disponible — genera el plan con el contexto existente)'}
+
+---
+Sintetiza todo lo anterior y genera el plan de acción ejecutable en JSON estricto.`
+
+  const message = await anthropic.messages.create({
+    model: 'claude-3-5-sonnet-20241022',
+    max_tokens: 4096,
+    system: AGILE_PM_SYSTEM_PROMPT,
+    messages: [{ role: 'user', content: userMessage }],
+  })
+
+  const rawText = message.content
+    .filter((block) => block.type === 'text')
+    .map((block) => (block as { type: 'text'; text: string }).text)
+    .join('')
+
+  // Strip markdown code fences if Claude wraps the JSON
+  const jsonText = rawText.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '').trim()
+
+  const output = JSON.parse(jsonText) as OrchestrationOutput
+  console.log('[ORCHESTRATOR] Claude Agile PM — tasks:', output.tasks?.length)
   return output
 }
 
@@ -368,7 +357,7 @@ async function persistResults(
 
   await prisma.inboxItem.update({
     where: { id: inboxItemId },
-    data: { status: 'analyzed' },
+    data: { status: 'validated' },
   })
 
   return { analysisResult, agileTasks, roadmapTimeline }
@@ -402,7 +391,7 @@ export async function POST(request: NextRequest) {
 
     // Return cached analysis if already validated
     const existingAnalysis = await prisma.analysisResult.findUnique({ where: { inboxItemId } })
-    if (existingAnalysis && inboxItem.status === 'analyzed') {
+    if (existingAnalysis && (inboxItem.status === 'analyzed' || inboxItem.status === 'validated')) {
       const existingTasks = await prisma.agileTask.findMany({
         where: { assigneeId: user.id },
         orderBy: { createdAt: 'desc' },
@@ -425,7 +414,15 @@ export async function POST(request: NextRequest) {
       tags: inboxItem.tags,
     }
 
-    // ── RAG: Build Knowledge Base context ────────────────────────────────────
+    // ── Routing: detect mode and select agents ────────────────────────────────
+
+    const routingMode = detectRoutingMode(ideaItem.rawContent, ideaItem.tags)
+    const selectedAgents = getAgentsForMode(routingMode)
+    console.log(
+      `[ORCHESTRATOR] Routing mode: ${routingMode} — agents selected: ${selectedAgents.map((a) => a.name).join(', ')}`
+    )
+
+    // ── RAG: Build Knowledge Base context ─────────────────────────────────────
 
     let knowledgeContext =
       '(No hay conocimiento guardado aún — usa tu criterio experto de vanguardia)'
@@ -442,14 +439,16 @@ export async function POST(request: NextRequest) {
       console.warn('[ORCHESTRATOR] RAG query failed, continuing without context:', err)
     }
 
-    // ── Phase A: Gemini Agents Debate (optional) ──────────────────────────────
+    // ── Phase A: Gemini 2.5 Flash — Enterprise Agents Debate ─────────────────
 
-    let geminiAnalysis = ''
+    let geminiDebate = ''
     if (process.env.GEMINI_API_KEY) {
       try {
-        console.log('[ORCHESTRATOR] Phase A: Gemini agents debating...')
-        geminiAnalysis = await runGeminiAgents(ideaItem, knowledgeContext)
-        console.log('[ORCHESTRATOR] Phase A complete — length:', geminiAnalysis.length)
+        console.log(
+          `[ORCHESTRATOR] Phase A: Gemini agents debating (${selectedAgents.length} agents, mode: ${routingMode})...`
+        )
+        geminiDebate = await runGeminiAgents(ideaItem, knowledgeContext, selectedAgents)
+        console.log('[ORCHESTRATOR] Phase A complete — length:', geminiDebate.length)
       } catch (err) {
         console.warn('[ORCHESTRATOR] Phase A (Gemini) failed, continuing without it:', err)
       }
@@ -457,13 +456,13 @@ export async function POST(request: NextRequest) {
       console.warn('[ORCHESTRATOR] Phase A: GEMINI_API_KEY not set, skipping')
     }
 
-    // ── Phase B: Perplexity Market Research (optional) ────────────────────────
+    // ── Phase B: Perplexity — Market Research ─────────────────────────────────
 
     let perplexityResearch = ''
     if (process.env.PERPLEXITY_API_KEY) {
       try {
         console.log('[ORCHESTRATOR] Phase B: Perplexity market research...')
-        perplexityResearch = await runPerplexityResearch(geminiAnalysis, ideaItem)
+        perplexityResearch = await runPerplexityResearch(geminiDebate, ideaItem)
         console.log('[ORCHESTRATOR] Phase B complete — length:', perplexityResearch.length)
       } catch (err) {
         console.warn('[ORCHESTRATOR] Phase B (Perplexity) failed, continuing without it:', err)
@@ -472,29 +471,24 @@ export async function POST(request: NextRequest) {
       console.warn('[ORCHESTRATOR] Phase B: PERPLEXITY_API_KEY not set, skipping')
     }
 
-    // ── Phase C: Gemini Arquitecto VexCo (required) ───────────────────────────
+    // ── Phase C: Claude 3.5 Sonnet — Agile PM Synthesis ──────────────────────
 
-    console.log('[ORCHESTRATOR] Phase C: Gemini Arquitecto generating structured plan...')
-    const finalOutput = await runGeminiArquitecto(
-      ideaItem,
-      geminiAnalysis,
-      perplexityResearch,
-      knowledgeContext
-    )
+    console.log('[ORCHESTRATOR] Phase C: Claude 3.5 Sonnet synthesizing structured plan...')
+    const finalOutput = await runClaudeAgilepm(ideaItem, geminiDebate, perplexityResearch)
     console.log('[ORCHESTRATOR] Phase C complete — tasks:', finalOutput.tasks.length)
 
     // ── Persist & return ──────────────────────────────────────────────────────
 
     const pipelineSteps = [
-      ...(geminiAnalysis ? ['gemini-agents'] : []),
-      ...(perplexityResearch ? ['perplexity-research'] : []),
-      'gemini-arquitecto-vexco',
+      ...(geminiDebate ? [`gemini-agents-${routingMode}`] : []),
+      ...(perplexityResearch ? ['perplexity-sonar'] : []),
+      'claude-3.5-sonnet-agile-pm',
     ]
 
     const modelChain = [
-      ...(geminiAnalysis ? [process.env.GEMINI_MODEL ?? 'gemini-2.5-flash'] : []),
+      ...(geminiDebate ? [process.env.GEMINI_MODEL ?? 'gemini-2.5-flash'] : []),
       ...(perplexityResearch ? ['sonar'] : []),
-      'gemini-1.5-pro',
+      'claude-3-5-sonnet-20241022',
     ].join(' → ')
 
     const { analysisResult, agileTasks, roadmapTimeline } = await persistResults(
@@ -511,6 +505,8 @@ export async function POST(request: NextRequest) {
       cached: false,
       pipeline: pipelineSteps,
       modelChain,
+      routingMode,
+      agentsUsed: selectedAgents.map((a) => a.name),
       processingTimeMs: Date.now() - startTime,
       analysisResult,
       agileTasks,
