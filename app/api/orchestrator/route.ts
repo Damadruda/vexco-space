@@ -281,7 +281,7 @@ ${perplexityResearch || '(No disponible — genera el plan con el contexto exist
 Sintetiza todo lo anterior y genera el plan de acción ejecutable en JSON estricto.`
 
   const message = await anthropic.messages.create({
-    model: 'claude-3-5-sonnet-20240620',
+    model: 'claude-3-haiku-20240307',
     max_tokens: 4096,
     system: AGILE_PM_SYSTEM_PROMPT,
     messages: [{ role: 'user', content: userMessage }],
@@ -508,7 +508,7 @@ export async function POST(request: NextRequest) {
     const modelChain = [
       ...(geminiDebate ? [process.env.GEMINI_MODEL ?? 'gemini-2.5-flash'] : []),
       ...(perplexityResearch ? ['sonar'] : []),
-      'claude-3-5-sonnet-20240620',
+      'claude-3-haiku-20240307',
     ].join(' → ')
 
     const { analysisResult, agileTasks, roadmapTimeline } = await persistResults(
