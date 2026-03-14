@@ -89,6 +89,16 @@ API: `/api/agile` (GET/POST), `/api/agile/[id]` (PATCH/DELETE).
 - package.json: mantener postinstall con `prisma generate`
 - TypeScript: ignoreBuildErrors: true
 
+### Environment Variables
+- `DATABASE_URL` — Neon PostgreSQL connection string (pooled)
+- `GOOGLE_AI_API_KEY` — Gemini API key (usado por rutas legacy: pm/consult, concept/validate, milestones)
+- `GEMINI_API_KEY` — Gemini API key (usado por Sprint 2+: /api/inbox/[id]/analyze)
+- `JINA_API_KEY` — Jina Reader API key (extracción de contenido de URLs)
+- `RAINDROP_TOKEN` — Raindrop.io token (gestionado vía UserPreferences en DB, NO como env var global)
+- `ANTHROPIC_API_KEY` — Claude API (usado por /api/ai route)
+- `NEXTAUTH_SECRET` — NextAuth session secret
+- `NEXTAUTH_URL` — URL base de la app
+
 ### Branches
 - main: producción (auto-deploy Vercel)
 - vexco-lab: desarrollo V4 (NO hacer merge sin testing)
