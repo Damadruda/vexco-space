@@ -25,3 +25,75 @@ El diseño debe ser "Zero-UI" y altamente colaborativo (Human-in-the-loop).
 Todo el texto generado por los agentes debe pasar por este filtro centralizado antes de mostrarse al usuario.
 - **Regla de 29 Palabras:** "Escribe con oraciones cortas e impactantes. Usa voz activa. Elimina la jerga, la pelusa y palabras como 'sumérgete', 'tapiz', 'crucial', 'descubre', 'imperativo', 'revolucionario'. Ve directo al grano. Tono C-Level."
 - **Prohibido:** Renderizar Markdown crudo (`**`, `##`) en la UI final. Todo output debe estructurarse y mapearse a componentes limpios de React (Structured Outputs).
+
+---
+
+## Project Context
+
+### Overview
+Next.js 14 platform: "Project Manager Boutique" con panel de 8 agentes IA especializados, sistema Human-in-the-Loop, y estética Quiet Luxury. Google OAuth restringido a @vexandco.com.
+
+### Key URLs
+- Production: https://vexco-space.vercel.app
+- GitHub: https://github.com/Damadruda/vexco-space (private)
+- Vercel Project: prj_8yUzvhXTXwWrTMlxJQ12Hu8Rm25d
+
+### Tech Stack
+- Framework: Next.js 14 (App Router)
+- Database: PostgreSQL via Prisma ORM (Neon)
+- Auth: NextAuth.js (Google OAuth + Credentials)
+- Styling: Tailwind CSS + shadcn/ui + @tailwindcss/typography
+- Storage: AWS S3
+- AI: Gemini Flash (triage), Anthropic (reasoning), Perplexity (research)
+- Package Manager: Yarn
+
+### Database Models
+**Auth:** User, Account, Session, VerificationToken
+
+**Core:** Project (with TrackType: GO_TO_MARKET | ONE_TIME_SERVICE), Idea, Note, Link, Image, ChatMessage
+
+**Intelligence Engine:** ConceptInsight, PatternCard, Milestone
+
+**V4 — Strategic PM Lab:**
+- AgileTask — Kanban board per project (backlog → in-progress → review → done)
+- InboxItem — Capture inbox (Raindrop, Jina, manual entry)
+- AnalysisResult — AI analysis output for InboxItems
+- KnowledgeBase — Curated content management
+- RoadmapTimeline — Visual roadmap phases per project
+- AutomationLog — Cron job / automation audit trail
+- UserPreferences — Per-user settings (Raindrop token, Jina key, theme, timezone)
+- DecisionLog — Human-in-the-Loop decision memory (prevents agent repetition)
+
+**Enums:** ProjectStatus (RED/YELLOW/GREEN), PatternCategory, TrackType, DecisionOutcome
+
+### Architecture (PRD V4)
+- Orquestación: Patrón Supervisor / State Machine
+- 8 agentes especializados con structured JSON outputs
+- Human-in-the-Loop con DecisionLog (agente no repite sugerencias rechazadas)
+- Ingesta: Raindrop.io, Jina Reader, Google Drive (Sprint 2)
+- Outputs: Backlog MoSCoW, Roadmap/Gantt, War Room
+
+### War Room
+Full-screen overlay (`/war-room` or `/project-builder/[id]/war-room`) with:
+- `components/expert-panel/` — ExpertAvatar, ExpertList, ConsultantsThread
+- 3 modos: Individual, Director (ambiguous routing), Full Debate (3-phase async con checkpoints)
+- Human-in-the-Loop supervisor input at phase boundaries
+
+### Agile Board
+Kanban board at `/project-builder/[id]/agile` with drag-and-drop.
+API: `/api/agile` (GET/POST), `/api/agile/[id]` (PATCH/DELETE).
+
+### Important Configuration Notes
+- next.config.js: NO tocar (rompe Vercel)
+- prisma/schema.prisma: NO añadir `output` ni `binaryTargets`
+- package.json: mantener postinstall con `prisma generate`
+- TypeScript: ignoreBuildErrors: true
+
+### Branches
+- main: producción (auto-deploy Vercel)
+- vexco-lab: desarrollo V4 (NO hacer merge sin testing)
+
+### Owner
+- Name: Diego
+- Email: diego@vexandco.com
+- GitHub: Damadruda
