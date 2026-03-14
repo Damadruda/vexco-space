@@ -11,7 +11,8 @@ import {
   MessageSquare,
   Swords,
   Inbox,
-  BookOpen
+  BookOpen,
+  Settings
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -23,7 +24,8 @@ const menuItems = [
   { href: "/inbox", icon: Inbox, label: "Inbox", number: "05" },
   { href: "/knowledge", icon: BookOpen, label: "Knowledge Base", number: "06" },
   { href: "/search", icon: Search, label: "Búsqueda", number: "07" },
-  { href: "/assistant", icon: MessageSquare, label: "Asistente IA", number: "08" }
+  { href: "/assistant", icon: MessageSquare, label: "Asistente IA", number: "08" },
+  { href: "/preferences", icon: Settings, label: "Preferencias", number: "09" }
 ];
 
 export function Sidebar() {
