@@ -34,9 +34,9 @@ type StatusFilter = "all" | "draft" | "published" | "archived";
 // ─── Constants ────────────────────────────────────────────────────────────────
 
 const STATUS_COLORS: Record<string, string> = {
-  draft: "bg-amber-100 text-amber-700",
-  published: "bg-green-100 text-green-700",
-  archived: "bg-slate-100 text-slate-500",
+  draft: "bg-ql-warning/10 text-ql-warning",
+  published: "bg-ql-success/10 text-ql-success",
+  archived: "bg-ql-cream text-ql-muted",
 };
 
 const TYPE_LABELS: Record<string, string> = {

@@ -164,7 +164,7 @@ function PlanReview({
               <ChevronDown className="h-3 w-3" />
             </button>
             {showRedirect && (
-              <div className="absolute top-full left-0 z-10 mt-1 w-56 ql-card p-1 shadow-md">
+              <div className="absolute top-full left-0 z-10 mt-1 w-56 ql-card p-1 shadow-sm">
                 {redirectOptions.map((opt) => {
                   const expert = EXPERTS.find((e) => e.id === opt.targetAgentId);
                   return (
@@ -304,7 +304,7 @@ function ResultReview({
               <ChevronDown className="h-3 w-3" />
             </button>
             {showRedirect && (
-              <div className="absolute top-full left-0 z-10 mt-1 w-56 ql-card p-1 shadow-md">
+              <div className="absolute top-full left-0 z-10 mt-1 w-56 ql-card p-1 shadow-sm">
                 {redirectOptions
                   .filter((o) => o.action === "redirect")
                   .map((opt) => {

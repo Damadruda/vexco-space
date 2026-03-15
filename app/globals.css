@@ -47,19 +47,19 @@ body {
 
 /* VEX & Co typography styles */
 .vex-label {
-  @apply text-xs font-medium tracking-[0.2em] uppercase text-gray-500;
+  @apply text-xs font-medium tracking-[0.2em] uppercase text-ql-muted;
 }
 
 .vex-title {
-  @apply font-serif text-3xl md:text-4xl font-normal text-gray-900 leading-tight;
+  @apply font-serif text-3xl md:text-4xl font-normal text-ql-charcoal leading-tight;
 }
 
 .vex-subtitle {
-  @apply font-serif text-xl md:text-2xl font-normal text-gray-800;
+  @apply font-serif text-xl md:text-2xl font-normal text-ql-graphite;
 }
 
 .vex-badge {
-  @apply inline-flex items-center px-3 py-1 text-xs border border-gray-300 rounded-full text-gray-600;
+  @apply inline-flex items-center px-3 py-1 text-xs border border-ql-sand rounded-full text-ql-slate;
 }
 
 /* Hide scrollbar for Chrome, Safari and Opera */
@@ -80,17 +80,17 @@ body {
 }
 
 ::-webkit-scrollbar-track {
-  background: #f1f5f9;
+  background: #F3F1ED;
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb {
-  background: #cbd5e1;
+  background: #B8B2A8;
   border-radius: 3px;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: #94a3b8;
+  background: #8B7355;
 }
 
 /* Hydration error suppression */

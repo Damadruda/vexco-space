@@ -50,17 +50,17 @@ const STATUS_LABELS: Record<string, string> = {
 };
 
 const STATUS_COLORS: Record<string, string> = {
-  unprocessed: "bg-amber-100 text-amber-700",
-  processing: "bg-blue-100 text-blue-700",
-  processed: "bg-green-100 text-green-700",
-  archived: "bg-slate-100 text-slate-500",
+  unprocessed: "bg-ql-warning/10 text-ql-warning",
+  processing: "bg-ql-accent/10 text-ql-accent",
+  processed: "bg-ql-success/10 text-ql-success",
+  archived: "bg-ql-cream text-ql-muted",
 };
 
 const CATEGORY_COLORS: Record<string, string> = {
-  project: "bg-purple-100 text-purple-700",
-  trend: "bg-blue-100 text-blue-700",
-  discovery: "bg-green-100 text-green-700",
-  noise: "bg-slate-100 text-slate-500",
+  project: "bg-ql-danger/10 text-ql-danger",
+  trend: "bg-ql-accent/10 text-ql-accent",
+  discovery: "bg-ql-success/10 text-ql-success",
+  noise: "bg-ql-cream text-ql-muted",
 };
 
 const TYPE_ICONS: Record<string, string> = {

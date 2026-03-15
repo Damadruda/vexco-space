@@ -32,7 +32,6 @@ export default function WarRoomPage() {
           const found = list.find((p) => p.id === projectIdParam);
           if (found) setSelectedProjectTitle(found.title);
         } else if (list.length > 0) {
-          // Auto-select first project if none specified
           setSelectedProjectId(list[0].id);
           setSelectedProjectTitle(list[0].title);
         }
@@ -49,16 +48,21 @@ export default function WarRoomPage() {
 
   return (
     // Fixed overlay that covers the global sidebar entirely
-    <div className="fixed inset-0 z-[100] flex bg-white">
+    <div className="fixed inset-0 z-[100] flex bg-ql-offwhite">
       {/* ── Columna 1: Panel de Expertos ── */}
-      <div className="w-72 shrink-0 border-r border-gray-100 flex flex-col">
+      <div className="w-72 shrink-0 border-r border-ql-sand/20 flex flex-col bg-white">
         {/* Header with project selector */}
-        <div className="px-4 pt-5 pb-4 border-b border-gray-100 space-y-3">
+        <div className="px-4 pt-5 pb-4 border-b border-ql-sand/20 space-y-3">
           <div className="flex items-center justify-between">
-            <span className="font-serif text-base font-semibold text-gray-900 tracking-tight">War Room</span>
+            <span
+              className="text-base font-semibold text-ql-charcoal tracking-tight"
+              style={{ fontFamily: "var(--font-heading)" }}
+            >
+              War Room
+            </span>
             <Link
               href="/dashboard"
-              className="rounded-lg p-1.5 text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+              className="rounded-md p-1.5 text-ql-muted hover:bg-ql-cream hover:text-ql-slate transition-colors"
               title="Salir del War Room"
             >
               <X className="h-4 w-4" />
@@ -66,13 +70,13 @@ export default function WarRoomPage() {
           </div>
 
           <div>
-            <label className="block text-xs font-medium tracking-[0.1em] uppercase text-gray-400 mb-1.5">
+            <label className="ql-label block mb-1.5">
               Proyecto activo
             </label>
             <select
               value={selectedProjectId ?? ""}
               onChange={handleProjectChange}
-              className="w-full rounded-lg border border-gray-200 bg-white px-3 py-1.5 text-sm text-gray-700 focus:border-gray-400 focus:outline-none"
+              className="ql-input"
             >
               <option value="">Sin proyecto</option>
               {projects.map((p) => (
@@ -82,7 +86,7 @@ export default function WarRoomPage() {
               ))}
             </select>
             {!selectedProjectId && (
-              <p className="mt-1 text-xs text-amber-500">
+              <p className="mt-1 ql-caption text-ql-warning">
                 Los agentes no tendrán contexto de proyecto.
               </p>
             )}
