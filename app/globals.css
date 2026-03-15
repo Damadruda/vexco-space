@@ -121,3 +121,177 @@ body {
 .cursor-grabbing {
   cursor: grabbing;
 }
+
+/* ═══ Quiet Luxury Design System ═══ */
+
+.ql-page {
+  @apply bg-ql-offwhite text-ql-charcoal min-h-screen;
+  font-family: var(--font-body);
+}
+
+.ql-h1 {
+  font-family: var(--font-heading);
+  @apply text-4xl font-semibold tracking-tight text-ql-charcoal;
+  line-height: 1.1;
+}
+
+.ql-h2 {
+  font-family: var(--font-heading);
+  @apply text-2xl font-medium tracking-tight text-ql-charcoal;
+  line-height: 1.2;
+}
+
+.ql-h3 {
+  font-family: var(--font-heading);
+  @apply text-xl font-medium text-ql-graphite;
+  line-height: 1.3;
+}
+
+.ql-body {
+  font-family: var(--font-body);
+  @apply text-sm font-light text-ql-slate leading-relaxed;
+}
+
+.ql-caption {
+  font-family: var(--font-body);
+  @apply text-xs font-light text-ql-muted tracking-wide uppercase;
+}
+
+.ql-label {
+  font-family: var(--font-body);
+  @apply text-xs font-medium text-ql-muted tracking-widest uppercase;
+}
+
+.ql-card {
+  @apply bg-white rounded-lg p-6;
+  border: 1px solid rgba(184, 178, 168, 0.15);
+  transition: border-color 0.2s ease;
+}
+.ql-card:hover {
+  border-color: rgba(184, 178, 168, 0.3);
+}
+
+.ql-card-flat {
+  @apply bg-ql-cream rounded-lg p-6;
+}
+
+.ql-surface {
+  @apply bg-ql-offwhite;
+}
+
+.ql-divider {
+  @apply border-t border-ql-sand my-6;
+  opacity: 0.4;
+}
+
+.ql-divider-subtle {
+  @apply border-t border-ql-sand my-4;
+  opacity: 0.2;
+}
+
+.ql-btn {
+  font-family: var(--font-body);
+  @apply text-sm font-medium tracking-wide px-5 py-2.5 rounded-md transition-all duration-200 ease-in-out inline-flex items-center gap-2;
+}
+
+.ql-btn-primary {
+  @apply ql-btn bg-ql-charcoal text-white hover:bg-ql-graphite;
+}
+
+.ql-btn-secondary {
+  @apply ql-btn bg-transparent text-ql-charcoal hover:bg-ql-cream;
+  border: 1px solid rgba(26, 26, 26, 0.15);
+}
+.ql-btn-secondary:hover {
+  border-color: rgba(26, 26, 26, 0.3);
+}
+
+.ql-btn-ghost {
+  @apply ql-btn bg-transparent text-ql-slate hover:text-ql-charcoal hover:bg-ql-cream;
+}
+
+.ql-badge {
+  font-family: var(--font-body);
+  @apply text-xs font-medium tracking-wide px-2.5 py-1 rounded-full;
+}
+
+.ql-badge-default {
+  @apply ql-badge bg-ql-cream text-ql-slate;
+}
+
+.ql-badge-accent {
+  @apply ql-badge bg-ql-accent/10 text-ql-accent;
+}
+
+.ql-badge-success {
+  @apply ql-badge bg-ql-success/10 text-ql-success;
+}
+
+.ql-badge-warning {
+  @apply ql-badge bg-ql-warning/10 text-ql-warning;
+}
+
+.ql-badge-danger {
+  @apply ql-badge bg-ql-danger/10 text-ql-danger;
+}
+
+.ql-input {
+  font-family: var(--font-body);
+  @apply text-sm bg-white border border-ql-sand/50 rounded-md px-4 py-2.5 text-ql-charcoal placeholder-ql-muted focus:outline-none focus:border-ql-accent/50 focus:ring-1 focus:ring-ql-accent/20 transition-all duration-200 w-full;
+}
+
+.ql-textarea {
+  @apply ql-input min-h-[120px] resize-y;
+}
+
+.ql-moscow-must {
+  @apply ql-badge bg-ql-danger/10 text-ql-danger font-medium;
+}
+.ql-moscow-should {
+  @apply ql-badge bg-ql-warning/10 text-ql-warning font-medium;
+}
+.ql-moscow-could {
+  @apply ql-badge bg-ql-accent/10 text-ql-accent font-medium;
+}
+.ql-moscow-wont {
+  @apply ql-badge bg-ql-cream text-ql-muted font-medium;
+}
+
+.ql-status-active {
+  @apply w-2 h-2 rounded-full bg-ql-success inline-block;
+}
+.ql-status-idle {
+  @apply w-2 h-2 rounded-full bg-ql-muted inline-block;
+}
+.ql-status-thinking {
+  @apply w-2 h-2 rounded-full bg-ql-warning animate-pulse inline-block;
+}
+
+.ql-loading {
+  @apply text-ql-muted text-sm font-light italic;
+}
+
+.ql-shimmer {
+  @apply bg-ql-cream rounded animate-pulse;
+}
+
+.ql-fade-in {
+  animation: qlFadeIn 0.3s ease-out;
+}
+
+@keyframes qlFadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* Scrollbar — Quiet Luxury */
+::-webkit-scrollbar-track {
+  background: #F3F1ED;
+}
+::-webkit-scrollbar-thumb {
+  background: #B8B2A8;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #8B7355;
+}

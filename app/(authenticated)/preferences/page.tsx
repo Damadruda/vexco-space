@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from "react";
 import { Header } from "@/components/ui/header";
-import { Loader2, Save, Check, Eye, EyeOff } from "lucide-react";
+import { Save, Check, Eye, EyeOff } from "lucide-react";
 
 interface Preferences {
   raindropToken: string | null;
@@ -40,21 +40,21 @@ function TokenField({
 
   return (
     <div className="space-y-2">
-      <label className="block text-sm font-medium text-slate-700">{label}</label>
-      <p className="text-xs text-slate-400">{description}</p>
+      <label className="ql-label block">{label}</label>
+      <p className="ql-caption">{description}</p>
       <div className="flex gap-2">
         <div className="relative flex-1">
           <input
             type={show ? "text" : "password"}
             value={value}
             onChange={(e) => setValue(e.target.value)}
-            placeholder={isConfigured ? `Configurado (${currentValue})` : "Pega tu token aquí"}
-            className="w-full rounded-lg border border-slate-200 px-3 py-2 pr-10 text-sm outline-none focus:border-slate-400"
+            placeholder={isConfigured ? `Configurado` : "Pega tu token aquí"}
+            className="ql-input pr-10"
           />
           <button
             type="button"
             onClick={() => setShow(!show)}
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+            className="absolute right-3 top-1/2 -translate-y-1/2 text-ql-muted hover:text-ql-slate transition-colors"
           >
             {show ? <EyeOff className="h-4 w-4" /> : <Eye className="h-4 w-4" />}
           </button>
@@ -62,10 +62,10 @@ function TokenField({
         <button
           onClick={() => { if (value.trim()) onSave(fieldKey, value.trim()); }}
           disabled={saving || !value.trim()}
-          className="inline-flex items-center gap-1.5 rounded-lg bg-slate-900 px-3 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50 transition-colors"
+          className="ql-btn-primary disabled:opacity-50"
         >
           {saving ? (
-            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+            <span className="ql-status-thinking" />
           ) : saved ? (
             <Check className="h-3.5 w-3.5" />
           ) : (
@@ -94,17 +94,17 @@ function Toggle({
   return (
     <div className="flex items-start justify-between gap-4">
       <div>
-        <p className="text-sm font-medium text-slate-700">{label}</p>
-        <p className="text-xs text-slate-400 mt-0.5">{description}</p>
+        <p className="text-sm font-medium text-ql-charcoal">{label}</p>
+        <p className="ql-caption mt-0.5">{description}</p>
       </div>
       <button
         onClick={() => onChange(!checked)}
         className={`relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ${
-          checked ? "bg-slate-900" : "bg-slate-200"
+          checked ? "bg-ql-charcoal" : "bg-ql-sand"
         }`}
       >
         <span
-          className={`inline-block h-5 w-5 transform rounded-full bg-white shadow transition-transform duration-200 ${
+          className={`inline-block h-5 w-5 transform rounded-full bg-white shadow-sm transition-transform duration-200 ${
             checked ? "translate-x-5" : "translate-x-0"
           }`}
         />
@@ -171,29 +171,31 @@ export default function PreferencesPage() {
 
   if (loading || !prefs) {
     return (
-      <div className="min-h-screen flex items-center justify-center">
-        <Loader2 className="h-6 w-6 animate-spin text-slate-400" />
+      <div className="ql-page flex items-center gap-2 justify-center">
+        <span className="ql-status-thinking" />
+        <span className="ql-loading">Cargando preferencias...</span>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen">
+    <div className="ql-page">
       <Header title="Preferencias" />
 
       <div className="p-6 max-w-2xl space-y-8">
         <div>
-          <h2 className="text-2xl font-bold text-slate-800">Preferencias</h2>
-          <p className="text-slate-500">Configura integraciones y ajustes del sistema.</p>
+          <h1 className="ql-h1">Preferencias</h1>
+          <p className="ql-body mt-1">Configura integraciones y ajustes del sistema.</p>
         </div>
 
         {/* ── Integraciones ── */}
-        <section className="rounded-xl border border-slate-200 bg-white p-6 space-y-6">
-          <h3 className="font-semibold text-slate-800">Integraciones</h3>
+        <section className="ql-card space-y-6">
+          <h3 className="ql-h3">Integraciones</h3>
+          <div className="ql-divider-subtle" />
 
           <TokenField
             label="Raindrop.io Token"
-            description="Tu token de acceso personal de Raindrop.io para sincronizar bookmarks."
+            description="Token de acceso personal para sincronizar bookmarks."
             fieldKey="raindropToken"
             currentValue={prefs.raindropToken}
             onSave={saveToken}
@@ -201,9 +203,11 @@ export default function PreferencesPage() {
             saved={savedField === "raindropToken"}
           />
 
+          <div className="ql-divider-subtle" />
+
           <TokenField
             label="Jina AI API Key"
-            description="Clave de Jina Reader para extraer contenido limpio de URLs."
+            description="Clave de Jina Reader para extraer contenido de URLs."
             fieldKey="jinaApiKey"
             currentValue={prefs.jinaApiKey}
             onSave={saveToken}
@@ -213,17 +217,18 @@ export default function PreferencesPage() {
         </section>
 
         {/* ── Preferencias ── */}
-        <section className="rounded-xl border border-slate-200 bg-white p-6 space-y-6">
-          <h3 className="font-semibold text-slate-800">Preferencias del sistema</h3>
+        <section className="ql-card space-y-6">
+          <h3 className="ql-h3">Sistema</h3>
+          <div className="ql-divider-subtle" />
 
           <div className="space-y-2">
-            <label className="block text-sm font-medium text-slate-700">Vista del Inbox</label>
+            <label className="ql-label block">Vista del Inbox</label>
             <select
               value={prefs.defaultInboxView}
               onChange={(e) =>
                 setPrefs({ ...prefs, defaultInboxView: e.target.value })
               }
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
+              className="ql-input w-auto"
             >
               <option value="list">Lista</option>
               <option value="grid">Grid</option>
@@ -231,26 +236,30 @@ export default function PreferencesPage() {
             </select>
           </div>
 
+          <div className="ql-divider-subtle" />
+
           <Toggle
             label="Análisis IA automático"
-            description="Analiza automáticamente los nuevos items del Inbox con Gemini Flash."
+            description="Analiza nuevos items del Inbox con Gemini Flash."
             checked={prefs.aiAnalysisEnabled}
             onChange={(v) => setPrefs({ ...prefs, aiAnalysisEnabled: v })}
           />
 
           <Toggle
             label="Auto-tagging"
-            description="Genera tags automáticos al añadir contenido al Inbox."
+            description="Tags automáticos al añadir contenido al Inbox."
             checked={prefs.autoTagging}
             onChange={(v) => setPrefs({ ...prefs, autoTagging: v })}
           />
 
+          <div className="ql-divider-subtle" />
+
           <div className="space-y-2">
-            <label className="block text-sm font-medium text-slate-700">Tema</label>
+            <label className="ql-label block">Tema</label>
             <select
               value={prefs.theme}
               onChange={(e) => setPrefs({ ...prefs, theme: e.target.value })}
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
+              className="ql-input w-auto"
             >
               <option value="light">Claro</option>
               <option value="dark">Oscuro</option>
@@ -259,11 +268,11 @@ export default function PreferencesPage() {
           </div>
 
           <div className="space-y-2">
-            <label className="block text-sm font-medium text-slate-700">Zona horaria</label>
+            <label className="ql-label block">Zona horaria</label>
             <select
               value={prefs.timezone}
               onChange={(e) => setPrefs({ ...prefs, timezone: e.target.value })}
-              className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400"
+              className="ql-input w-auto"
             >
               {[
                 "UTC", "Europe/Madrid", "America/Mexico_City",
@@ -285,10 +294,10 @@ export default function PreferencesPage() {
                 timezone: prefs.timezone,
               })}
               disabled={savingPrefs}
-              className="inline-flex items-center gap-2 rounded-lg bg-slate-900 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50 transition-colors"
+              className="ql-btn-primary disabled:opacity-50"
             >
               {savingPrefs ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <span className="ql-status-thinking" />
               ) : savedPrefs ? (
                 <Check className="h-4 w-4" />
               ) : (

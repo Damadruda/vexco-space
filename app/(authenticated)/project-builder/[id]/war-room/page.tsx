@@ -6,7 +6,7 @@ import { ExpertList } from "@/components/expert-panel/expert-list";
 import { ConsultantsThread } from "@/components/expert-panel/consultants-thread";
 import { CheckpointPanel } from "@/components/war-room/checkpoint-panel";
 import { Expert, EXPERTS } from "@/components/expert-panel/experts-data";
-import { Loader2, MessageSquare, Brain, Clock, CheckCheck, XCircle } from "lucide-react";
+import { MessageSquare, Brain, Clock, CheckCheck, XCircle } from "lucide-react";
 import type { Checkpoint, SessionState, SessionEvent } from "@/lib/engine/types";
 
 type WarRoomTab = "panel" | "strategy";
@@ -147,31 +147,31 @@ function StrategyMode({ projectId }: { projectId: string }) {
     <div className="flex-1 overflow-y-auto px-6 py-6 space-y-5">
       {/* Start panel */}
       {isIdle && (
-        <div className="rounded-2xl border-2 border-dashed border-slate-200 p-6 text-center space-y-4">
-          <div className="flex h-12 w-12 items-center justify-center rounded-full bg-indigo-100 mx-auto">
-            <Brain className="h-6 w-6 text-indigo-600" />
+        <div className="ql-card-flat rounded-lg p-6 text-center space-y-4 mx-6">
+          <div className="flex h-10 w-10 items-center justify-center rounded-full bg-ql-cream mx-auto">
+            <Brain className="h-5 w-5 text-ql-accent" strokeWidth={1.5} />
           </div>
           <div>
-            <h3 className="font-semibold text-slate-800">Análisis Estratégico</h3>
-            <p className="mt-1 text-sm text-slate-400">
-              El Supervisor analiza tu proyecto y propone el agente más útil ahora mismo.
+            <h3 className="ql-h3">Análisis Estratégico</h3>
+            <p className="ql-body mt-1">
+              El Supervisor analiza tu proyecto y propone el agente más útil.
             </p>
           </div>
 
           <textarea
             value={context}
             onChange={(e) => setContext(e.target.value)}
-            placeholder="Contexto adicional (opcional): ¿en qué área quieres enfocarte?"
+            placeholder="Contexto adicional: ¿en qué área quieres enfocarte?"
             rows={2}
             disabled={loading}
-            className="w-full rounded-xl border border-slate-200 px-3 py-2 text-sm resize-none outline-none focus:border-slate-400 disabled:opacity-40"
+            className="ql-textarea resize-none disabled:opacity-40"
           />
 
           {completed && session && (
-            <div className="rounded-xl bg-emerald-50 border border-emerald-100 px-4 py-3 text-left">
-              <p className="text-sm font-medium text-emerald-700">Sesión completada</p>
-              <p className="text-xs text-emerald-500 mt-0.5">
-                Decisiones guardadas en DecisionLog del proyecto.
+            <div className="ql-card text-left">
+              <p className="text-sm font-medium text-ql-success">Sesión completada</p>
+              <p className="ql-caption mt-0.5">
+                Decisiones guardadas en DecisionLog.
               </p>
               <SessionTimeline events={session.history} />
             </div>
@@ -180,12 +180,12 @@ function StrategyMode({ projectId }: { projectId: string }) {
           <button
             onClick={startSession}
             disabled={loading}
-            className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-medium text-white hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+            className="ql-btn-primary disabled:opacity-50 mx-auto"
           >
             {loading ? (
               <>
-                <Loader2 className="h-4 w-4 animate-spin" />
-                Supervisor analizando…
+                <span className="ql-status-thinking" />
+                Supervisor analizando...
               </>
             ) : (
               <>
@@ -210,14 +210,14 @@ function StrategyMode({ projectId }: { projectId: string }) {
 
           {/* Loading overlay */}
           {(loading || responding) && (
-            <div className="flex items-center gap-3 rounded-xl bg-slate-50 px-4 py-3">
-              <Loader2 className="h-4 w-4 animate-spin text-slate-400" />
-              <p className="text-sm text-slate-500">
+            <div className="flex items-center gap-3 ql-card-flat px-4 py-3">
+              <span className="ql-status-thinking" />
+              <p className="ql-loading">
                 {session.phase === "supervisor_thinking"
-                  ? "Supervisor analizando el proyecto…"
+                  ? "Supervisor analizando el proyecto..."
                   : session.phase === "agent_working" || session.phase === "routing"
-                  ? "Agente trabajando…"
-                  : "Procesando…"}
+                  ? "Agente trabajando..."
+                  : "Procesando..."}
               </p>
             </div>
           )}
@@ -267,46 +267,47 @@ export default function ProjectWarRoomPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
+      <div className="flex min-h-screen items-center gap-2 justify-center bg-ql-offwhite">
+        <span className="ql-status-thinking" />
+        <span className="ql-loading">Cargando War Room...</span>
       </div>
     );
   }
 
   return (
-    <div className="flex bg-white" style={{ height: "100vh" }}>
+    <div className="flex bg-ql-offwhite" style={{ height: "100vh" }}>
       {/* ── Panel de Expertos ── */}
-      <div className="w-72 shrink-0 border-r border-gray-100 flex flex-col">
-        <div className="px-4 pt-5 pb-4 border-b border-gray-100">
-          <p className="text-xs tracking-[0.15em] uppercase text-gray-400 mb-1">Orquestación</p>
-          <span className="font-serif text-base font-semibold text-gray-900 tracking-tight">War Room</span>
+      <div className="w-64 shrink-0 bg-white border-r border-ql-sand/20 flex flex-col">
+        <div className="px-4 pt-5 pb-4 border-b border-ql-sand/20">
+          <p className="ql-label mb-1">Orquestación</p>
+          <span className="ql-h3 text-base">War Room</span>
           {projectTitle && (
-            <p className="text-xs text-gray-400 mt-1 truncate">{projectTitle}</p>
+            <p className="ql-caption mt-1 truncate">{projectTitle}</p>
           )}
         </div>
 
         {/* Tab switcher */}
-        <div className="flex border-b border-gray-100 px-2 pt-2">
+        <div className="flex border-b border-ql-sand/20 px-2 pt-2">
           <button
             onClick={() => setTab("panel")}
-            className={`flex-1 flex items-center justify-center gap-1.5 rounded-t-lg px-2 py-2 text-xs font-medium transition-colors ${
+            className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-2 text-xs font-medium transition-colors ${
               tab === "panel"
-                ? "border-b-2 border-gray-900 text-gray-900"
-                : "text-gray-400 hover:text-gray-600"
+                ? "border-b-2 border-ql-charcoal text-ql-charcoal"
+                : "text-ql-muted hover:text-ql-slate"
             }`}
           >
-            <MessageSquare className="h-3.5 w-3.5" />
+            <MessageSquare className="h-3.5 w-3.5" strokeWidth={1.5} />
             Panel
           </button>
           <button
             onClick={() => setTab("strategy")}
-            className={`flex-1 flex items-center justify-center gap-1.5 rounded-t-lg px-2 py-2 text-xs font-medium transition-colors ${
+            className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-2 text-xs font-medium transition-colors ${
               tab === "strategy"
-                ? "border-b-2 border-indigo-600 text-indigo-600"
-                : "text-gray-400 hover:text-gray-600"
+                ? "border-b-2 border-ql-accent text-ql-accent"
+                : "text-ql-muted hover:text-ql-slate"
             }`}
           >
-            <Brain className="h-3.5 w-3.5" />
+            <Brain className="h-3.5 w-3.5" strokeWidth={1.5} />
             Estrategia
           </button>
         </div>
@@ -319,10 +320,10 @@ export default function ProjectWarRoomPage() {
         )}
 
         {tab === "strategy" && (
-          <div className="p-3 text-xs text-slate-400 space-y-2">
-            <p className="font-medium text-slate-500">Modo Análisis Estratégico</p>
-            <p>El Supervisor lee tu proyecto, propone un plan, y enruta al agente más relevante.</p>
-            <p>Cada decisión queda en el DecisionLog.</p>
+          <div className="p-4 space-y-3">
+            <p className="ql-label">Modo Análisis Estratégico</p>
+            <p className="ql-body">El Supervisor lee tu proyecto, propone un plan, y enruta al agente más relevante.</p>
+            <p className="ql-body">Cada decisión queda en el DecisionLog.</p>
           </div>
         )}
       </div>
@@ -338,10 +339,10 @@ export default function ProjectWarRoomPage() {
         </div>
       ) : (
         <div className="flex-1 flex flex-col min-w-0">
-          <div className="flex items-center justify-between px-6 py-4 border-b border-gray-100">
+          <div className="flex items-center justify-between px-6 py-4 border-b border-ql-sand/20 bg-white">
             <div>
-              <h2 className="font-serif text-lg text-gray-900 leading-tight">{projectTitle}</h2>
-              <p className="text-xs text-gray-400 mt-0.5">Supervisor · Human-in-the-Loop</p>
+              <h2 className="ql-h3">{projectTitle}</h2>
+              <p className="ql-caption mt-0.5">Supervisor · Human-in-the-Loop</p>
             </div>
           </div>
           <StrategyMode projectId={projectId} />

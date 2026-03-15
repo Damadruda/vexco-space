@@ -14,8 +14,8 @@ export function ExpertList({ activeExpertId, onlineIds = [], onSelect }: ExpertL
 
   return (
     <div className="flex flex-col h-full">
-      <div className="px-4 py-4 border-b border-gray-100">
-        <p className="text-xs font-medium tracking-[0.12em] uppercase text-gray-400">Panel de Expertos</p>
+      <div className="px-4 py-4 border-b border-ql-sand/20">
+        <p className="ql-label">Panel de Expertos</p>
       </div>
 
       <div className="flex-1 overflow-y-auto py-2">
@@ -28,35 +28,39 @@ export function ExpertList({ activeExpertId, onlineIds = [], onSelect }: ExpertL
               key={expert.id}
               onClick={() => onSelect(expert)}
               className={`
-                w-full flex items-center gap-3 px-4 py-3 text-left transition-colors
+                w-full flex items-center gap-3 px-4 py-3 text-left transition-all duration-150
                 ${isActive
-                  ? "bg-gray-100"
-                  : "hover:bg-gray-50"
+                  ? "bg-ql-cream border-l-2 border-ql-accent pl-[14px]"
+                  : "hover:bg-ql-offwhite"
                 }
               `}
             >
               <ExpertAvatar expert={expert} size="md" showRing={isActive} />
 
               <div className="flex-1 min-w-0">
-                <p className={`text-sm font-semibold leading-tight truncate ${isActive ? "text-gray-900" : "text-gray-800"}`}>
+                <p className={`text-sm leading-tight truncate ${isActive ? "font-medium text-ql-charcoal" : "font-light text-ql-slate"}`}>
                   {expert.name}
                 </p>
-                <p className="text-xs text-gray-400 leading-snug truncate mt-0.5">
+                <p className="ql-caption leading-snug truncate mt-0.5">
                   {expert.role}
                 </p>
               </div>
 
               {/* Status dot */}
-              <div className={`shrink-0 h-2 w-2 rounded-full ${isOnline ? "bg-emerald-400" : "bg-gray-300"}`} />
+              <div
+                className={`shrink-0 h-1.5 w-1.5 rounded-full ${
+                  isOnline ? "bg-ql-success" : "bg-ql-muted"
+                }`}
+              />
             </button>
           );
         })}
       </div>
 
-      <div className="px-4 py-3 border-t border-gray-100">
+      <div className="px-4 py-3 border-t border-ql-sand/20">
         <div className="flex items-center gap-2">
-          <div className="h-2 w-2 rounded-full bg-emerald-400" />
-          <span className="text-xs text-gray-400">8 agentes en línea</span>
+          <span className="ql-status-active" />
+          <span className="ql-caption">8 agentes en línea</span>
         </div>
       </div>
     </div>

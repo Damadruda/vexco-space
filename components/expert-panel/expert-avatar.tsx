@@ -18,11 +18,13 @@ export function ExpertAvatar({ expert, size = "md", showRing = false }: ExpertAv
   return (
     <div
       className={`
-        flex shrink-0 items-center justify-center rounded-full font-semibold text-white
+        flex shrink-0 items-center justify-center rounded-full font-medium text-white
         ${sizes[size]}
         ${expert.bgColor}
-        ${showRing ? `ring-2 ${expert.ringColor}` : ""}
+        ${showRing ? `ring-2 ring-offset-1 ${expert.ringColor}` : ""}
+        transition-all duration-200
       `}
+      style={{ fontFamily: "var(--font-body)" }}
     >
       {expert.initials}
     </div>

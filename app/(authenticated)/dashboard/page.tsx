@@ -4,7 +4,7 @@ import { useState, useEffect, useRef } from "react";
 import { Header } from "@/components/ui/header";
 import { StatCard } from "@/components/ui/stat-card";
 import { KanbanBoard } from "@/components/ui/kanban-board";
-import { FolderKanban, Lightbulb, FileText, Link as LinkIcon, Image as ImageIcon, TrendingUp, Loader2, ArrowRight, Sparkles, RefreshCw, CloudDownload, Plus } from "lucide-react";
+import { FolderKanban, Lightbulb, FileText, Link as LinkIcon, Image as ImageIcon, TrendingUp, ArrowRight, Sparkles, RefreshCw, CloudDownload, Plus } from "lucide-react";
 import Link from "next/link";
 import { DriveFolderAnalyzer } from "@/components/ui/drive-folder-analyzer";
 import { PROJECT_TYPES, PROJECT_TYPE_ORDER, ProjectType } from "@/lib/project-types";
@@ -110,7 +110,7 @@ export default function DashboardPage() {
   }, [aiInsights]);
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="ql-page">
       <Header title="Dashboard" subtitle="Vista general" />
 
       {/* Drive Folder Analyzer Modal */}
@@ -120,63 +120,75 @@ export default function DashboardPage() {
       />
 
       <div className="p-8 space-y-10">
-        {/* Quick Actions */}
-        <div className="flex flex-wrap gap-3">
-          <Link
-            href="/project-builder/new"
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors"
-          >
-            <Plus className="h-4 w-4" />
-            Nuevo Proyecto
-          </Link>
-          <button
-            onClick={() => setShowDriveAnalyzer(true)}
-            className="inline-flex items-center gap-2 px-4 py-2.5 bg-white border border-gray-200 text-gray-700 rounded-lg hover:bg-gray-50 hover:border-gray-300 transition-colors"
-          >
-            <CloudDownload className="h-4 w-4" />
-            Importar desde Google Drive
-          </button>
+        {/* Page heading */}
+        <div className="flex flex-wrap items-center justify-between gap-4">
+          <div>
+            <h1 className="ql-h1">Dashboard</h1>
+            <p className="ql-body mt-1">Vista general de tus proyectos.</p>
+          </div>
+          <div className="flex flex-wrap gap-3">
+            <Link href="/project-builder/new" className="ql-btn-primary">
+              <Plus className="h-4 w-4" />
+              Nuevo Proyecto
+            </Link>
+            <button
+              onClick={() => setShowDriveAnalyzer(true)}
+              className="ql-btn-secondary"
+            >
+              <CloudDownload className="h-4 w-4" />
+              Importar desde Drive
+            </button>
+          </div>
         </div>
 
         {/* Stats Cards */}
         {loading ? (
           <div className="flex justify-center py-12">
-            <Loader2 className="h-6 w-6 animate-spin text-gray-400" />
+            <span className="ql-status-thinking mr-2" />
+            <span className="ql-loading">Cargando estadísticas...</span>
           </div>
         ) : (
-          <div className="grid gap-px bg-gray-200 sm:grid-cols-2 lg:grid-cols-4">
-            <StatCard
-              title="Proyectos Totales"
-              value={stats?.totalProjects ?? 0}
-              icon={FolderKanban}
-              number="01"
-            />
-            <StatCard
-              title="Ideas Capturadas"
-              value={stats?.projectsByStatus?.idea ?? 0}
-              icon={Lightbulb}
-              number="02"
-            />
-            <StatCard
-              title="En Ejecución"
-              value={(stats?.projectsByStatus?.development ?? 0) + (stats?.projectsByStatus?.execution ?? 0)}
-              icon={TrendingUp}
-              number="03"
-            />
-            <StatCard
-              title="Completados"
-              value={stats?.projectsByStatus?.completed ?? 0}
-              icon={FolderKanban}
-              number="04"
-            />
+          <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="ql-card-flat">
+              <StatCard
+                title="Proyectos Totales"
+                value={stats?.totalProjects ?? 0}
+                icon={FolderKanban}
+                number="01"
+              />
+            </div>
+            <div className="ql-card-flat">
+              <StatCard
+                title="Ideas Capturadas"
+                value={stats?.projectsByStatus?.idea ?? 0}
+                icon={Lightbulb}
+                number="02"
+              />
+            </div>
+            <div className="ql-card-flat">
+              <StatCard
+                title="En Ejecución"
+                value={(stats?.projectsByStatus?.development ?? 0) + (stats?.projectsByStatus?.execution ?? 0)}
+                icon={TrendingUp}
+                number="03"
+              />
+            </div>
+            <div className="ql-card-flat">
+              <StatCard
+                title="Completados"
+                value={stats?.projectsByStatus?.completed ?? 0}
+                icon={FolderKanban}
+                number="04"
+              />
+            </div>
           </div>
         )}
 
         {/* PM Ágil Type Distribution */}
         {!loading && stats && (
           <div>
-            <p className="mb-2 text-xs tracking-[0.15em] uppercase text-gray-400">Framework PM Ágil</p>
-            <h3 className="mb-4 font-serif text-xl text-gray-900">Distribución por tipo de proyecto</h3>
+            <p className="ql-label mb-2">Framework PM Ágil</p>
+            <h3 className="ql-h3 mb-4">Distribución por tipo de proyecto</h3>
             <div className="grid gap-3 sm:grid-cols-4">
               {PROJECT_TYPE_ORDER.map((type) => {
                 const info = PROJECT_TYPES[type as ProjectType];
@@ -187,22 +199,22 @@ export default function DashboardPage() {
                   <Link
                     key={type}
                     href={`/project-builder?type=${type}`}
-                    className={`group relative overflow-hidden rounded-xl border p-4 transition-all hover:shadow-md ${info.borderColor} ${info.bgColor}`}
+                    className={`group relative overflow-hidden rounded-lg border p-4 transition-all hover:shadow-sm ${info.borderColor} ${info.bgColor}`}
                   >
                     <div className="mb-3 flex items-center gap-2">
-                      <span className={`h-2.5 w-2.5 rounded-full ${info.dotColor}`} />
-                      <span className={`text-xs font-semibold uppercase tracking-wide ${info.color}`}>{info.label}</span>
+                      <span className={`h-2 w-2 rounded-full ${info.dotColor}`} />
+                      <span className={`ql-label ${info.color}`}>{info.label}</span>
                     </div>
-                    <p className="font-serif text-3xl font-bold text-gray-900">{count}</p>
-                    <p className="text-xs text-gray-500">proyecto{count !== 1 ? "s" : ""}</p>
+                    <p className="ql-h2">{count}</p>
+                    <p className="ql-body">proyecto{count !== 1 ? "s" : ""}</p>
                     <div className="mt-3">
-                      <div className="h-1 w-full overflow-hidden rounded-full bg-white/60">
+                      <div className="h-0.5 w-full overflow-hidden rounded-full bg-white/60">
                         <div
                           className={`h-full ${info.dotColor} transition-all`}
                           style={{ width: `${pct}%` }}
                         />
                       </div>
-                      <p className={`mt-1 text-xs ${info.color}`}>{pct}% del total</p>
+                      <p className={`mt-1 text-xs ${info.color}`}>{pct}%</p>
                     </div>
                     <ArrowRight className={`absolute right-3 top-3 h-4 w-4 opacity-0 transition-all group-hover:opacity-100 ${info.color}`} />
                   </Link>
@@ -213,24 +225,24 @@ export default function DashboardPage() {
         )}
 
         {/* AI Insights Section */}
-        <div className="border border-amber-200 bg-amber-50/50 p-6">
+        <div className="ql-card">
           <div className="flex items-center justify-between mb-4">
             <div className="flex items-center gap-3">
-              <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-100">
-                <Sparkles className="h-5 w-5 text-amber-600" />
+              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-ql-cream">
+                <Sparkles className="h-4 w-4 text-ql-accent" />
               </div>
               <div>
-                <h3 className="font-serif text-lg text-gray-900">Insights con IA</h3>
-                <p className="text-sm text-gray-500">Análisis automático de tus proyectos</p>
+                <h3 className="ql-h3">Insights con IA</h3>
+                <p className="ql-body">Análisis automático de tus proyectos.</p>
               </div>
             </div>
             <button
               onClick={generateInsights}
               disabled={loadingInsights}
-              className="inline-flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
+              className="ql-btn-secondary disabled:opacity-50"
             >
               {loadingInsights ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <span className="ql-status-thinking" />
               ) : (
                 <RefreshCw className="h-4 w-4" />
               )}
@@ -241,45 +253,36 @@ export default function DashboardPage() {
           {aiInsights && (
             <div
               ref={insightsRef}
-              className="mt-4 max-h-64 overflow-y-auto rounded-lg bg-white p-4 border border-amber-100"
+              className="mt-4 max-h-64 overflow-y-auto rounded-md bg-ql-offwhite p-4"
             >
-              <div className="prose prose-sm max-w-none text-gray-700 whitespace-pre-wrap">
+              <div className="ql-body whitespace-pre-wrap">
                 {aiInsights}
-                {loadingInsights && <span className="inline-block w-2 h-4 bg-amber-500 animate-pulse ml-1" />}
+                {loadingInsights && <span className="ql-status-thinking ml-2" />}
               </div>
             </div>
           )}
 
           {!aiInsights && !loadingInsights && (
-            <p className="text-sm text-gray-500 mt-2">
-              Haz clic en "Generar Insights" para obtener un análisis personalizado de tus proyectos y recomendaciones.
+            <p className="ql-body mt-2">
+              Genera un análisis personalizado de tus proyectos y recomendaciones.
             </p>
           )}
         </div>
 
         {/* Quick Actions */}
         <div>
-          <p className="mb-4 text-xs tracking-[0.15em] uppercase text-gray-400">Acciones rápidas</p>
+          <p className="ql-label mb-4">Acciones rápidas</p>
           <div className="flex flex-wrap gap-3">
-            <Link
-              href="/project-builder/new"
-              className="group inline-flex items-center gap-2 bg-gray-900 px-5 py-2.5 text-sm font-medium text-white transition-all hover:bg-gray-800"
-            >
+            <Link href="/project-builder/new" className="ql-btn-primary group">
               <FolderKanban className="h-4 w-4" />
               Nuevo Proyecto
               <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
             </Link>
-            <Link
-              href="/idea-vault"
-              className="inline-flex items-center gap-2 border border-gray-300 bg-white px-5 py-2.5 text-sm font-medium text-gray-700 transition-all hover:border-gray-400"
-            >
+            <Link href="/idea-vault" className="ql-btn-secondary">
               <Lightbulb className="h-4 w-4" />
               Capturar Idea
             </Link>
-            <Link
-              href="/assistant"
-              className="inline-flex items-center gap-2 border border-amber-300 bg-amber-50 px-5 py-2.5 text-sm font-medium text-amber-700 transition-all hover:border-amber-400 hover:bg-amber-100"
-            >
+            <Link href="/assistant" className="ql-btn-ghost">
               <Sparkles className="h-4 w-4" />
               Asistente IA
             </Link>
@@ -288,41 +291,41 @@ export default function DashboardPage() {
 
         {/* Kanban Board */}
         <div>
-          <p className="mb-2 text-xs tracking-[0.15em] uppercase text-gray-400">Vista de proyectos</p>
-          <h3 className="mb-6 font-serif text-xl text-gray-900">Estado actual de tus proyectos</h3>
+          <p className="ql-label mb-2">Vista de proyectos</p>
+          <h3 className="ql-h3 mb-6">Estado actual de tus proyectos</h3>
           <KanbanBoard />
         </div>
 
         {/* Content Summary */}
         {!loading && stats && (
           <div>
-            <p className="mb-2 text-xs tracking-[0.15em] uppercase text-gray-400">Contenido capturado</p>
-            <h3 className="mb-6 font-serif text-xl text-gray-900">Tu repositorio de conocimiento</h3>
-            <div className="grid gap-6 sm:grid-cols-3">
-              <div className="border border-gray-200 bg-white p-5">
+            <p className="ql-label mb-2">Contenido capturado</p>
+            <h3 className="ql-h3 mb-6">Tu repositorio de conocimiento</h3>
+            <div className="grid gap-4 sm:grid-cols-3">
+              <div className="ql-card">
                 <div className="flex items-center gap-4">
-                  <FileText className="h-5 w-5 text-gray-400" />
+                  <FileText className="h-4 w-4 text-ql-muted" strokeWidth={1.5} />
                   <div>
-                    <p className="font-serif text-2xl text-gray-900">{stats.totalNotes}</p>
-                    <p className="text-sm text-gray-500">Notas guardadas</p>
+                    <p className="ql-h2">{stats.totalNotes}</p>
+                    <p className="ql-body">Notas guardadas</p>
                   </div>
                 </div>
               </div>
-              <div className="border border-gray-200 bg-white p-5">
+              <div className="ql-card">
                 <div className="flex items-center gap-4">
-                  <LinkIcon className="h-5 w-5 text-gray-400" />
+                  <LinkIcon className="h-4 w-4 text-ql-muted" strokeWidth={1.5} />
                   <div>
-                    <p className="font-serif text-2xl text-gray-900">{stats.totalLinks}</p>
-                    <p className="text-sm text-gray-500">Links capturados</p>
+                    <p className="ql-h2">{stats.totalLinks}</p>
+                    <p className="ql-body">Links capturados</p>
                   </div>
                 </div>
               </div>
-              <div className="border border-gray-200 bg-white p-5">
+              <div className="ql-card">
                 <div className="flex items-center gap-4">
-                  <ImageIcon className="h-5 w-5 text-gray-400" />
+                  <ImageIcon className="h-4 w-4 text-ql-muted" strokeWidth={1.5} />
                   <div>
-                    <p className="font-serif text-2xl text-gray-900">{stats.totalImages}</p>
-                    <p className="text-sm text-gray-500">Imágenes subidas</p>
+                    <p className="ql-h2">{stats.totalImages}</p>
+                    <p className="ql-body">Imágenes subidas</p>
                   </div>
                 </div>
               </div>

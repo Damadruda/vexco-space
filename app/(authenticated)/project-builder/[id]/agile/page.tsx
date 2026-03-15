@@ -3,7 +3,7 @@
 import { useState, useEffect, useRef } from "react";
 import { useParams } from "next/navigation";
 import { Header } from "@/components/ui/header";
-import { Plus, Loader2, Trash2, GripVertical, Flag } from "lucide-react";
+import { Plus, Trash2, GripVertical } from "lucide-react";
 
 interface AgileTask {
   id: string;
@@ -16,16 +16,16 @@ interface AgileTask {
 }
 
 const COLUMNS = [
-  { id: "backlog", label: "Backlog", number: "01", color: "bg-gray-100 text-gray-600" },
-  { id: "in-progress", label: "En Progreso", number: "02", color: "bg-blue-50 text-blue-600" },
-  { id: "review", label: "Revisión", number: "03", color: "bg-amber-50 text-amber-600" },
-  { id: "done", label: "Completado", number: "04", color: "bg-green-50 text-green-600" },
+  { id: "backlog", label: "Backlog", number: "01", countClass: "ql-badge-default" },
+  { id: "in-progress", label: "En Progreso", number: "02", countClass: "ql-badge-accent" },
+  { id: "review", label: "Revisión", number: "03", countClass: "ql-badge-warning" },
+  { id: "done", label: "Completado", number: "04", countClass: "ql-badge-success" },
 ];
 
-const PRIORITY_COLORS: Record<string, string> = {
-  high: "text-red-500",
-  medium: "text-amber-500",
-  low: "text-gray-400",
+const PRIORITY_CLASSES: Record<string, string> = {
+  high: "ql-moscow-must",
+  medium: "ql-moscow-should",
+  low: "ql-badge-default",
 };
 
 export default function ProjectAgilePage() {
@@ -102,34 +102,33 @@ export default function ProjectAgilePage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
+      <div className="flex min-h-screen items-center gap-2 justify-center bg-ql-offwhite">
+        <span className="ql-status-thinking" />
+        <span className="ql-loading">Cargando tablero...</span>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="ql-page">
       <Header title="Agile" subtitle={projectTitle} />
 
       <div className="p-6">
-        <div className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-4">
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
           {COLUMNS.map((col) => {
             const colTasks = tasks.filter((t) => t.status === col.id);
             return (
               <div
                 key={col.id}
-                className="flex flex-col rounded-xl bg-white border border-slate-200 shadow-sm overflow-hidden"
+                className="flex flex-col rounded-lg bg-white overflow-hidden"
+                style={{ border: "1px solid rgba(184, 178, 168, 0.15)" }}
                 onDragOver={handleDragOver}
                 onDrop={(e) => handleDrop(e, col.id)}
               >
                 {/* Column header */}
-                <div className="flex items-center gap-2 px-4 py-3 border-b border-slate-100">
-                  <span className="text-xs font-light text-gray-300">[{col.number}]</span>
-                  <h3 className="flex-1 text-sm font-semibold text-slate-700">{col.label}</h3>
-                  <span className={`rounded-full px-2 py-0.5 text-xs font-medium ${col.color}`}>
-                    {colTasks.length}
-                  </span>
+                <div className="flex items-center gap-2 px-4 py-3 border-b border-ql-sand/20">
+                  <h3 className="ql-label flex-1">{col.label}</h3>
+                  <span className={col.countClass}>{colTasks.length}</span>
                 </div>
 
                 {/* Tasks */}
@@ -139,25 +138,26 @@ export default function ProjectAgilePage() {
                       key={task.id}
                       draggable
                       onDragStart={() => handleDragStart(task.id)}
-                      className={`group rounded-lg border border-slate-200 bg-white p-3 cursor-grab active:cursor-grabbing shadow-sm hover:shadow-md transition-shadow ${
+                      className={`group ql-card p-3 cursor-grab active:cursor-grabbing ${
                         draggedId === task.id ? "opacity-50" : ""
                       }`}
                     >
                       <div className="flex items-start gap-2">
-                        <GripVertical className="h-3.5 w-3.5 mt-0.5 text-gray-300 shrink-0" />
+                        <GripVertical className="h-3.5 w-3.5 mt-0.5 text-ql-muted shrink-0" strokeWidth={1.5} />
                         <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-slate-800 leading-snug">{task.title}</p>
+                          <p className="text-sm font-medium text-ql-charcoal leading-snug">{task.title}</p>
                           {task.description && (
-                            <p className="mt-1 text-xs text-slate-400 line-clamp-2">{task.description}</p>
+                            <p className="ql-body mt-1 line-clamp-2">{task.description}</p>
                           )}
                           <div className="mt-2 flex items-center gap-2">
-                            <Flag className={`h-3 w-3 ${PRIORITY_COLORS[task.priority] ?? "text-gray-400"}`} />
-                            <span className="text-xs text-slate-400 capitalize">{task.priority}</span>
+                            <span className={PRIORITY_CLASSES[task.priority] ?? "ql-badge-default"}>
+                              {task.priority}
+                            </span>
                           </div>
                         </div>
                         <button
                           onClick={() => handleDelete(task.id)}
-                          className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-slate-300 hover:text-red-400"
+                          className="opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded text-ql-muted hover:text-ql-danger"
                         >
                           <Trash2 className="h-3.5 w-3.5" />
                         </button>
@@ -167,7 +167,7 @@ export default function ProjectAgilePage() {
 
                   {/* Inline add form */}
                   {addingTo === col.id ? (
-                    <div className="rounded-lg border border-slate-300 bg-white p-3 shadow-sm">
+                    <div className="ql-card p-3">
                       <input
                         ref={inputRef}
                         type="text"
@@ -178,18 +178,18 @@ export default function ProjectAgilePage() {
                           if (e.key === "Escape") { setAddingTo(null); setNewTitle(""); }
                         }}
                         placeholder="Título de la tarea..."
-                        className="w-full text-sm text-slate-800 placeholder:text-slate-400 focus:outline-none"
+                        className="w-full text-sm text-ql-charcoal placeholder:text-ql-muted focus:outline-none bg-transparent"
                       />
                       <div className="mt-2 flex gap-2">
                         <button
                           onClick={() => handleAddTask(col.id)}
-                          className="rounded-md bg-slate-800 px-3 py-1 text-xs font-medium text-white hover:bg-slate-700"
+                          className="ql-btn-primary text-xs py-1 px-3"
                         >
                           Agregar
                         </button>
                         <button
                           onClick={() => { setAddingTo(null); setNewTitle(""); }}
-                          className="rounded-md px-3 py-1 text-xs font-medium text-slate-500 hover:bg-slate-100"
+                          className="ql-btn-ghost text-xs py-1 px-3"
                         >
                           Cancelar
                         </button>
@@ -202,7 +202,7 @@ export default function ProjectAgilePage() {
                 <div className="px-3 pb-3">
                   <button
                     onClick={() => setAddingTo(col.id)}
-                    className="flex w-full items-center gap-2 rounded-lg border border-dashed border-slate-200 px-3 py-2 text-xs text-slate-400 hover:border-slate-400 hover:text-slate-600 transition-colors"
+                    className="flex w-full items-center gap-2 rounded-md border border-dashed border-ql-sand px-3 py-2 text-xs text-ql-muted hover:border-ql-muted hover:text-ql-slate transition-colors"
                   >
                     <Plus className="h-3.5 w-3.5" />
                     Agregar tarea

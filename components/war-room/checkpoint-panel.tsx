@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import {
-  Check, X, ChevronDown, Loader2, ArrowRight, Brain, Zap, BookOpen, Cpu, Search
+  Check, X, ChevronDown, ArrowRight, Brain, Zap, BookOpen, Cpu, Search
 } from "lucide-react";
 import type { Checkpoint, SupervisorPlan, AgentResult } from "@/lib/engine/types";
 import { StructuredOutputRenderer } from "./structured-output";
@@ -23,10 +23,10 @@ interface CheckpointPanelProps {
 
 // ─── Priority badge ───────────────────────────────────────────────────────────
 
-const PRIORITY_STYLES: Record<string, string> = {
-  high:   "bg-red-100 text-red-700",
-  medium: "bg-amber-100 text-amber-700",
-  low:    "bg-slate-100 text-slate-500",
+const PRIORITY_CLASSES: Record<string, string> = {
+  high:   "ql-badge-danger",
+  medium: "ql-badge-warning",
+  low:    "ql-badge-default",
 };
 
 // ─── Plan Review ─────────────────────────────────────────────────────────────
@@ -50,68 +50,65 @@ function PlanReview({
   return (
     <div className="space-y-5">
       {/* Supervisor header */}
-      <div className="flex items-center gap-2">
-        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-indigo-600">
+      <div className="flex items-center gap-3">
+        <div className="flex h-8 w-8 items-center justify-center rounded-full bg-ql-charcoal">
           <Brain className="h-4 w-4 text-white" />
         </div>
         <div>
-          <p className="text-xs font-semibold tracking-widest uppercase text-slate-400">
-            Supervisor · Propuesta de Plan
-          </p>
+          <p className="ql-label">Supervisor · Propuesta de Plan</p>
         </div>
-        <span className={`ml-auto rounded-full px-2.5 py-0.5 text-xs font-medium ${PRIORITY_STYLES[plan.priority] ?? ""}`}>
+        <span className={`ml-auto ${PRIORITY_CLASSES[plan.priority] ?? "ql-badge-default"}`}>
           {plan.priority}
         </span>
       </div>
 
+      <div className="ql-divider-subtle" />
+
       {/* Analysis */}
-      <div className="rounded-xl bg-slate-50 border border-slate-100 px-4 py-3 space-y-2">
-        <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">Estado del proyecto</p>
-        <p className="text-sm text-slate-700 leading-relaxed">{plan.analysis}</p>
+      <div className="ql-card-flat space-y-2">
+        <p className="ql-label">Estado del proyecto</p>
+        <p className="ql-body">{plan.analysis}</p>
       </div>
 
       {/* Proposed action */}
-      <div className="rounded-xl border border-indigo-100 bg-indigo-50 px-4 py-3 space-y-2">
-        <p className="text-xs font-medium text-indigo-400 uppercase tracking-wider">Acción propuesta</p>
-        <p className="text-sm font-medium text-indigo-900">{plan.proposedAction}</p>
-        <p className="text-xs text-indigo-500">{plan.estimatedScope}</p>
+      <div className="border-l-2 border-ql-accent pl-4 space-y-1">
+        <p className="ql-label">Acción propuesta</p>
+        <p className="text-sm font-medium text-ql-charcoal">{plan.proposedAction}</p>
+        <p className="ql-caption">{plan.estimatedScope}</p>
       </div>
 
       {/* Target agent */}
       {targetExpert && (
-        <div className="flex items-center gap-3 rounded-xl border border-slate-100 bg-white px-4 py-3">
+        <div className="ql-card flex items-center gap-3">
           <ExpertAvatar expert={targetExpert} size="md" />
           <div>
-            <p className="text-sm font-medium text-slate-800">{targetExpert.name}</p>
-            <p className="text-xs text-slate-400">{targetExpert.role}</p>
+            <p className="ql-h3 text-sm">{targetExpert.name}</p>
+            <p className="ql-caption">{targetExpert.role}</p>
           </div>
-          <p className="ml-auto text-xs text-slate-400 max-w-[140px] text-right leading-tight">
+          <p className="ml-auto ql-caption max-w-[140px] text-right leading-tight">
             {plan.reasoning}
           </p>
         </div>
       )}
 
-      {/* Archetype (project new — no prior decisions) */}
+      {/* Archetype */}
       {plan.archetype && (
-        <div className="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 space-y-3">
+        <div className="ql-card-flat space-y-3">
           <div className="flex items-center gap-2">
-            <BookOpen className="h-4 w-4 text-amber-500" />
-            <p className="text-xs font-semibold text-amber-700 uppercase tracking-wider">
-              Arquetipo detectado · {plan.archetype.name}
-            </p>
+            <BookOpen className="h-4 w-4 text-ql-accent" strokeWidth={1.5} />
+            <p className="ql-label">Arquetipo · {plan.archetype.name}</p>
           </div>
-          <p className="text-xs text-amber-600 leading-relaxed">{plan.archetype.reasoning}</p>
-          {/* Phases as horizontal pills */}
+          <p className="ql-body">{plan.archetype.reasoning}</p>
           <div className="flex flex-wrap gap-2">
             {plan.archetype.phases.map((phase) => (
               <span
                 key={phase.order}
                 title={phase.description}
-                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                className={
                   phase.name === plan.archetype!.currentPhase
-                    ? "bg-amber-500 text-white"
-                    : "bg-amber-100 text-amber-700"
-                }`}
+                    ? "ql-badge-accent"
+                    : "ql-badge-default"
+                }
               >
                 {phase.order}. {phase.name}
               </span>
@@ -122,16 +119,16 @@ function PlanReview({
 
       {/* Directive input */}
       <div>
-        <label className="block text-xs font-medium text-slate-500 mb-1">
-          Directriz adicional al agente (opcional)
+        <label className="ql-label block mb-2">
+          Directriz adicional (opcional)
         </label>
         <input
           type="text"
           value={directive}
           onChange={(e) => setDirective(e.target.value)}
-          placeholder="Enfócate en el mercado LatAm, prioriza ingresos a 30 días..."
+          placeholder="Enfócate en LatAm, prioriza ingresos a 30 días..."
           disabled={isLoading}
-          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400 disabled:opacity-40"
+          className="ql-input disabled:opacity-40"
         />
       </div>
 
@@ -140,16 +137,16 @@ function PlanReview({
         <button
           onClick={() => onRespond("approve", directive || undefined)}
           disabled={isLoading}
-          className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50 transition-colors"
+          className="ql-btn-primary disabled:opacity-50"
         >
-          {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+          {isLoading ? <span className="ql-status-thinking" /> : <Check className="h-4 w-4" />}
           Aprobar plan
         </button>
 
         <button
           onClick={() => onRespond("reject")}
           disabled={isLoading}
-          className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50 transition-colors"
+          className="ql-btn-secondary disabled:opacity-50"
         >
           <X className="h-4 w-4" />
           Rechazar
@@ -160,14 +157,14 @@ function PlanReview({
             <button
               onClick={() => setShowRedirect(!showRedirect)}
               disabled={isLoading}
-              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50 transition-colors"
+              className="ql-btn-ghost disabled:opacity-50"
             >
               <Zap className="h-4 w-4" />
               Redirigir a...
               <ChevronDown className="h-3 w-3" />
             </button>
             {showRedirect && (
-              <div className="absolute top-full left-0 z-10 mt-1 w-56 rounded-xl border border-slate-200 bg-white shadow-lg py-1">
+              <div className="absolute top-full left-0 z-10 mt-1 w-56 ql-card p-1 shadow-md">
                 {redirectOptions.map((opt) => {
                   const expert = EXPERTS.find((e) => e.id === opt.targetAgentId);
                   return (
@@ -177,7 +174,7 @@ function PlanReview({
                         setShowRedirect(false);
                         onRespond("redirect", directive || undefined, opt.targetAgentId);
                       }}
-                      className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50"
+                      className="ql-btn-ghost w-full justify-start text-xs py-2"
                     >
                       {expert && <ExpertAvatar expert={expert} size="sm" />}
                       <span>{expert?.name ?? opt.label}</span>
@@ -217,8 +214,8 @@ function ResultReview({
       <div className="flex items-center gap-3">
         {agentExpert && <ExpertAvatar expert={agentExpert} size="md" />}
         <div>
-          <p className="text-sm font-semibold text-slate-800">{result.agentName}</p>
-          <p className="text-xs text-slate-400">
+          <p className="ql-h3 text-sm">{result.agentName}</p>
+          <p className="ql-caption">
             {new Date(result.timestamp).toLocaleTimeString("es-ES", {
               hour: "2-digit",
               minute: "2-digit",
@@ -226,25 +223,24 @@ function ResultReview({
           </p>
         </div>
         <div className="ml-auto flex items-center gap-2">
-          <div className="h-2 w-2 rounded-full bg-emerald-400" title="Análisis completo" />
+          <span className="ql-status-active" title="Análisis completo" />
         </div>
       </div>
+
+      <div className="ql-divider-subtle" />
 
       {/* LLM metadata */}
       {result.content.metadata && (
         <div className="flex flex-wrap items-center gap-2">
           {result.content.metadata.model && (
-            <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs text-slate-500">
+            <span className="ql-badge-default inline-flex items-center gap-1">
               <Cpu className="h-3 w-3" />
               {result.content.metadata.model}
             </span>
           )}
           {result.content.metadata.skillsUsed && result.content.metadata.skillsUsed.length > 0 && (
             result.content.metadata.skillsUsed.map((skill: string) => (
-              <span
-                key={skill}
-                className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs text-indigo-600"
-              >
+              <span key={skill} className="ql-badge-accent inline-flex items-center gap-1">
                 {skill === "research" && <Search className="h-3 w-3" />}
                 {skill === "inspiration" && <BookOpen className="h-3 w-3" />}
                 {skill === "cross-validation" && <Zap className="h-3 w-3" />}
@@ -252,7 +248,7 @@ function ResultReview({
               </span>
             ))
           )}
-          <span className="text-xs text-slate-400">
+          <span className="ql-caption">
             {result.content.metadata.processingTimeMs}ms
           </span>
         </div>
@@ -263,16 +259,16 @@ function ResultReview({
 
       {/* Feedback for modify */}
       <div>
-        <label className="block text-xs font-medium text-slate-500 mb-1">
+        <label className="ql-label block mb-2">
           Solicitar más detalle (opcional)
         </label>
         <input
           type="text"
           value={feedback}
           onChange={(e) => setFeedback(e.target.value)}
-          placeholder="Profundiza en el análisis financiero, añade ejemplos concretos..."
+          placeholder="Profundiza en el análisis financiero, añade ejemplos..."
           disabled={isLoading}
-          className="w-full rounded-lg border border-slate-200 px-3 py-2 text-sm outline-none focus:border-slate-400 disabled:opacity-40"
+          className="ql-input disabled:opacity-40"
         />
       </div>
 
@@ -281,16 +277,16 @@ function ResultReview({
         <button
           onClick={() => onRespond("approve")}
           disabled={isLoading}
-          className="inline-flex items-center gap-2 rounded-xl bg-slate-900 px-4 py-2.5 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50 transition-colors"
+          className="ql-btn-primary disabled:opacity-50"
         >
-          {isLoading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Check className="h-4 w-4" />}
+          {isLoading ? <span className="ql-status-thinking" /> : <Check className="h-4 w-4" />}
           Aprobar y guardar
         </button>
 
         <button
           onClick={() => onRespond("modify", feedback || "Proporciona más detalle")}
           disabled={isLoading || !feedback.trim()}
-          className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50 transition-colors"
+          className="ql-btn-secondary disabled:opacity-50"
         >
           <ArrowRight className="h-4 w-4" />
           Pedir más detalle
@@ -301,14 +297,14 @@ function ResultReview({
             <button
               onClick={() => setShowRedirect(!showRedirect)}
               disabled={isLoading}
-              className="inline-flex items-center gap-2 rounded-xl border border-slate-200 px-4 py-2.5 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50 transition-colors"
+              className="ql-btn-ghost disabled:opacity-50"
             >
               <Zap className="h-4 w-4" />
               Consultar otro agente
               <ChevronDown className="h-3 w-3" />
             </button>
             {showRedirect && (
-              <div className="absolute top-full left-0 z-10 mt-1 w-56 rounded-xl border border-slate-200 bg-white shadow-lg py-1">
+              <div className="absolute top-full left-0 z-10 mt-1 w-56 ql-card p-1 shadow-md">
                 {redirectOptions
                   .filter((o) => o.action === "redirect")
                   .map((opt) => {
@@ -320,7 +316,7 @@ function ResultReview({
                           setShowRedirect(false);
                           onRespond("redirect", undefined, opt.targetAgentId);
                         }}
-                        className="flex w-full items-center gap-2 px-3 py-2.5 text-left text-sm text-slate-700 hover:bg-slate-50"
+                        className="ql-btn-ghost w-full justify-start text-xs py-2"
                       >
                         {expert && <ExpertAvatar expert={expert} size="sm" />}
                         <span>{expert?.name ?? opt.label}</span>
@@ -335,7 +331,7 @@ function ResultReview({
         <button
           onClick={() => onRespond("reject")}
           disabled={isLoading}
-          className="inline-flex items-center gap-2 rounded-xl border border-red-200 px-4 py-2.5 text-sm font-medium text-red-600 hover:bg-red-50 disabled:opacity-50 transition-colors"
+          className="ql-btn-ghost text-ql-danger hover:text-ql-danger disabled:opacity-50"
         >
           <X className="h-4 w-4" />
           Cerrar sesión
@@ -351,7 +347,7 @@ export function CheckpointPanel({ checkpoint, onRespond, isLoading }: Checkpoint
   const redirectOptions = checkpoint.options.filter((o) => o.action === "redirect");
 
   return (
-    <div className="rounded-2xl border border-slate-200 bg-white p-5 shadow-sm">
+    <div className="ql-card-flat p-6">
       {checkpoint.phase === "plan_review" ? (
         <PlanReview
           plan={checkpoint.content as SupervisorPlan}
