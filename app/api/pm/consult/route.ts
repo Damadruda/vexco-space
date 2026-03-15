@@ -74,7 +74,6 @@ const STAGE_PROMPTS: Record<string, string> = {
 // POST HANDLER - Field Consultation
 // =============================================================================
 export async function POST(request: NextRequest) {
-  console.log('[PM CONSULT] Starting consultation request');
   
   try {
     // Auth check

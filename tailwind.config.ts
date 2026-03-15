@@ -12,6 +12,8 @@ const config: Config = {
       fontFamily: {
         sans: ['var(--font-inter)', 'system-ui', 'sans-serif'],
         serif: ['var(--font-playfair)', 'Georgia', 'serif'],
+        heading: ['var(--font-heading)', 'Georgia', 'serif'],
+        body: ['var(--font-body)', 'system-ui', 'sans-serif'],
       },
       backgroundImage: {
         'gradient-radial': 'radial-gradient(var(--tw-gradient-stops))',
@@ -64,6 +66,20 @@ const config: Config = {
           '4': 'hsl(var(--chart-4))',
           '5': 'hsl(var(--chart-5))',
         },
+        ql: {
+          offwhite: '#F9F8F6',
+          cream: '#F3F1ED',
+          sand: '#E8E4DD',
+          muted: '#B8B2A8',
+          charcoal: '#1A1A1A',
+          graphite: '#2C2C2C',
+          slate: '#4A4A4A',
+          accent: '#8B7355',
+          'accent-light': '#C4A97D',
+          success: '#4A7C59',
+          warning: '#B8860B',
+          danger: '#8B3A3A',
+        },
       },
       keyframes: {
         'accordion-down': {
@@ -89,6 +105,6 @@ const config: Config = {
       },
     },
   },
-  plugins: [require('tailwindcss-animate')],
+  plugins: [require('tailwindcss-animate'), require('@tailwindcss/typography')],
 };
 export default config;

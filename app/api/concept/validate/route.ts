@@ -61,20 +61,17 @@ const STAGE_CONFIG = {
 // QA: Analyzes project description and generates validation questions
 // =============================================================================
 export async function POST(request: NextRequest) {
-  console.log('[CONCEPT VALIDATE] Starting validation request');
   
   try {
     // Auth check
     const session = await getServerSession(authOptions);
     if (!session?.user?.email) {
-      console.log('[CONCEPT VALIDATE] Unauthorized - no session');
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
     const body = await request.json();
     const { projectId, description, stage, answer, questionId } = body;
 
-    console.log(`[CONCEPT VALIDATE] Project: ${projectId}, Stage: ${stage}`);
 
     // Get user
     const user = await prisma.user.findUnique({
@@ -87,7 +84,6 @@ export async function POST(request: NextRequest) {
 
     // If answering a question, save the answer
     if (questionId && answer) {
-      console.log(`[CONCEPT VALIDATE] Saving answer for question: ${questionId}`);
       await prisma.conceptInsight.update({
         where: { id: questionId },
         data: { answer }
@@ -113,7 +109,6 @@ export async function POST(request: NextRequest) {
     const answeredCount = stageInsights.filter((i) => i.answer).length;
     const unansweredInsights = stageInsights.filter((i) => !i.answer);
 
-    console.log(`[CONCEPT VALIDATE] Stage insights: ${stageInsights.length}, Answered: ${answeredCount}`);
 
     // If there's an unanswered question, return it
     if (unansweredInsights.length > 0) {
@@ -138,7 +133,6 @@ export async function POST(request: NextRequest) {
       stageInsights
     );
 
-    console.log(`[CONCEPT VALIDATE] Gemini analysis result: ${analysisResult.status}`);
 
     if (analysisResult.status === 'GREEN') {
       // Update project status for this stage

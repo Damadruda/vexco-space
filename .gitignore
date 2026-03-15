@@ -38,3 +38,13 @@ next-env.d.ts
 .yarn/unplugged
 .yarn/build-state.yml
 .yarn/install-state.gz
+
+# prisma local db
+prisma/dev.db
+prisma/dev.db-journal
+*.sqlite
+*.sqlite3
+
+# env
+.env.production
+.env.development

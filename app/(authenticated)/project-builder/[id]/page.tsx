@@ -5,10 +5,10 @@
  * STRATEGIC PM LAB V2 - PROJECT BUILDER
  * =============================================================================
  * DEPLOYMENT VERIFICATION: STRATEGIC_LAB_V2_ACTIVE
- * 
+ *
  * FEATURES:
- * - Botones FUCSIA "Consultar con el PM" por cada campo
- * - Botones AZUL "Validar Campo" por cada sección
+ * - Botones "Consultar con el PM" por cada campo
+ * - Botones "Validar Campo" por cada sección
  * - Sistema de semáforos controlado SOLO por IA
  * - NO hay controles manuales de completado
  * - Validación "No Bananas": mínimo 25 palabras, datos específicos
@@ -25,7 +25,6 @@ import { AIGenerator, DocumentGenerator } from "@/components/ui/ai-generator";
 import {
   ArrowLeft,
   Check,
-  Loader2,
   Save,
   Lightbulb,
   Users,
@@ -40,17 +39,11 @@ import {
   AlertCircle,
   Flag,
   Sparkles,
-  ChevronDown,
   ChevronUp,
   X
 } from "lucide-react";
 import Link from "next/link";
 import { PROJECT_TYPES, PROJECT_TYPE_ORDER, ProjectType } from "@/lib/project-types";
-
-// =============================================================================
-// DEPLOYMENT VERIFICATION - PRUEBA DE VIDA
-// =============================================================================
-console.log('STRATEGIC_LAB_V2_ACTIVE');
 
 // =============================================================================
 // TYPE DEFINITIONS
@@ -164,16 +157,15 @@ const validateNoBananas = (text: string): { valid: boolean; message: string } =>
   if (!text || text.trim().length === 0) {
     return { valid: false, message: "El campo está vacío" };
   }
-  
+
   const words = text.trim().split(/\s+/).length;
   if (words < 25) {
-    return { 
-      valid: false, 
-      message: `Contenido insuficiente: ${words}/25 palabras mínimas. Añade más detalles específicos.` 
+    return {
+      valid: false,
+      message: `Contenido insuficiente: ${words}/25 palabras mínimas. Añade más detalles específicos.`
     };
   }
-  
-  // Patrones vagos que activan el filtro
+
   const vaguePatterns = [
     /^bananas?$/i,
     /^test$/i,
@@ -186,29 +178,29 @@ const validateNoBananas = (text: string): { valid: boolean; message: string } =>
     /obvio que/i,
     /muy f[aá]cil/i
   ];
-  
+
   if (vaguePatterns.some(p => p.test(text))) {
-    return { 
-      valid: false, 
-      message: "⚠️ Contenido genérico detectado. Necesitas datos específicos, métricas y evidencia empírica." 
+    return {
+      valid: false,
+      message: "Contenido genérico detectado. Necesitas datos específicos, métricas y evidencia empírica."
     };
   }
-  
+
   return { valid: true, message: "" };
 };
 
 // =============================================================================
 // CONSULTATION PANEL COMPONENT
 // =============================================================================
-function ConsultationPanel({ 
-  isOpen, 
-  onClose, 
+function ConsultationPanel({
+  isOpen,
+  onClose,
   fieldLabel,
   content,
   projectId,
   stage
-}: { 
-  isOpen: boolean; 
+}: {
+  isOpen: boolean;
   onClose: () => void;
   fieldLabel: string;
   content: string;
@@ -232,7 +224,7 @@ function ConsultationPanel({
           currentContent: content
         })
       });
-      
+
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || 'Error en la consulta');
       setResponse(data);
@@ -252,35 +244,35 @@ function ConsultationPanel({
   if (!isOpen) return null;
 
   return (
-    <div className="mt-3 rounded-lg border-2 border-fuchsia-200 bg-fuchsia-50 p-4">
+    <div className="mt-3 rounded-md border border-ql-accent/30 bg-ql-accent/5 p-4">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <MessageSquare className="h-5 w-5 text-fuchsia-600" />
-          <span className="font-semibold text-fuchsia-800">Consulta PM: {fieldLabel}</span>
+          <MessageSquare className="h-4 w-4 text-ql-accent" strokeWidth={1.5} />
+          <span className="text-sm font-medium text-ql-charcoal">Consulta PM: {fieldLabel}</span>
         </div>
-        <button onClick={onClose} className="text-fuchsia-400 hover:text-fuchsia-600">
+        <button onClick={onClose} className="text-ql-muted hover:text-ql-slate transition-colors">
           <X className="h-4 w-4" />
         </button>
       </div>
-      
+
       {loading && (
-        <div className="flex items-center gap-2 text-fuchsia-600">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          <span>Analizando con McKinsey + Sequoia + Innovation Expert...</span>
+        <div className="flex items-center gap-2">
+          <span className="ql-status-thinking" />
+          <span className="ql-loading">Analizando con McKinsey + Sequoia + Innovation Expert...</span>
         </div>
       )}
-      
+
       {error && (
-        <div className="rounded-lg bg-red-100 p-3 text-red-700 text-sm">
+        <div className="rounded-md bg-ql-danger/5 border border-ql-danger/20 p-3 text-sm text-ql-danger">
           <AlertCircle className="inline h-4 w-4 mr-1" />
           {error}
         </div>
       )}
-      
+
       {response && !loading && (
         <div className="space-y-3">
           {response.noBananasViolation && (
-            <div className="rounded-lg bg-amber-100 p-3 text-amber-800 text-sm">
+            <div className="rounded-md bg-ql-warning/5 border border-ql-warning/20 p-3 text-sm text-ql-warning">
               <AlertCircle className="inline h-4 w-4 mr-1" />
               <strong>Filtro "No Bananas":</strong> {response.message}
               {response.requiredData && (
@@ -292,43 +284,44 @@ function ConsultationPanel({
               )}
             </div>
           )}
-          
+
           {response.suggestion && (
-            <div className="rounded-lg bg-white p-3 border border-fuchsia-200">
-              <h4 className="font-medium text-fuchsia-700 mb-1">💡 Sugerencia Estratégica</h4>
-              <p className="text-sm text-slate-700">{response.suggestion}</p>
+            <div className="ql-card-flat p-3 space-y-1">
+              <p className="ql-label">Sugerencia Estratégica</p>
+              <p className="ql-body">{response.suggestion}</p>
             </div>
           )}
-          
+
           {response.analysis && (
             <div className="grid grid-cols-2 gap-2">
               {response.analysis.strengths?.length > 0 && (
-                <div className="rounded bg-green-50 p-2 text-xs">
-                  <strong className="text-green-700">Fortalezas:</strong>
-                  <ul className="mt-1 text-green-600">{response.analysis.strengths.map((s: string, i: number) => <li key={i}>• {s}</li>)}</ul>
+                <div className="rounded-md bg-ql-success/5 p-2 text-xs">
+                  <strong className="text-ql-success">Fortalezas:</strong>
+                  <ul className="mt-1 text-ql-success/80">{response.analysis.strengths.map((s: string, i: number) => <li key={i}>• {s}</li>)}</ul>
                 </div>
               )}
               {response.analysis.weaknesses?.length > 0 && (
-                <div className="rounded bg-red-50 p-2 text-xs">
-                  <strong className="text-red-700">Debilidades:</strong>
-                  <ul className="mt-1 text-red-600">{response.analysis.weaknesses.map((s: string, i: number) => <li key={i}>• {s}</li>)}</ul>
+                <div className="rounded-md bg-ql-danger/5 p-2 text-xs">
+                  <strong className="text-ql-danger">Debilidades:</strong>
+                  <ul className="mt-1 text-ql-danger/80">{response.analysis.weaknesses.map((s: string, i: number) => <li key={i}>• {s}</li>)}</ul>
                 </div>
               )}
             </div>
           )}
-          
+
           {response.alternatives?.length > 0 && (
-            <div className="rounded-lg bg-blue-50 p-3">
-              <h4 className="font-medium text-blue-700 mb-1">🔄 Alternativas Propuestas</h4>
-              <ul className="text-sm text-blue-600 space-y-1">
+            <div className="ql-card-flat p-3">
+              <p className="ql-label mb-1">Alternativas Propuestas</p>
+              <ul className="ql-body space-y-1">
                 {response.alternatives.map((alt: string, i: number) => <li key={i}>• {alt}</li>)}
               </ul>
             </div>
           )}
-          
+
           {response.nextQuestion && (
-            <div className="rounded-lg bg-purple-50 p-3 text-sm text-purple-700">
-              <strong>❓ Siguiente pregunta crítica:</strong> {response.nextQuestion}
+            <div className="rounded-md border-l-2 border-ql-accent pl-3 py-2">
+              <p className="ql-label mb-0.5">Siguiente pregunta crítica</p>
+              <p className="ql-body">{response.nextQuestion}</p>
             </div>
           )}
         </div>
@@ -340,13 +333,13 @@ function ConsultationPanel({
 // =============================================================================
 // VALIDATION RESULT PANEL
 // =============================================================================
-function ValidationPanel({ 
-  isOpen, 
-  onClose, 
+function ValidationPanel({
+  isOpen,
+  onClose,
   validation,
-  loading 
-}: { 
-  isOpen: boolean; 
+  loading
+}: {
+  isOpen: boolean;
   onClose: () => void;
   validation: any;
   loading: boolean;
@@ -354,70 +347,70 @@ function ValidationPanel({
   if (!isOpen) return null;
 
   return (
-    <div className="mt-3 rounded-lg border-2 border-blue-200 bg-blue-50 p-4">
+    <div className="mt-3 rounded-md border border-ql-charcoal/10 bg-ql-cream p-4">
       <div className="flex items-center justify-between mb-3">
         <div className="flex items-center gap-2">
-          <ShieldCheck className="h-5 w-5 text-blue-600" />
-          <span className="font-semibold text-blue-800">Resultado de Validación</span>
+          <ShieldCheck className="h-4 w-4 text-ql-charcoal" strokeWidth={1.5} />
+          <span className="text-sm font-medium text-ql-charcoal">Resultado de Validación</span>
         </div>
-        <button onClick={onClose} className="text-blue-400 hover:text-blue-600">
+        <button onClick={onClose} className="text-ql-muted hover:text-ql-slate transition-colors">
           <X className="h-4 w-4" />
         </button>
       </div>
-      
+
       {loading && (
-        <div className="flex items-center gap-2 text-blue-600">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          <span>Validando con panel de expertos...</span>
+        <div className="flex items-center gap-2">
+          <span className="ql-status-thinking" />
+          <span className="ql-loading">Validando con panel de expertos...</span>
         </div>
       )}
-      
+
       {validation && !loading && (
         <div className="space-y-3">
-          <div className={`flex items-center gap-2 rounded-lg p-3 ${
-            validation.status === 'GREEN' ? 'bg-green-100 text-green-800' :
-            validation.status === 'YELLOW' ? 'bg-yellow-100 text-yellow-800' :
-            'bg-red-100 text-red-800'
+          <div className={`flex items-center gap-2 rounded-md p-3 ${
+            validation.status === 'GREEN' ? 'bg-ql-success/10 text-ql-success' :
+            validation.status === 'YELLOW' ? 'bg-ql-warning/10 text-ql-warning' :
+            'bg-ql-danger/10 text-ql-danger'
           }`}>
-            <span className={`h-4 w-4 rounded-full ${
-              validation.status === 'GREEN' ? 'bg-green-500' :
-              validation.status === 'YELLOW' ? 'bg-yellow-500' :
-              'bg-red-500'
+            <span className={`h-3 w-3 rounded-full ${
+              validation.status === 'GREEN' ? 'bg-ql-success' :
+              validation.status === 'YELLOW' ? 'bg-ql-warning' :
+              'bg-ql-danger'
             }`} />
-            <strong>Estado: {validation.status}</strong>
+            <strong className="text-sm">Estado: {validation.status}</strong>
           </div>
-          
+
           {validation.feedback && (
-            <div className="rounded-lg bg-white p-3 border border-blue-200">
-              <p className="text-sm text-slate-700">{validation.feedback}</p>
+            <div className="ql-card p-3">
+              <p className="ql-body">{validation.feedback}</p>
             </div>
           )}
-          
+
           {validation.criteriaResults && (
             <div className="space-y-1">
-              <h4 className="font-medium text-blue-700 text-sm">Criterios Evaluados:</h4>
+              <p className="ql-label">Criterios Evaluados</p>
               {validation.criteriaResults.map((cr: any, i: number) => (
-                <div key={i} className={`flex items-center gap-2 text-xs p-1 rounded ${cr.met ? 'bg-green-50 text-green-700' : 'bg-red-50 text-red-700'}`}>
-                  {cr.met ? <Check className="h-3 w-3" /> : <X className="h-3 w-3" />}
+                <div key={i} className={`flex items-center gap-2 text-xs p-1.5 rounded-sm ${cr.met ? 'bg-ql-success/5 text-ql-success' : 'bg-ql-danger/5 text-ql-danger'}`}>
+                  {cr.met ? <Check className="h-3 w-3 shrink-0" /> : <X className="h-3 w-3 shrink-0" />}
                   <span>{cr.criterion}</span>
                 </div>
               ))}
             </div>
           )}
-          
+
           {validation.blockers?.length > 0 && (
-            <div className="rounded-lg bg-red-50 p-3">
-              <h4 className="font-medium text-red-700 mb-1">⚠️ Bloqueos Detectados</h4>
-              <ul className="text-sm text-red-600 space-y-1">
+            <div className="rounded-md bg-ql-danger/5 p-3">
+              <p className="ql-label text-ql-danger mb-1">Bloqueos Detectados</p>
+              <ul className="ql-body text-ql-danger space-y-1">
                 {validation.blockers.map((b: string, i: number) => <li key={i}>• {b}</li>)}
               </ul>
             </div>
           )}
-          
+
           {validation.killSwitch?.active && (
-            <div className="rounded-lg bg-red-200 p-3 border-2 border-red-500">
-              <h4 className="font-bold text-red-800">🚨 KILL SWITCH ACTIVADO</h4>
-              <p className="text-sm text-red-700 mt-1">{validation.killSwitch.reason}</p>
+            <div className="rounded-md bg-ql-danger/10 p-3 border border-ql-danger/30">
+              <p className="text-sm font-semibold text-ql-danger">KILL SWITCH ACTIVADO</p>
+              <p className="ql-body text-ql-danger mt-1">{validation.killSwitch.reason}</p>
             </div>
           )}
         </div>
@@ -430,20 +423,20 @@ function ValidationPanel({
 // TRAFFIC LIGHT COMPONENT
 // =============================================================================
 function TrafficLight({ status }: { status: SectionStatus | undefined }) {
-  const color = status === 'GREEN' ? 'bg-green-500' : 
-                status === 'YELLOW' ? 'bg-yellow-500' : 
-                'bg-slate-400';
+  const color = status === 'GREEN' ? 'bg-ql-success' :
+                status === 'YELLOW' ? 'bg-ql-warning' :
+                'bg-ql-muted';
   const label = status === 'GREEN' ? 'Validado por IA' :
                 status === 'YELLOW' ? 'En Progreso' :
                 'Sin Validar';
-  
+
   return (
     <div className="flex items-center gap-2">
-      <span className={`h-4 w-4 rounded-full ${color} shadow-lg`} />
+      <span className={`h-3.5 w-3.5 rounded-full ${color}`} />
       <span className={`text-xs font-medium ${
-        status === 'GREEN' ? 'text-green-700' :
-        status === 'YELLOW' ? 'text-yellow-700' :
-        'text-slate-500'
+        status === 'GREEN' ? 'text-ql-success' :
+        status === 'YELLOW' ? 'text-ql-warning' :
+        'text-ql-muted'
       }`}>{label}</span>
     </div>
   );
@@ -453,9 +446,7 @@ function TrafficLight({ status }: { status: SectionStatus | undefined }) {
 // MAIN COMPONENT
 // =============================================================================
 export default function ProjectDetailPage() {
-  // Deployment verification
-  console.log('STRATEGIC_LAB_V2_ACTIVE');
-  
+
   const params = useParams();
   const router = useRouter();
   const [project, setProject] = useState<Project | null>(null);
@@ -467,15 +458,15 @@ export default function ProjectDetailPage() {
   const [formData, setFormData] = useState<Record<string, string>>({});
   const [milestones, setMilestones] = useState<MilestoneItem[]>([]);
   const [changingType, setChangingType] = useState(false);
-  
+
   // Consultation states (per field)
   const [openConsultations, setOpenConsultations] = useState<Record<string, boolean>>({});
-  
+
   // Validation states (per step)
   const [validating, setValidating] = useState<Record<number, boolean>>({});
   const [validationResults, setValidationResults] = useState<Record<number, any>>({});
   const [showValidation, setShowValidation] = useState<Record<number, boolean>>({});
-  
+
   // Milestone generation
   const [generatingMilestones, setGeneratingMilestones] = useState(false);
   const [aiMilestones, setAiMilestones] = useState<any[]>([]);
@@ -495,7 +486,7 @@ export default function ProjectDetailPage() {
       const data = await res.json();
       setProject(data?.project);
       setMilestones(data?.project?.milestoneItems ?? []);
-      
+
       const initialData: Record<string, string> = {};
       steps.forEach((step) => {
         step.fields.forEach((field) => {
@@ -518,7 +509,6 @@ export default function ProjectDetailPage() {
     if (!project) return;
     setSaving(true);
 
-    // Calculate progress based on validated sections (GREEN status)
     const validatedSteps = steps.filter(step => {
       if (!step.statusField) return false;
       return project[step.statusField] === 'GREEN';
@@ -529,10 +519,7 @@ export default function ProjectDetailPage() {
       await fetch(`/api/projects/${project.id}`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          ...formData,
-          progress
-        })
+        body: JSON.stringify({ ...formData, progress })
       });
       setProject((prev) => prev ? { ...prev, progress } : null);
     } catch (error) {
@@ -544,14 +531,12 @@ export default function ProjectDetailPage() {
 
   const handleValidateSection = async (stepNumber: number, stage: string | null) => {
     if (!project || !stage) return;
-    
-    // Collect content from all fields in this step
+
     const step = steps.find(s => s.number === stepNumber);
     if (!step) return;
-    
+
     const content = step.fields.map(f => `${f.label}: ${formData[f.key] || ''}`).join('\n\n');
-    
-    // Validate "No Bananas" first
+
     const validation = validateNoBananas(content);
     if (!validation.valid) {
       setValidationResults(prev => ({
@@ -565,25 +550,20 @@ export default function ProjectDetailPage() {
       setShowValidation(prev => ({ ...prev, [stepNumber]: true }));
       return;
     }
-    
+
     setValidating(prev => ({ ...prev, [stepNumber]: true }));
     setShowValidation(prev => ({ ...prev, [stepNumber]: true }));
-    
+
     try {
       const res = await fetch('/api/pm/validate-field', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          projectId: project.id,
-          field: stage,
-          content
-        })
+        body: JSON.stringify({ projectId: project.id, field: stage, content })
       });
-      
+
       const data = await res.json();
       setValidationResults(prev => ({ ...prev, [stepNumber]: data }));
-      
-      // Refresh project to get updated status
+
       if (data.status === 'GREEN' || data.status === 'YELLOW') {
         fetchProject();
       }
@@ -601,17 +581,14 @@ export default function ProjectDetailPage() {
   const handleGenerateMilestones = async () => {
     if (!project) return;
     setGeneratingMilestones(true);
-    
+
     try {
       const res = await fetch('/api/milestones/generate', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          projectId: project.id,
-          projectData: formData
-        })
+        body: JSON.stringify({ projectId: project.id, projectData: formData })
       });
-      
+
       if (res.ok) {
         const data = await res.json();
         setAiMilestones(data.milestones || []);
@@ -665,8 +642,9 @@ export default function ProjectDetailPage() {
 
   if (loading) {
     return (
-      <div className="flex min-h-screen items-center justify-center">
-        <Loader2 className="h-8 w-8 animate-spin text-slate-500" />
+      <div className="ql-page flex items-center gap-2 justify-center">
+        <span className="ql-status-thinking" />
+        <span className="ql-loading">Cargando proyecto...</span>
       </div>
     );
   }
@@ -677,30 +655,27 @@ export default function ProjectDetailPage() {
   const typeInfo = PROJECT_TYPES[currentType];
 
   return (
-    <div className="min-h-screen bg-slate-50">
+    <div className="ql-page">
       <Header title={project.title} />
 
       <div className="p-6 space-y-6">
         {/* Back & Actions */}
         <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <Link
-            href="/project-builder"
-            className="inline-flex items-center gap-2 text-sm text-slate-500 hover:text-slate-700"
-          >
+          <Link href="/project-builder" className="ql-btn-ghost">
             <ArrowLeft className="h-4 w-4" />
             Volver a proyectos
           </Link>
           <div className="flex flex-wrap gap-2">
             <button
               onClick={() => setActiveAIGenerator("competitor_analysis")}
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50"
+              className="ql-btn-secondary"
             >
               <Users className="h-4 w-4" />
               Análisis Competencia
             </button>
             <button
               onClick={() => setShowDocGenerator(true)}
-              className="inline-flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2 text-sm font-medium text-amber-700 hover:bg-amber-100"
+              className="ql-btn-secondary"
             >
               <FileText className="h-4 w-4" />
               Generar Documentos
@@ -708,10 +683,10 @@ export default function ProjectDetailPage() {
             <button
               onClick={handleSave}
               disabled={saving}
-              className="inline-flex items-center gap-2 rounded-lg bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:bg-slate-300"
+              className="ql-btn-primary disabled:opacity-50"
             >
               {saving ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <span className="ql-status-thinking" />
               ) : (
                 <Save className="h-4 w-4" />
               )}
@@ -721,11 +696,11 @@ export default function ProjectDetailPage() {
         </div>
 
         {/* Project Type Selector */}
-        <div className="rounded-xl bg-white p-4 shadow-sm border border-slate-200">
+        <div className="ql-card">
           <div className="mb-3 flex items-center gap-2">
-            <Flag className="h-4 w-4 text-slate-500" />
-            <span className="text-sm font-semibold text-slate-700">Tipo de Proyecto</span>
-            {changingType && <Loader2 className="h-3.5 w-3.5 animate-spin text-slate-400" />}
+            <Flag className="h-4 w-4 text-ql-muted" strokeWidth={1.5} />
+            <span className="text-sm font-medium text-ql-charcoal">Tipo de Proyecto</span>
+            {changingType && <span className="ql-status-thinking" />}
           </div>
           <div className="flex flex-wrap gap-2">
             {PROJECT_TYPE_ORDER.map((type) => {
@@ -736,10 +711,10 @@ export default function ProjectDetailPage() {
                   key={type}
                   onClick={() => handleChangeProjectType(type)}
                   disabled={changingType}
-                  className={`inline-flex items-center gap-2 rounded-lg border-2 px-3 py-1.5 text-sm font-medium transition-all disabled:opacity-60 ${
+                  className={`inline-flex items-center gap-2 rounded-md border-2 px-3 py-1.5 text-sm font-medium transition-all disabled:opacity-60 ${
                     isSelected
                       ? `${info.borderColor} ${info.bgColor} ${info.color}`
-                      : "border-slate-100 bg-white text-slate-500 hover:border-slate-200"
+                      : "border-ql-sand/30 bg-white text-ql-muted hover:border-ql-sand/60"
                   }`}
                 >
                   <span className={`h-2 w-2 rounded-full ${info.dotColor}`} />
@@ -752,25 +727,25 @@ export default function ProjectDetailPage() {
         </div>
 
         {/* Progress Overview with Traffic Lights */}
-        <div className="rounded-xl bg-white p-4 shadow-sm border border-slate-200">
+        <div className="ql-card">
           <div className="mb-4 flex items-center justify-between">
-            <span className="text-sm font-semibold text-slate-700">Estado de Validación IA</span>
-            <span className="text-xs text-slate-500">Los semáforos se actualizan SOLO con validación de IA</span>
+            <span className="text-sm font-medium text-ql-charcoal">Estado de Validación IA</span>
+            <span className="ql-caption normal-case tracking-normal">Semáforos actualizados solo con validación de IA</span>
           </div>
-          <div className="grid grid-cols-4 gap-4">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
             {steps.slice(0, 4).map((step) => (
-              <div key={step.number} className={`rounded-lg border p-3 ${
-                project[step.statusField!] === 'GREEN' ? 'border-green-300 bg-green-50' :
-                project[step.statusField!] === 'YELLOW' ? 'border-yellow-300 bg-yellow-50' :
-                'border-slate-200 bg-slate-50'
+              <div key={step.number} className={`rounded-md border p-3 ${
+                project[step.statusField!] === 'GREEN' ? 'border-ql-success/30 bg-ql-success/5' :
+                project[step.statusField!] === 'YELLOW' ? 'border-ql-warning/30 bg-ql-warning/5' :
+                'border-ql-sand/40 bg-ql-cream'
               }`}>
                 <div className="flex items-center gap-2 mb-2">
                   <step.icon className={`h-4 w-4 ${
-                    project[step.statusField!] === 'GREEN' ? 'text-green-600' :
-                    project[step.statusField!] === 'YELLOW' ? 'text-yellow-600' :
-                    'text-slate-400'
-                  }`} />
-                  <span className="text-xs font-medium text-slate-700">{step.title.split(' ')[0]}</span>
+                    project[step.statusField!] === 'GREEN' ? 'text-ql-success' :
+                    project[step.statusField!] === 'YELLOW' ? 'text-ql-warning' :
+                    'text-ql-muted'
+                  }`} strokeWidth={1.5} />
+                  <span className="text-xs font-medium text-ql-charcoal">{step.title.split(' ')[0]}</span>
                 </div>
                 <TrafficLight status={project[step.statusField!]} />
               </div>
@@ -779,15 +754,15 @@ export default function ProjectDetailPage() {
         </div>
 
         {/* Milestones Section with AI Generation */}
-        <div className="rounded-xl bg-white shadow-sm border border-slate-200 overflow-hidden">
-          <div className="flex items-center justify-between p-4 border-b border-slate-100 bg-gradient-to-r from-purple-50 to-fuchsia-50">
+        <div className="ql-card overflow-hidden p-0">
+          <div className="flex items-center justify-between p-4 border-b border-ql-sand/20">
             <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-purple-100 border border-purple-200">
-                <Flag className="h-4 w-4 text-purple-600" />
+              <div className="flex h-9 w-9 items-center justify-center rounded-md bg-ql-accent/10">
+                <Flag className="h-4 w-4 text-ql-accent" strokeWidth={1.5} />
               </div>
               <div>
-                <h3 className="font-semibold text-slate-800">Milestones Inteligentes</h3>
-                <p className="text-xs text-slate-500">
+                <p className="text-sm font-medium text-ql-charcoal">Milestones Inteligentes</p>
+                <p className="ql-caption normal-case tracking-normal">
                   {milestones.filter(m => m.isCompleted).length}/{milestones.length} completados
                 </p>
               </div>
@@ -795,10 +770,10 @@ export default function ProjectDetailPage() {
             <button
               onClick={handleGenerateMilestones}
               disabled={generatingMilestones}
-              className="inline-flex items-center gap-2 rounded-lg bg-fuchsia-600 px-4 py-2 text-sm font-medium text-white hover:bg-fuchsia-500 disabled:opacity-50"
+              className="ql-btn-primary disabled:opacity-50"
             >
               {generatingMilestones ? (
-                <Loader2 className="h-4 w-4 animate-spin" />
+                <span className="ql-status-thinking" />
               ) : (
                 <Sparkles className="h-4 w-4" />
               )}
@@ -809,23 +784,23 @@ export default function ProjectDetailPage() {
           <div className="p-4 space-y-3">
             {/* AI Generated Milestones */}
             {showAiMilestones && aiMilestones.length > 0 && (
-              <div className="rounded-lg border-2 border-dashed border-fuchsia-300 p-4 bg-fuchsia-50">
+              <div className="rounded-md border border-dashed border-ql-accent/40 bg-ql-accent/5 p-4">
                 <div className="flex items-center justify-between mb-3">
-                  <h4 className="font-medium text-fuchsia-700 flex items-center gap-2">
-                    <Sparkles className="h-4 w-4" />
-                    Sugeridos por IA
-                  </h4>
-                  <button onClick={() => setShowAiMilestones(false)} className="text-fuchsia-400 hover:text-fuchsia-600">
+                  <div className="flex items-center gap-2">
+                    <Sparkles className="h-4 w-4 text-ql-accent" strokeWidth={1.5} />
+                    <p className="text-sm font-medium text-ql-charcoal">Sugeridos por IA</p>
+                  </div>
+                  <button onClick={() => setShowAiMilestones(false)} className="text-ql-muted hover:text-ql-slate transition-colors">
                     <ChevronUp className="h-4 w-4" />
                   </button>
                 </div>
                 <div className="space-y-2">
                   {aiMilestones.map((m, i) => (
-                    <div key={i} className="flex items-center justify-between rounded-lg bg-white p-3 border border-fuchsia-200">
-                      <span className="text-sm text-slate-700">{m.title}</span>
+                    <div key={i} className="flex items-center justify-between rounded-md bg-white p-3 border border-ql-sand/30">
+                      <span className="ql-body">{m.title}</span>
                       <button
                         onClick={() => handleAddAiMilestone(m.title)}
-                        className="inline-flex items-center gap-1 rounded bg-fuchsia-600 px-2 py-1 text-xs font-medium text-white hover:bg-fuchsia-500"
+                        className="ql-btn-primary text-xs py-1 px-2.5"
                       >
                         <Plus className="h-3 w-3" />
                         Agregar
@@ -836,21 +811,21 @@ export default function ProjectDetailPage() {
               </div>
             )}
 
-            {/* Existing Milestones (Read-only display) */}
+            {/* Existing Milestones */}
             {milestones.length === 0 ? (
-              <p className="py-4 text-center text-sm text-slate-400">
+              <p className="ql-caption normal-case tracking-normal py-4 text-center italic">
                 No hay milestones. Usa "Generar con IA" para obtener sugerencias.
               </p>
             ) : (
               milestones.map((milestone) => (
                 <div
                   key={milestone.id}
-                  className={`flex items-center gap-3 rounded-lg border p-3 ${
-                    milestone.isCompleted ? 'border-green-200 bg-green-50' : 'border-slate-100'
+                  className={`flex items-center gap-3 rounded-md border p-3 ${
+                    milestone.isCompleted ? 'border-ql-success/20 bg-ql-success/5' : 'border-ql-sand/30'
                   }`}
                 >
-                  <span className={`h-3 w-3 rounded-full ${milestone.isCompleted ? 'bg-green-500' : 'bg-slate-300'}`} />
-                  <span className={`flex-1 text-sm ${milestone.isCompleted ? 'line-through text-slate-400' : 'text-slate-700'}`}>
+                  <span className={`h-3 w-3 rounded-full shrink-0 ${milestone.isCompleted ? 'bg-ql-success' : 'bg-ql-muted'}`} />
+                  <span className={`flex-1 text-sm ${milestone.isCompleted ? 'line-through text-ql-muted' : 'text-ql-charcoal'}`}>
                     {milestone.title}
                   </span>
                 </div>
@@ -863,31 +838,31 @@ export default function ProjectDetailPage() {
         <div className="space-y-4">
           {steps.map((step) => {
             const stepStatus = step.statusField ? project[step.statusField] : undefined;
-            
+
             return (
               <div
                 key={step.number}
-                className="rounded-xl bg-white shadow-sm border border-slate-200 overflow-hidden"
+                className="ql-card overflow-hidden p-0"
               >
                 {/* Step Header with Traffic Light */}
-                <div className={`flex items-center gap-4 p-4 border-b border-slate-100 ${
-                  stepStatus === 'GREEN' ? 'bg-green-50' :
-                  stepStatus === 'YELLOW' ? 'bg-yellow-50' : ''
+                <div className={`flex items-center gap-4 p-4 border-b border-ql-sand/20 ${
+                  stepStatus === 'GREEN' ? 'bg-ql-success/5' :
+                  stepStatus === 'YELLOW' ? 'bg-ql-warning/5' : ''
                 }`}>
-                  <div className={`flex h-10 w-10 items-center justify-center rounded-lg ${
-                    stepStatus === 'GREEN' ? 'bg-green-100 text-green-600' :
-                    stepStatus === 'YELLOW' ? 'bg-yellow-100 text-yellow-600' :
-                    'bg-slate-100 text-slate-600'
+                  <div className={`flex h-10 w-10 shrink-0 items-center justify-center rounded-md ${
+                    stepStatus === 'GREEN' ? 'bg-ql-success/10 text-ql-success' :
+                    stepStatus === 'YELLOW' ? 'bg-ql-warning/10 text-ql-warning' :
+                    'bg-ql-cream text-ql-muted'
                   }`}>
-                    <step.icon className="h-5 w-5" />
+                    <step.icon className="h-5 w-5" strokeWidth={1.5} />
                   </div>
-                  <div className="flex-1">
-                    <h3 className="font-semibold text-slate-800">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-ql-charcoal">
                       Paso {step.number}: {step.title}
-                    </h3>
-                    <p className="text-sm text-slate-500">{step.description}</p>
+                    </p>
+                    <p className="ql-caption normal-case tracking-normal">{step.description}</p>
                   </div>
-                  <div className="flex items-center gap-3">
+                  <div className="flex items-center gap-3 shrink-0">
                     {step.statusField && (
                       <TrafficLight status={stepStatus} />
                     )}
@@ -895,12 +870,12 @@ export default function ProjectDetailPage() {
                       <button
                         onClick={() => handleValidateSection(step.number, step.aiStage)}
                         disabled={validating[step.number]}
-                        className="inline-flex items-center gap-2 rounded-lg bg-blue-600 px-4 py-2 text-sm font-medium text-white hover:bg-blue-500 disabled:opacity-50"
+                        className="ql-btn-primary text-xs py-1.5 px-3 disabled:opacity-50"
                       >
                         {validating[step.number] ? (
-                          <Loader2 className="h-4 w-4 animate-spin" />
+                          <span className="ql-status-thinking" />
                         ) : (
-                          <ShieldCheck className="h-4 w-4" />
+                          <ShieldCheck className="h-3.5 w-3.5" />
                         )}
                         Validar Campo
                       </button>
@@ -910,12 +885,14 @@ export default function ProjectDetailPage() {
 
                 {/* Validation Result Panel */}
                 {showValidation[step.number] && (
-                  <ValidationPanel
-                    isOpen={showValidation[step.number]}
-                    onClose={() => setShowValidation(prev => ({ ...prev, [step.number]: false }))}
-                    validation={validationResults[step.number]}
-                    loading={validating[step.number]}
-                  />
+                  <div className="px-4">
+                    <ValidationPanel
+                      isOpen={showValidation[step.number]}
+                      onClose={() => setShowValidation(prev => ({ ...prev, [step.number]: false }))}
+                      validation={validationResults[step.number]}
+                      loading={validating[step.number]}
+                    />
+                  </div>
                 )}
 
                 {/* Step Fields with Individual Consult Buttons */}
@@ -923,14 +900,13 @@ export default function ProjectDetailPage() {
                   {step.fields.map((field) => (
                     <div key={field.key}>
                       <div className="flex items-center justify-between mb-1.5">
-                        <label className="text-sm font-medium text-slate-700">
+                        <label className="ql-label">
                           {field.label}
                         </label>
-                        {/* BOTÓN FUCSIA - Consultar con el PM */}
                         {step.aiStage && (
                           <button
                             onClick={() => toggleConsultation(field.key)}
-                            className="inline-flex items-center gap-1 rounded-lg bg-fuchsia-600 px-3 py-1.5 text-xs font-medium text-white hover:bg-fuchsia-500"
+                            className="ql-btn-ghost text-xs py-1 px-2.5"
                           >
                             <MessageSquare className="h-3 w-3" />
                             Consultar con el PM
@@ -940,22 +916,22 @@ export default function ProjectDetailPage() {
                       <textarea
                         value={formData[field.key] || ""}
                         onChange={(e) => handleFieldChange(field.key, e.target.value)}
-                        className="w-full rounded-lg border border-slate-200 px-4 py-3 text-sm focus:border-slate-400 focus:outline-none focus:ring-1 focus:ring-slate-400"
+                        className="ql-textarea"
                         placeholder={field.placeholder}
                         rows={3}
                       />
                       {/* Word count indicator */}
                       <div className="mt-1 flex justify-end">
                         <span className={`text-xs ${
-                          (formData[field.key]?.trim().split(/\s+/).length || 0) >= 25 
-                            ? 'text-green-600' 
-                            : 'text-slate-400'
+                          (formData[field.key]?.trim().split(/\s+/).length || 0) >= 25
+                            ? 'text-ql-success'
+                            : 'text-ql-muted'
                         }`}>
-                          {formData[field.key]?.trim().split(/\s+/).filter(w => w).length || 0} palabras
-                          {(formData[field.key]?.trim().split(/\s+/).filter(w => w).length || 0) < 25 && ' (mín. 25)'}
+                          {formData[field.key]?.trim().split(/\s+/).filter((w: string) => w).length || 0} palabras
+                          {(formData[field.key]?.trim().split(/\s+/).filter((w: string) => w).length || 0) < 25 && ' (mín. 25)'}
                         </span>
                       </div>
-                      
+
                       {/* Consultation Panel */}
                       {step.aiStage && (
                         <ConsultationPanel
@@ -976,12 +952,12 @@ export default function ProjectDetailPage() {
         </div>
 
         {/* Associated Content */}
-        <div className="rounded-xl bg-white p-4 shadow-sm border border-slate-200">
+        <div className="ql-card">
           <div className="mb-4 flex items-center justify-between">
-            <h3 className="font-semibold text-slate-800">Contenido Asociado</h3>
+            <p className="text-sm font-medium text-ql-charcoal">Contenido Asociado</p>
             <button
               onClick={() => setShowForm(true)}
-              className="inline-flex items-center gap-1 rounded-lg bg-slate-100 px-3 py-1.5 text-sm font-medium text-slate-600 hover:bg-slate-200"
+              className="ql-btn-ghost text-xs py-1.5 px-3"
             >
               <Plus className="h-4 w-4" />
               Agregar

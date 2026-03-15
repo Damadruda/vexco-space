@@ -1,19 +1,19 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { X, Loader2, Sparkles, Copy, Check, Download, FileText, BarChart3, Target, Users, Briefcase } from "lucide-react";
+import { X, Sparkles, Copy, Check, Download, FileText, BarChart3, Target, Users, Briefcase } from "lucide-react";
 
-type GeneratorType = 
-  | "competitor_analysis" 
-  | "business_model_suggestions" 
-  | "action_plan" 
+type GeneratorType =
+  | "competitor_analysis"
+  | "business_model_suggestions"
+  | "action_plan"
   | "market_validation";
 
-type DocumentType = 
-  | "business_plan" 
-  | "pitch_deck" 
-  | "executive_summary" 
-  | "competitor_report" 
+type DocumentType =
+  | "business_plan"
+  | "pitch_deck"
+  | "executive_summary"
+  | "competitor_report"
   | "market_analysis";
 
 interface AIGeneratorProps {
@@ -133,7 +133,7 @@ export function AIGenerator({ projectId, type, onClose, onApply }: AIGeneratorPr
       }
     } catch (error) {
       console.error("Generation error:", error);
-      setContent("Error al generar el contenido. Por favor inténtalo de nuevo.");
+      setContent("Error al generar el contenido. Inténtalo de nuevo.");
     } finally {
       setLoading(false);
     }
@@ -156,67 +156,65 @@ export function AIGenerator({ projectId, type, onClose, onApply }: AIGeneratorPr
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-3xl max-h-[90vh] flex flex-col rounded-xl bg-white shadow-xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ql-charcoal/60 p-4">
+      <div className="w-full max-w-3xl max-h-[90vh] flex flex-col rounded-lg bg-white">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+        <div className="flex items-center justify-between border-b border-ql-sand/20 px-6 py-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-amber-100 text-amber-600">
-              <Icon className="h-5 w-5" />
+            <div className="flex h-9 w-9 items-center justify-center rounded-md bg-ql-accent/10">
+              <Icon className="h-5 w-5 text-ql-accent" strokeWidth={1.5} />
             </div>
             <div>
-              <h2 className="font-semibold text-slate-800">{config.title}</h2>
-              <p className="text-sm text-slate-500">{config.description}</p>
+              <p className="text-sm font-medium text-ql-charcoal">{config.title}</p>
+              <p className="ql-caption normal-case tracking-normal">{config.description}</p>
             </div>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
+          <button onClick={onClose} className="text-ql-muted hover:text-ql-slate transition-colors">
             <X className="h-5 w-5" />
           </button>
         </div>
 
         {/* Content */}
-        <div 
+        <div
           ref={contentRef}
           className="flex-1 overflow-y-auto p-6"
         >
           {loading && !content && (
-            <div className="flex items-center justify-center py-12">
-              <div className="text-center">
-                <Loader2 className="mx-auto h-8 w-8 animate-spin text-amber-500" />
-                <p className="mt-3 text-sm text-slate-500">Generando análisis con IA...</p>
-              </div>
+            <div className="flex flex-col items-center justify-center gap-2 py-12">
+              <span className="ql-status-thinking" />
+              <span className="ql-loading">Generando análisis con IA...</span>
             </div>
           )}
-          
+
           {content && (
-            <div className="prose prose-sm max-w-none text-slate-700 whitespace-pre-wrap">
+            <div className="ql-body whitespace-pre-wrap">
               {content}
-              {loading && <span className="inline-block w-2 h-4 bg-amber-500 animate-pulse ml-1" />}
+              {loading && <span className="ql-status-thinking ml-2" />}
             </div>
           )}
         </div>
 
         {/* Actions */}
-        <div className="flex items-center justify-between border-t border-slate-200 px-6 py-4">
+        <div className="flex items-center justify-between border-t border-ql-sand/20 px-6 py-4">
           <div className="flex items-center gap-2">
-            <Sparkles className="h-4 w-4 text-amber-500" />
-            <span className="text-sm text-slate-500">Generado con IA</span>
+            <Sparkles className="h-4 w-4 text-ql-accent" strokeWidth={1.5} />
+            <span className="ql-caption normal-case tracking-normal">Generado con IA</span>
           </div>
           <div className="flex gap-2">
             <button
               onClick={handleCopy}
               disabled={!content || loading}
-              className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+              className="ql-btn-secondary disabled:opacity-50"
             >
-              {copied ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
+              {copied ? <Check className="h-4 w-4 text-ql-success" /> : <Copy className="h-4 w-4" />}
               {copied ? "Copiado" : "Copiar"}
             </button>
             <button
               onClick={() => generate()}
               disabled={loading}
-              className="inline-flex items-center gap-2 rounded-lg bg-amber-500 px-4 py-2 text-sm font-medium text-white hover:bg-amber-600 disabled:opacity-50"
+              className="ql-btn-primary disabled:opacity-50"
             >
-              {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+              {loading ? <span className="ql-status-thinking" /> : <Sparkles className="h-4 w-4" />}
               Regenerar
             </button>
           </div>
@@ -275,7 +273,7 @@ export function DocumentGenerator({ projectId, onClose }: DocumentGeneratorProps
       }
     } catch (error) {
       console.error("Document generation error:", error);
-      setContent("Error al generar el documento. Por favor inténtalo de nuevo.");
+      setContent("Error al generar el documento. Inténtalo de nuevo.");
     } finally {
       setLoading(false);
     }
@@ -304,20 +302,20 @@ export function DocumentGenerator({ projectId, onClose }: DocumentGeneratorProps
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-      <div className="w-full max-w-4xl max-h-[90vh] flex flex-col rounded-xl bg-white shadow-xl">
+    <div className="fixed inset-0 z-50 flex items-center justify-center bg-ql-charcoal/60 p-4">
+      <div className="w-full max-w-4xl max-h-[90vh] flex flex-col rounded-lg bg-white">
         {/* Header */}
-        <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
+        <div className="flex items-center justify-between border-b border-ql-sand/20 px-6 py-4">
           <div className="flex items-center gap-3">
-            <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-800 text-white">
-              <FileText className="h-5 w-5" />
+            <div className="flex h-9 w-9 items-center justify-center rounded-md bg-ql-charcoal">
+              <FileText className="h-5 w-5 text-white" strokeWidth={1.5} />
             </div>
             <div>
-              <h2 className="font-semibold text-slate-800">Generador de Documentos</h2>
-              <p className="text-sm text-slate-500">Crea documentos profesionales con IA</p>
+              <p className="text-sm font-medium text-ql-charcoal">Generador de Documentos</p>
+              <p className="ql-caption normal-case tracking-normal">Crea documentos profesionales con IA</p>
             </div>
           </div>
-          <button onClick={onClose} className="text-slate-400 hover:text-slate-600">
+          <button onClick={onClose} className="text-ql-muted hover:text-ql-slate transition-colors">
             <X className="h-5 w-5" />
           </button>
         </div>
@@ -325,7 +323,7 @@ export function DocumentGenerator({ projectId, onClose }: DocumentGeneratorProps
         {!selectedType ? (
           /* Document Type Selection */
           <div className="p-6">
-            <p className="mb-4 text-sm text-slate-500">Selecciona el tipo de documento a generar:</p>
+            <p className="ql-body mb-4">Selecciona el tipo de documento a generar:</p>
             <div className="grid gap-3 sm:grid-cols-2">
               {(Object.entries(documentConfig) as [DocumentType, typeof documentConfig[DocumentType]][]).map(([type, config]) => {
                 const DocIcon = config.icon;
@@ -333,14 +331,14 @@ export function DocumentGenerator({ projectId, onClose }: DocumentGeneratorProps
                   <button
                     key={type}
                     onClick={() => generate(type)}
-                    className="flex items-start gap-4 rounded-xl border border-slate-200 p-4 text-left transition-all hover:border-slate-300 hover:bg-slate-50"
+                    className="ql-card group flex items-start gap-4 text-left"
                   >
-                    <div className="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
-                      <DocIcon className="h-5 w-5" />
+                    <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-md bg-ql-cream">
+                      <DocIcon className="h-5 w-5 text-ql-slate" strokeWidth={1.5} />
                     </div>
                     <div>
-                      <h4 className="font-medium text-slate-800">{config.title}</h4>
-                      <p className="mt-1 text-sm text-slate-500">{config.description}</p>
+                      <p className="text-sm font-medium text-ql-charcoal">{config.title}</p>
+                      <p className="ql-body mt-0.5">{config.description}</p>
                     </div>
                   </button>
                 );
@@ -350,55 +348,51 @@ export function DocumentGenerator({ projectId, onClose }: DocumentGeneratorProps
         ) : (
           /* Document Content */
           <>
-            <div 
+            <div
               ref={contentRef}
               className="flex-1 overflow-y-auto p-6"
             >
               <div className="mb-4">
-                <span className="inline-flex items-center gap-2 rounded-full bg-slate-100 px-3 py-1 text-sm text-slate-600">
-                  {documentConfig[selectedType].title}
-                </span>
+                <span className="ql-badge-default">{documentConfig[selectedType].title}</span>
               </div>
-              
+
               {loading && !content && (
-                <div className="flex items-center justify-center py-12">
-                  <div className="text-center">
-                    <Loader2 className="mx-auto h-8 w-8 animate-spin text-slate-500" />
-                    <p className="mt-3 text-sm text-slate-500">Generando documento...</p>
-                    <p className="mt-1 text-xs text-slate-400">Esto puede tomar un minuto</p>
-                  </div>
+                <div className="flex flex-col items-center gap-2 justify-center py-12">
+                  <span className="ql-status-thinking" />
+                  <span className="ql-loading">Generando documento...</span>
+                  <span className="ql-caption normal-case tracking-normal italic">Esto puede tomar un minuto</span>
                 </div>
               )}
-              
+
               {content && (
-                <div className="prose prose-sm max-w-none text-slate-700 whitespace-pre-wrap">
+                <div className="ql-body whitespace-pre-wrap">
                   {content}
-                  {loading && <span className="inline-block w-2 h-4 bg-slate-500 animate-pulse ml-1" />}
+                  {loading && <span className="ql-status-thinking ml-2" />}
                 </div>
               )}
             </div>
 
             {/* Actions */}
-            <div className="flex items-center justify-between border-t border-slate-200 px-6 py-4">
+            <div className="flex items-center justify-between border-t border-ql-sand/20 px-6 py-4">
               <button
                 onClick={() => { setSelectedType(null); setContent(""); }}
-                className="text-sm text-slate-500 hover:text-slate-700"
+                className="ql-btn-ghost text-sm"
               >
-                ← Cambiar tipo de documento
+                Cambiar tipo de documento
               </button>
               <div className="flex gap-2">
                 <button
                   onClick={handleCopy}
                   disabled={!content || loading}
-                  className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                  className="ql-btn-secondary disabled:opacity-50"
                 >
-                  {copied ? <Check className="h-4 w-4 text-green-500" /> : <Copy className="h-4 w-4" />}
+                  {copied ? <Check className="h-4 w-4 text-ql-success" /> : <Copy className="h-4 w-4" />}
                   {copied ? "Copiado" : "Copiar"}
                 </button>
                 <button
                   onClick={handleDownload}
                   disabled={!content || loading}
-                  className="inline-flex items-center gap-2 rounded-lg border border-slate-200 px-4 py-2 text-sm font-medium text-slate-600 hover:bg-slate-50 disabled:opacity-50"
+                  className="ql-btn-secondary disabled:opacity-50"
                 >
                   <Download className="h-4 w-4" />
                   Descargar
@@ -406,9 +400,9 @@ export function DocumentGenerator({ projectId, onClose }: DocumentGeneratorProps
                 <button
                   onClick={() => generate(selectedType)}
                   disabled={loading}
-                  className="inline-flex items-center gap-2 rounded-lg bg-slate-800 px-4 py-2 text-sm font-medium text-white hover:bg-slate-700 disabled:opacity-50"
+                  className="ql-btn-primary disabled:opacity-50"
                 >
-                  {loading ? <Loader2 className="h-4 w-4 animate-spin" /> : <Sparkles className="h-4 w-4" />}
+                  {loading ? <span className="ql-status-thinking" /> : <Sparkles className="h-4 w-4" />}
                   Regenerar
                 </button>
               </div>

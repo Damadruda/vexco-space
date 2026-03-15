@@ -100,10 +100,8 @@ async function scanFolderRecursively(
   folderName: string = "root"
 ): Promise<DriveFile[]> {
   // TELEMETRY: Log entry into folder with specified format
-  console.log('[SCAN] Entrando en carpeta:', folderName, '(ID:', folderId, ', Profundidad:', depth, ')');
   
   if (depth > maxDepth) {
-    console.log(`[SCAN] Profundidad máxima ${maxDepth} alcanzada, deteniendo recursión`);
     return [];
   }
 
@@ -132,16 +130,13 @@ async function scanFolderRecursively(
     const folders = items.filter(item => item.mimeType === "application/vnd.google-apps.folder");
     const files = items.filter(item => item.mimeType !== "application/vnd.google-apps.folder");
     
-    console.log(`[SCAN] Encontrados: ${items.length} items (${folders.length} carpetas, ${files.length} archivos)`);
     
     // TELEMETRY: Log each file found with specified format
     files.forEach(file => {
-      console.log('[FOUND] Archivo detectado:', file.name, '(', file.mimeType, ')');
     });
     
     // Log subfolder names if any
     if (folders.length > 0) {
-      console.log(`[SCAN] Subcarpetas encontradas: ${folders.map(f => f.name).join(", ")}`);
     }
 
     let allFiles: DriveFile[] = [];
@@ -163,7 +158,6 @@ async function scanFolderRecursively(
       allFiles = allFiles.concat(subFiles);
     }
 
-    console.log(`[SCAN] Carpeta "${folderName}" completada: ${allFiles.length} archivos recolectados`);
     return allFiles;
   } catch (error: any) {
     console.error(`[SCAN] Error en carpeta ${folderId}:`, error.message);
@@ -284,7 +278,6 @@ async function processFilesInBatches(
     const currentBatchSize = batch.length;
     
     // TELEMETRY: Log batch processing start
-    console.log('[BATCH] Procesando lote de', currentBatchSize, 'archivos...');
     
     const batchResults = await Promise.all(
       batch.map(async (file) => {
@@ -296,13 +289,11 @@ async function processFilesInBatches(
         // PRIORITY 1: Extension-based detection for text files (.json, .md, .html)
         // This OVERRIDES MIME type - even if Google reports application/octet-stream
         if (isTextByExt) {
-          console.log('[OVERRIDE] Procesando por extensión:', file.name);
           return processTextFile(file, accessToken);
         }
         
         // PRIORITY 2: Extension-based detection for images
         if (isImageByExt) {
-          console.log('[OVERRIDE] Procesando por extensión:', file.name);
           return processImageFile(file, accessToken);
         }
         
@@ -343,7 +334,6 @@ async function processFilesInBatches(
     }
 
     // TELEMETRY: Log batch completion with total processed count
-    console.log('[BATCH] Lote completado. Total procesado:', totalProcessed);
 
     // Small delay between batches to avoid rate limiting
     if (i + batchSize < files.length) {
@@ -366,28 +356,22 @@ async function generateWithFallback(
 
   // DIAGNOSTIC: List available models before attempting analysis
   try {
-    console.log('[GEMINI] Listando modelos disponibles...');
     const modelList = await genAI.listModels();
     const modelNames = [];
     for await (const model of modelList) {
       modelNames.push(model.name);
     }
-    console.log('[GEMINI] Modelos disponibles:', modelNames.slice(0, 10).join(', '), modelNames.length > 10 ? `... (+${modelNames.length - 10} más)` : '');
   } catch (listError: any) {
-    console.log('[GEMINI] No se pudo listar modelos (puede continuar):', listError.message);
   }
 
   // Try each configured model
   for (const modelName of CONFIG.GEMINI_MODELS) {
     try {
-      console.log(`[GEMINI] Intentando modelo: ${modelName}`);
       const model = genAI.getGenerativeModel({ model: modelName });
       const result = await model.generateContent([prompt, ...parts]);
       const response = result.response.text();
-      console.log(`[GEMINI] ✅ Éxito con modelo: ${modelName}`);
       return response;
     } catch (error: any) {
-      console.log(`[GEMINI] Error con modelo: ${modelName}`, error.message);
       lastError = error;
       continue;
     }
@@ -453,7 +437,6 @@ async function processAndSavePatterns(
     // Validate pattern
     const validation = validatePattern(pattern);
     if (!validation.valid) {
-      console.log(`[INVALID] Patrón inválido "${pattern.name}":`, validation.errors.join(", "));
       invalid++;
       continue;
     }
@@ -464,7 +447,6 @@ async function processAndSavePatterns(
     });
     
     if (existingPattern) {
-      console.log(`[DUPLICATE] Patrón ya existe: ${pattern.sourceUrl}`);
       duplicates++;
       continue;
     }
@@ -484,7 +466,6 @@ async function processAndSavePatterns(
           projectId: projectId,
         }
       });
-      console.log(`[PATTERN SAVED] ${pattern.name} (${pattern.category})`);
       saved++;
     } catch (error: any) {
       console.error(`[SAVE ERROR] Error guardando patrón "${pattern.name}":`, error.message);
@@ -524,26 +505,16 @@ export async function POST(request: Request) {
     const accessToken = account.access_token;
     
     // TOKEN DEBUGGING - para verificar que el token está sincronizado correctamente
-    console.log('[TOKEN] Token preview (primeros 10 chars):', accessToken?.substring(0, 10));
-    console.log('[TOKEN] Token existe:', !!accessToken, ', Longitud:', accessToken?.length);
-    console.log('[TOKEN] Account expires_at:', account.expires_at, ', Ahora:', Math.floor(Date.now() / 1000));
 
     // EXPERT MODE DETECTION
     const isExpertMode = folderId === CONFIG.EXPERT_MODE_FOLDER_ID;
     if (isExpertMode) {
-      console.log('[EXPERT MODE] Activado: Motor de Extracción UX/UI');
     }
 
     // 2. RECURSIVE FOLDER SCAN (subcarpetas)
-    console.log(`\n${"=".repeat(60)}`);
-    console.log(`[SCAN] Iniciando escaneo recursivo de: "${folderName}" (${folderId})`);
-    console.log(`${"=".repeat(60)}`);
     
     const allFiles = await scanFolderRecursively(folderId, accessToken, 0, 10, folderName);
     
-    console.log(`\n${"=".repeat(60)}`);
-    console.log(`[SCAN] ESCANEO COMPLETO: ${allFiles.length} archivos encontrados en toda la jerarquía`);
-    console.log(`${"=".repeat(60)}\n`);
 
     // ENHANCED ERROR: If no files found, include folder ID in error message
     if (allFiles.length === 0) {
@@ -553,9 +524,7 @@ export async function POST(request: Request) {
     }
 
     // 3. MULTIMODAL PROCESSING (Images → Base64, Docs → Text)
-    console.log("[BATCH] Iniciando procesamiento multimodal...");
     const { parts, analysis } = await processFilesInBatches(allFiles, accessToken);
-    console.log(`\n[BATCH] Procesamiento completado: ${analysis.processedFiles} archivos (${analysis.images} imágenes, ${analysis.documents} documentos)`);
 
     // ENHANCED ERROR: If no parts processed, include folder ID in error message
     if (parts.length === 0) {
@@ -611,9 +580,7 @@ REGLAS:
 
 RESPONDE ÚNICAMENTE con el objeto JSON (sin texto antes o después):`;
 
-      console.log("🤖 [EXPERT MODE] Generando extracción de patrones UX/UI...");
       aiResponse = await generateWithFallback(expertPrompt, parts);
-      console.log("✅ [EXPERT MODE] Extracción completada");
 
       // Parse Expert Mode response
       try {
@@ -626,10 +593,8 @@ RESPONDE ÚNICAMENTE con el objeto JSON (sin texto antes o después):`;
         
         const parsed = JSON.parse(jsonString);
         patternsExtracted = parsed.patterns || [];
-        console.log(`[EXPERT MODE] ${patternsExtracted.length} patrones extraídos del análisis`);
       } catch (parseError: any) {
         console.error("[EXPERT MODE] Error parseando patrones JSON:", parseError.message);
-        console.log("[EXPERT MODE] Respuesta (primeros 500 chars):", aiResponse.substring(0, 500));
         patternsExtracted = [];
       }
 
@@ -654,7 +619,6 @@ RESPONDE ÚNICAMENTE con este objeto JSON:
   "description": "Resumen ejecutivo de la colección de recursos UX/UI. Máximo 2000 caracteres."
 }`;
 
-      console.log("🤖 Generando análisis PM para Expert Mode...");
       const pmResponse = await generateWithFallback(pmPrompt, parts);
       
       try {
@@ -697,9 +661,7 @@ RESPONDE ÚNICAMENTE con este objeto JSON (sin texto antes o después):
   "description": "Resumen ejecutivo completo del análisis PM. Incluye modelo de negocio, propuesta de valor, y validación de mercado. Máximo 2000 caracteres."
 }`;
 
-      console.log("🤖 Generando análisis PM con Gemini AI (formato JSON estructurado)...");
       aiResponse = await generateWithFallback(analysisPrompt, parts);
-      console.log("✅ Análisis PM completado");
 
       // Parse standard response
       try {
@@ -710,11 +672,8 @@ RESPONDE ÚNICAMENTE con este objeto JSON (sin texto antes o después):
           jsonString = jsonString.replace(/^```\s*/, "").replace(/\s*```$/, "");
         }
         parsedResponse = JSON.parse(jsonString);
-        console.log("[JSON PARSER] ✅ JSON parseado correctamente");
-        console.log("[JSON PARSER] Campos recibidos:", Object.keys(parsedResponse).join(", "));
       } catch (parseError: any) {
         console.error("[JSON PARSER] ❌ Error parseando JSON:", parseError.message);
-        console.log("[JSON PARSER] Respuesta original (primeros 500 chars):", aiResponse.substring(0, 500));
         parsedResponse = {
           concept: `Proyecto importado desde Google Drive: ${folderName}`,
           description: aiResponse,
@@ -736,16 +695,8 @@ RESPONDE ÚNICAMENTE con este objeto JSON (sin texto antes o después):
     const resources = truncate(parsedResponse.resources) || `Archivos analizados: ${analysis.processedFiles}\nImágenes: ${analysis.images}\nDocumentos: ${analysis.documents}`;
     const description = truncate(parsedResponse.description) || (aiResponse ? aiResponse.substring(0, 2000) : "Análisis completado");
 
-    console.log("[PM PARSER] Campos mapeados para DB:");
-    console.log("  - concept:", concept?.length, "chars");
-    console.log("  - targetMarket:", targetMarket?.length || 0, "chars");
-    console.log("  - metrics:", metrics?.length || 0, "chars");
-    console.log("  - actionPlan:", actionPlan?.length || 0, "chars");
-    console.log("  - resources:", resources?.length || 0, "chars");
-    console.log("  - description:", description?.length || 0, "chars");
 
     // 5. SAVE TO PROJECT TABLE (NEON DB) - Structured JSON mapping
-    console.log("💾 Guardando análisis PM en base de datos...");
     const project = await prisma.project.create({
       data: {
         title: folderName,
@@ -768,13 +719,10 @@ RESPONDE ÚNICAMENTE con este objeto JSON (sin texto antes o después):
     // 6. EXPERT MODE: Save patterns to PatternCard table
     let patternStats = { saved: 0, duplicates: 0, invalid: 0 };
     if (isExpertMode && patternsExtracted.length > 0) {
-      console.log(`\n[EXPERT MODE] Procesando ${patternsExtracted.length} patrones extraídos...`);
       patternStats = await processAndSavePatterns(patternsExtracted, project.id);
-      console.log(`[EXPERT MODE] Resultado: ${patternStats.saved} guardados, ${patternStats.duplicates} duplicados, ${patternStats.invalid} inválidos`);
     }
 
     const duration = ((Date.now() - startTime) / 1000).toFixed(2);
-    console.log(`🏁 Análisis completado en ${duration}s`);
 
     return NextResponse.json({
       success: true,
