@@ -5,18 +5,25 @@ import { useParams } from "next/navigation";
 import { ExpertList } from "@/components/expert-panel/expert-list";
 import { ConsultantsThread } from "@/components/expert-panel/consultants-thread";
 import { CheckpointPanel } from "@/components/war-room/checkpoint-panel";
+import { DebatePanel } from "@/components/war-room/debate-panel";
 import { Expert, EXPERTS } from "@/components/expert-panel/experts-data";
-import { MessageSquare, Brain, Clock, CheckCheck, XCircle } from "lucide-react";
+import { MessageSquare, Brain, Swords, Clock, CheckCheck, XCircle } from "lucide-react";
 import type { Checkpoint, SessionState, SessionEvent } from "@/lib/engine/types";
 
-type WarRoomTab = "panel" | "strategy";
+type WarRoomTab = "consulta" | "estrategia" | "debate";
 
 // ─── Session Timeline ─────────────────────────────────────────────────────────
 
 function SessionTimeline({ events }: { events: SessionEvent[] }) {
   const labeled = events.filter((e) =>
-    ["supervisor_proposal", "human_approval", "human_rejection",
-     "human_redirect", "agent_complete", "session_end"].includes(e.type)
+    [
+      "supervisor_proposal",
+      "human_approval",
+      "human_rejection",
+      "human_redirect",
+      "agent_complete",
+      "session_end",
+    ].includes(e.type)
   );
 
   if (labeled.length === 0) return null;
@@ -40,17 +47,17 @@ function SessionTimeline({ events }: { events: SessionEvent[] }) {
   };
 
   return (
-    <div className="mt-4 border-t border-slate-100 pt-4 space-y-2">
-      <p className="text-xs font-medium text-slate-400 uppercase tracking-wider">Historial</p>
+    <div className="mt-4 border-t border-ql-sand/20 pt-4 space-y-2">
+      <p className="ql-label">Historial</p>
       {labeled.map((event, i) => (
         <div key={i} className="flex items-center gap-2">
-          <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-slate-50">
+          <div className="flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-ql-cream">
             {ICONS[event.type]}
           </div>
-          <span className="text-xs text-slate-600">
+          <span className="text-xs text-ql-slate">
             {LABELS[event.type] ?? event.type}
           </span>
-          <span className="ml-auto text-xs text-slate-400">
+          <span className="ml-auto text-xs text-ql-muted">
             {new Date(event.timestamp).toLocaleTimeString("es-ES", {
               hour: "2-digit",
               minute: "2-digit",
@@ -114,12 +121,7 @@ function StrategyMode({ projectId }: { projectId: string }) {
       const res = await fetch(`/api/projects/${projectId}/session/respond`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          sessionId: session.id,
-          action,
-          input,
-          targetAgentId,
-        }),
+        body: JSON.stringify({ sessionId: session.id, action, input, targetAgentId }),
       });
 
       if (!res.ok) {
@@ -145,7 +147,6 @@ function StrategyMode({ projectId }: { projectId: string }) {
 
   return (
     <div className="flex-1 overflow-y-auto px-6 py-6 space-y-5">
-      {/* Start panel */}
       {isIdle && (
         <div className="ql-card-flat rounded-lg p-6 text-center space-y-4 mx-6">
           <div className="flex h-10 w-10 items-center justify-center rounded-full bg-ql-cream mx-auto">
@@ -170,9 +171,7 @@ function StrategyMode({ projectId }: { projectId: string }) {
           {completed && session && (
             <div className="ql-card text-left">
               <p className="text-sm font-medium text-ql-success">Sesión completada</p>
-              <p className="ql-caption mt-0.5">
-                Decisiones guardadas en DecisionLog.
-              </p>
+              <p className="ql-caption mt-0.5">Decisiones guardadas en DecisionLog.</p>
               <SessionTimeline events={session.history} />
             </div>
           )}
@@ -197,18 +196,15 @@ function StrategyMode({ projectId }: { projectId: string }) {
         </div>
       )}
 
-      {/* Active session */}
       {!isIdle && session && (
         <div className="space-y-4">
-          {/* Phase indicator */}
           <div className="flex items-center gap-2">
             <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
-            <p className="text-xs text-slate-400 capitalize">
+            <p className="text-xs text-ql-muted capitalize">
               {session.phase.replace(/_/g, " ")}
             </p>
           </div>
 
-          {/* Loading overlay */}
           {(loading || responding) && (
             <div className="flex items-center gap-3 ql-card-flat px-4 py-3">
               <span className="ql-status-thinking" />
@@ -222,7 +218,6 @@ function StrategyMode({ projectId }: { projectId: string }) {
             </div>
           )}
 
-          {/* Checkpoint */}
           {checkpoint && !responding && (
             <CheckpointPanel
               checkpoint={checkpoint}
@@ -231,7 +226,6 @@ function StrategyMode({ projectId }: { projectId: string }) {
             />
           )}
 
-          {/* Timeline */}
           <SessionTimeline events={session.history} />
         </div>
       )}
@@ -253,8 +247,8 @@ export default function ProjectWarRoomPage() {
 
   const [activeExpert, setActiveExpert] = useState<Expert>(EXPERTS[0]);
   const [projectTitle, setProjectTitle] = useState<string>("");
-  const [loading, setLoading] = useState(true);
-  const [tab, setTab] = useState<WarRoomTab>("panel");
+  const [pageLoading, setPageLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState<WarRoomTab>("consulta");
 
   useEffect(() => {
     if (!projectId) return;
@@ -262,10 +256,10 @@ export default function ProjectWarRoomPage() {
       .then((r) => r.json())
       .then((data) => setProjectTitle(data?.project?.title ?? "Proyecto"))
       .catch(() => setProjectTitle("Proyecto"))
-      .finally(() => setLoading(false));
+      .finally(() => setPageLoading(false));
   }, [projectId]);
 
-  if (loading) {
+  if (pageLoading) {
     return (
       <div className="flex min-h-screen items-center gap-2 justify-center bg-ql-offwhite">
         <span className="ql-status-thinking" />
@@ -276,78 +270,88 @@ export default function ProjectWarRoomPage() {
 
   return (
     <div className="flex bg-ql-offwhite" style={{ height: "100vh" }}>
-      {/* ── Panel de Expertos ── */}
-      <div className="w-64 shrink-0 bg-white border-r border-ql-sand/20 flex flex-col">
-        <div className="px-4 pt-5 pb-4 border-b border-ql-sand/20">
-          <p className="ql-label mb-1">Orquestación</p>
-          <span className="ql-h3 text-base">War Room</span>
-          {projectTitle && (
-            <p className="ql-caption mt-1 truncate">{projectTitle}</p>
-          )}
-        </div>
-
-        {/* Tab switcher */}
-        <div className="flex border-b border-ql-sand/20 px-2 pt-2">
-          <button
-            onClick={() => setTab("panel")}
-            className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-2 text-xs font-medium transition-colors ${
-              tab === "panel"
-                ? "border-b-2 border-ql-charcoal text-ql-charcoal"
-                : "text-ql-muted hover:text-ql-slate"
-            }`}
-          >
-            <MessageSquare className="h-3.5 w-3.5" strokeWidth={1.5} />
-            Panel
-          </button>
-          <button
-            onClick={() => setTab("strategy")}
-            className={`flex-1 flex items-center justify-center gap-1.5 px-2 py-2 text-xs font-medium transition-colors ${
-              tab === "strategy"
-                ? "border-b-2 border-ql-accent text-ql-accent"
-                : "text-ql-muted hover:text-ql-slate"
-            }`}
-          >
-            <Brain className="h-3.5 w-3.5" strokeWidth={1.5} />
-            Estrategia
-          </button>
-        </div>
-
-        {tab === "panel" && (
+      {/* ── Panel de Expertos (only for consulta tab) ── */}
+      {activeTab === "consulta" && (
+        <div className="w-64 shrink-0 bg-white border-r border-ql-sand/20 flex flex-col">
+          <div className="px-4 pt-5 pb-4 border-b border-ql-sand/20">
+            <p className="ql-label mb-1">War Room</p>
+            <span className="ql-h3 text-base">{projectTitle}</span>
+          </div>
           <ExpertList
             activeExpertId={activeExpert.id}
             onSelect={setActiveExpert}
           />
-        )}
-
-        {tab === "strategy" && (
-          <div className="p-4 space-y-3">
-            <p className="ql-label">Modo Análisis Estratégico</p>
-            <p className="ql-body">El Supervisor lee tu proyecto, propone un plan, y enruta al agente más relevante.</p>
-            <p className="ql-body">Cada decisión queda en el DecisionLog.</p>
-          </div>
-        )}
-      </div>
-
-      {/* ── Main area ── */}
-      {tab === "panel" ? (
-        <div className="flex-1 flex flex-col min-w-0">
-          <ConsultantsThread
-            activeExpert={activeExpert}
-            projectId={projectId}
-            projectTitle={projectTitle}
-          />
-        </div>
-      ) : (
-        <div className="flex-1 flex flex-col min-w-0">
-          <div className="flex items-center justify-between px-6 py-4 border-b border-ql-sand/20 bg-white">
-            <div>
-              <h2 className="ql-h3">{projectTitle}</h2>
-              <p className="ql-caption mt-0.5">Supervisor · Human-in-the-Loop</p>
-            </div>
-          </div>
-          <StrategyMode projectId={projectId} />
         </div>
       )}
+
+      {/* ── Main area ── */}
+      <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+        {/* Header + Tab bar */}
+        <div className="bg-white border-b border-ql-sand/20 px-6 pt-5 pb-0">
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <h2 className="ql-h3">{projectTitle}</h2>
+              <p className="ql-caption mt-0.5">War Room · Human-in-the-Loop</p>
+            </div>
+          </div>
+
+          {/* Tabs */}
+          <div className="flex gap-0 border-b border-ql-sand/30 -mb-px">
+            {(["consulta", "estrategia", "debate"] as WarRoomTab[]).map((tab) => (
+              <button
+                key={tab}
+                onClick={() => setActiveTab(tab)}
+                className={`px-5 py-3 text-sm font-medium transition-all capitalize ${
+                  activeTab === tab
+                    ? "text-ql-charcoal border-b-2 border-ql-accent -mb-px"
+                    : "text-ql-muted hover:text-ql-slate"
+                }`}
+              >
+                {tab === "consulta" && (
+                  <span className="flex items-center gap-1.5">
+                    <MessageSquare className="h-3.5 w-3.5" strokeWidth={1.5} />
+                    Consulta
+                  </span>
+                )}
+                {tab === "estrategia" && (
+                  <span className="flex items-center gap-1.5">
+                    <Brain className="h-3.5 w-3.5" strokeWidth={1.5} />
+                    Estrategia
+                  </span>
+                )}
+                {tab === "debate" && (
+                  <span className="flex items-center gap-1.5">
+                    <Swords className="h-3.5 w-3.5" strokeWidth={1.5} />
+                    Debate
+                  </span>
+                )}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* Tab content */}
+        <div className="flex-1 overflow-y-auto">
+          {activeTab === "consulta" && (
+            <ConsultantsThread
+              activeExpert={activeExpert}
+              projectId={projectId}
+              projectTitle={projectTitle}
+            />
+          )}
+          {activeTab === "estrategia" && (
+            <StrategyMode projectId={projectId} />
+          )}
+          {activeTab === "debate" && (
+            <div className="px-6 py-6 max-w-4xl mx-auto">
+              <DebatePanel
+                projectId={projectId}
+                onClose={() => setActiveTab("estrategia")}
+              />
+            </div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

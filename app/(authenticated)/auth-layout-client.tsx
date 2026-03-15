@@ -8,7 +8,7 @@ export function AuthLayoutClient({ children }: { children: React.ReactNode }) {
     <SessionProvider>
       <div className="min-h-screen bg-ql-offwhite">
         <Sidebar />
-        <main className="ml-60">{children}</main>
+        <main className="ml-0 md:ml-60">{children}</main>
       </div>
     </SessionProvider>
   );
