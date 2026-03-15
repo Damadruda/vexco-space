@@ -1,11 +1,12 @@
 // =============================================================================
 // VEXCO-LAB ENGINE — ROUTER
-// Dynamic routing from Supervisor to specialist agents.
-// All agents currently use Gemini Flash (Sprint 4 adds Claude/Perplexity).
+// Routes supervisor plans to specialist agents with LLM differentiation and skills.
 // =============================================================================
 
-import { GoogleGenerativeAI } from "@google/generative-ai";
 import { EXPERTS } from "@/components/expert-panel/experts-data";
+import { callLLM } from "@/lib/clients/llm";
+import { getAgentConfig } from "./agents";
+import { getRequiredSkills, researchSkill, inspirationSkill, crossValidationSkill } from "./skills";
 import { buildAgentPrompt } from "./prompts";
 import type {
   AgentResult,
@@ -33,42 +34,116 @@ export async function routeToAgent(
   agentId: string,
   projectMemory: Record<string, unknown>,
   supervisorPlan: SupervisorPlan,
-  decisionHistory: Array<{ outcome: string; decision: string; agentSource: string }>
+  decisionHistory: Array<{ outcome: string; decision: string; agentSource: string }>,
+  userId?: string
 ): Promise<AgentResult> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error("GEMINI_API_KEY not configured");
-
   const expert = EXPERTS.find((e) => e.id === agentId);
   if (!expert) throw new Error(`Agent not found: ${agentId}`);
 
-  const prompt = buildAgentPrompt(
+  const agentConfig = getAgentConfig(agentId);
+
+  // ── 1. Determine required skills ───────────────────────────────────────────
+  const requiredSkills = agentConfig
+    ? getRequiredSkills(agentId, supervisorPlan)
+    : [];
+
+  // ── 2. Execute skills in parallel ──────────────────────────────────────────
+  const skillResults = await Promise.all(
+    requiredSkills.map((skill) => {
+      if (skill === "research") {
+        const query = `${supervisorPlan.proposedAction} — ${supervisorPlan.estimatedScope}`;
+        return researchSkill(query);
+      }
+      if (skill === "inspiration" && userId) {
+        const keywords = supervisorPlan.proposedAction
+          .toLowerCase()
+          .split(/[\s,]+/)
+          .filter((w) => w.length > 4)
+          .slice(0, 6);
+        return inspirationSkill(userId, keywords);
+      }
+      if (skill === "cross-validation") {
+        // Cross-validate with redteam for non-redteam agents
+        const targetId = agentId === "redteam" ? "revenue" : "redteam";
+        return crossValidationSkill(targetId, supervisorPlan.analysis, projectMemory);
+      }
+      return Promise.resolve(null);
+    })
+  );
+
+  const skillData = skillResults
+    .filter((r) => r !== null && r.data)
+    .map((r) => r!.data);
+
+  const skillsUsed = skillResults
+    .filter((r) => r !== null && r.data)
+    .map((r) => r!.skill);
+
+  // ── 3. Build prompt ────────────────────────────────────────────────────────
+  const systemPrompt = agentConfig
+    ? [agentConfig.consultingDNA, agentConfig.geographicContext, agentConfig.domainInstructions].join("\n\n")
+    : expert.persona;
+
+  const userPrompt = buildAgentPrompt(
     expert.persona,
     expert.focus,
     expert.name,
     projectMemory,
     supervisorPlan,
-    decisionHistory
+    decisionHistory,
+    agentConfig
+      ? {
+          consultingDNA: agentConfig.consultingDNA,
+          geographicContext: agentConfig.geographicContext,
+          domainInstructions: agentConfig.domainInstructions,
+          agentName: agentConfig.name,
+          outputType: agentConfig.outputType,
+        }
+      : undefined,
+    skillData
   );
 
+  // ── 4. Call LLM (with fallback) ────────────────────────────────────────────
   const startTime = Date.now();
+  let llmResponse;
 
-  const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({
-    model: "gemini-1.5-flash",
-    generationConfig: { responseMimeType: "application/json" },
-  });
+  try {
+    llmResponse = await callLLM({
+      model: agentConfig?.preferredLLM ?? "gemini-flash",
+      systemPrompt,
+      userPrompt,
+      jsonMode: true,
+      temperature: 0.7,
+    });
+  } catch (err) {
+    console.warn(`[ROUTER] Primary LLM failed for ${agentId}, retrying with gemini-flash:`, err);
+    llmResponse = await callLLM({
+      model: "gemini-flash",
+      systemPrompt,
+      userPrompt,
+      jsonMode: true,
+      temperature: 0.7,
+    });
+  }
 
-  const result = await model.generateContent(prompt);
-  const responseText = result.response.text();
   const elapsed = Date.now() - startTime;
 
-  const cleaned = responseText.replace(/```json\n?|\n?```/g, "").trim();
-  const output = JSON.parse(cleaned) as StructuredOutput;
-
-  // Inject real processing time
-  if (output.metadata) {
-    output.metadata.processingTimeMs = elapsed;
+  // ── 5. Parse structured output ─────────────────────────────────────────────
+  let output: StructuredOutput;
+  try {
+    const jsonMatch = llmResponse.content.match(/\{[\s\S]*\}/);
+    output = JSON.parse(jsonMatch ? jsonMatch[0] : llmResponse.content) as StructuredOutput;
+  } catch {
+    throw new Error(`[ROUTER] Invalid JSON from ${agentId}: ${llmResponse.content.slice(0, 200)}`);
   }
+
+  // ── 6. Inject real metadata ────────────────────────────────────────────────
+  output.metadata = {
+    model: llmResponse.model,
+    processingTimeMs: elapsed,
+    confidenceScore: output.metadata?.confidenceScore ?? 0.8,
+    skillsUsed,
+  };
 
   return {
     agentId: expert.id,
@@ -84,7 +159,6 @@ export function buildCheckpoint(session: SessionState): Checkpoint {
   const agents = getAvailableAgents();
 
   if (session.phase === "awaiting_human" && session.supervisorPlan && !session.agentResult) {
-    // Plan review: supervisor just proposed a plan
     const redirectOptions: CheckpointOption[] = agents
       .filter((a) => a.id !== session.supervisorPlan!.targetAgentId)
       .map((a) => ({
@@ -106,7 +180,6 @@ export function buildCheckpoint(session: SessionState): Checkpoint {
     };
   }
 
-  // Result review: agent delivered its analysis
   const redirectOptions: CheckpointOption[] = agents
     .filter((a) => a.id !== session.currentAgentId)
     .map((a) => ({

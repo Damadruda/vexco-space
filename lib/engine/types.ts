@@ -19,6 +19,12 @@ export interface SupervisorPlan {
   reasoning: string;
   priority: "high" | "medium" | "low";
   estimatedScope: string;
+  archetype?: {
+    name: string;
+    phases: Array<{ name: string; description: string; order: number }>;
+    currentPhase: string;
+    reasoning: string;
+  };
 }
 
 export interface OutputSection {
@@ -37,6 +43,7 @@ export interface StructuredOutput {
     model: string;
     processingTimeMs: number;
     confidenceScore: number;
+    skillsUsed: string[];
   };
 }
 

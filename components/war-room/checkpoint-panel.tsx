@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import {
-  Check, X, ChevronDown, Loader2, ArrowRight, Brain, Zap
+  Check, X, ChevronDown, Loader2, ArrowRight, Brain, Zap, BookOpen, Cpu, Search
 } from "lucide-react";
 import type { Checkpoint, SupervisorPlan, AgentResult } from "@/lib/engine/types";
 import { StructuredOutputRenderer } from "./structured-output";
@@ -88,6 +88,35 @@ function PlanReview({
           <p className="ml-auto text-xs text-slate-400 max-w-[140px] text-right leading-tight">
             {plan.reasoning}
           </p>
+        </div>
+      )}
+
+      {/* Archetype (project new — no prior decisions) */}
+      {plan.archetype && (
+        <div className="rounded-xl border border-amber-100 bg-amber-50 px-4 py-3 space-y-3">
+          <div className="flex items-center gap-2">
+            <BookOpen className="h-4 w-4 text-amber-500" />
+            <p className="text-xs font-semibold text-amber-700 uppercase tracking-wider">
+              Arquetipo detectado · {plan.archetype.name}
+            </p>
+          </div>
+          <p className="text-xs text-amber-600 leading-relaxed">{plan.archetype.reasoning}</p>
+          {/* Phases as horizontal pills */}
+          <div className="flex flex-wrap gap-2">
+            {plan.archetype.phases.map((phase) => (
+              <span
+                key={phase.order}
+                title={phase.description}
+                className={`rounded-full px-3 py-1 text-xs font-medium transition-colors ${
+                  phase.name === plan.archetype!.currentPhase
+                    ? "bg-amber-500 text-white"
+                    : "bg-amber-100 text-amber-700"
+                }`}
+              >
+                {phase.order}. {phase.name}
+              </span>
+            ))}
+          </div>
         </div>
       )}
 
@@ -196,8 +225,38 @@ function ResultReview({
             })}
           </p>
         </div>
-        <div className="ml-auto h-2 w-2 rounded-full bg-emerald-400" title="Análisis completo" />
+        <div className="ml-auto flex items-center gap-2">
+          <div className="h-2 w-2 rounded-full bg-emerald-400" title="Análisis completo" />
+        </div>
       </div>
+
+      {/* LLM metadata */}
+      {result.content.metadata && (
+        <div className="flex flex-wrap items-center gap-2">
+          {result.content.metadata.model && (
+            <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs text-slate-500">
+              <Cpu className="h-3 w-3" />
+              {result.content.metadata.model}
+            </span>
+          )}
+          {result.content.metadata.skillsUsed && result.content.metadata.skillsUsed.length > 0 && (
+            result.content.metadata.skillsUsed.map((skill: string) => (
+              <span
+                key={skill}
+                className="inline-flex items-center gap-1 rounded-full bg-indigo-50 px-2.5 py-0.5 text-xs text-indigo-600"
+              >
+                {skill === "research" && <Search className="h-3 w-3" />}
+                {skill === "inspiration" && <BookOpen className="h-3 w-3" />}
+                {skill === "cross-validation" && <Zap className="h-3 w-3" />}
+                {skill}
+              </span>
+            ))
+          )}
+          <span className="text-xs text-slate-400">
+            {result.content.metadata.processingTimeMs}ms
+          </span>
+        </div>
+      )}
 
       {/* Structured output */}
       <StructuredOutputRenderer output={result.content} />

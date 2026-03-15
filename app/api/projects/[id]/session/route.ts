@@ -41,7 +41,7 @@ export async function POST(
 
     // Rebuild session reference after mutations
     const { getSession } = await import("@/lib/engine/state-machine");
-    const updatedSession = getSession(session.id)!;
+    const updatedSession = (await getSession(session.id))!;
     const checkpoint = buildCheckpoint(updatedSession);
 
     return NextResponse.json({ session: updatedSession, checkpoint }, { status: 201 });
@@ -64,7 +64,7 @@ export async function GET(
     await getDefaultUserId();
     const projectId = params.id;
 
-    const session = getSessionByProject(projectId);
+    const session = await getSessionByProject(projectId);
     if (!session) {
       return NextResponse.json({ session: null, checkpoint: null });
     }

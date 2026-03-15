@@ -123,7 +123,8 @@ export async function supervisorAnalyze(
       generationConfig: { responseMimeType: "application/json" },
     });
 
-    let prompt = buildSupervisorPrompt(memory, decisions);
+    const isNewProject = decisions.length === 0;
+    let prompt = buildSupervisorPrompt(memory, decisions, isNewProject);
     if (additionalContext) {
       prompt += `\n\nCONTEXTO ADICIONAL DEL USUARIO:\n"${additionalContext}"`;
     }

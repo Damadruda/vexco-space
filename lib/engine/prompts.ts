@@ -18,7 +18,8 @@ REGLAS DE ESTILO (obligatorias):
 
 export function buildSupervisorPrompt(
   projectMemory: Record<string, unknown>,
-  decisionHistory: Array<{ outcome: string; decision: string; agentSource: string; createdAt: Date }>
+  decisionHistory: Array<{ outcome: string; decision: string; agentSource: string; createdAt: Date }>,
+  isNewProject?: boolean
 ): string {
   const project = projectMemory.project as Record<string, unknown>;
   const stats = projectMemory.stats as Record<string, number>;
@@ -71,11 +72,44 @@ Basándote en este estado, devuelve el siguiente JSON:
   "targetAgentId": "uno de: strategist | revenue | navigator | infrastructure | workflow | innovation | narrative | redteam",
   "reasoning": "por qué ese agente y no otro — 1 oración",
   "priority": "high | medium | low",
-  "estimatedScope": "qué va a cubrir el análisis del agente — 1 oración"
-}`;
+  "estimatedScope": "qué va a cubrir el análisis del agente — 1 oración"${isNewProject ? `,
+  "archetype": {
+    "name": "nombre descriptivo del tipo de proyecto",
+    "phases": [
+      { "name": "nombre de fase", "description": "qué ocurre en esta fase", "order": 1 },
+      { "name": "nombre de fase", "description": "qué ocurre en esta fase", "order": 2 }
+    ],
+    "currentPhase": "nombre de la fase actual",
+    "reasoning": "por qué este framework y no uno genérico"
+  }` : ""}
+}${isNewProject ? `
+
+DETECCIÓN DE ARQUETIPO (proyecto nuevo — sin historial de decisiones):
+Analiza el contexto y propone un framework de fases personalizado.
+NO uses categorías fijas ni nombres genéricos. Diseña fases según lo que este proyecto necesita.
+
+Contexto geográfico: el usuario opera entre España y Latinoamérica.
+Los frameworks deben considerar regulación EU, dinámicas de mercado Latam, y bootstrapping (rentabilidad temprana).
+
+Ejemplos inspiracionales (NO copiar — solo referencia de estructura):
+- SaaS B2B España: Validación → PMF → MVP → GTM EU → Expansión Latam
+- Servicio puntual: Brief → Propuesta → Ejecución → Entrega
+- Automatización: Requisitos → Arquitectura → Build → Testing → Deploy
+- Consultoría fractional: Diagnóstico → Estrategia → Ejecución → Medición
+- Contenido: Auditoría → Framework editorial → Producción → Optimización
+
+Incluye entre 3 y 6 fases. Sé específico al nombre del proyecto.` : ""}`;
 }
 
 // ─── Agent Prompt ─────────────────────────────────────────────────────────────
+
+export interface AgentPromptConfig {
+  consultingDNA: string;
+  geographicContext: string;
+  domainInstructions: string;
+  agentName: string;
+  outputType: string;
+}
 
 export function buildAgentPrompt(
   agentPersona: string,
@@ -83,7 +117,9 @@ export function buildAgentPrompt(
   agentName: string,
   projectMemory: Record<string, unknown>,
   supervisorPlan: SupervisorPlan,
-  decisionHistory: Array<{ outcome: string; decision: string; agentSource: string }>
+  decisionHistory: Array<{ outcome: string; decision: string; agentSource: string }>,
+  agentConfig?: AgentPromptConfig,
+  skillResults?: string[]
 ): string {
   const project = projectMemory.project as Record<string, unknown>;
   const agileTasks = (projectMemory.agileTasks as unknown[]) ?? [];
@@ -94,9 +130,26 @@ export function buildAgentPrompt(
     .map((d) => `- ${d.decision}`)
     .join("\n");
 
-  return `${agentPersona}
+  // Use specialized config if available, fallback to legacy persona
+  const identity = agentConfig
+    ? `ADN DE CONSULTORÍA:
+${agentConfig.consultingDNA}
 
-Tu foco en este análisis: ${agentFocus}
+CONTEXTO GEOGRÁFICO:
+${agentConfig.geographicContext}
+
+INSTRUCCIONES DE DOMINIO:
+${agentConfig.domainInstructions}`
+    : `${agentPersona}\n\nTu foco: ${agentFocus}`;
+
+  const skillContext =
+    skillResults && skillResults.filter(Boolean).length > 0
+      ? `\nCONTEXTO ADICIONAL (skills ejecutados):\n${skillResults.filter(Boolean).join("\n\n")}`
+      : "";
+
+  const outputType = agentConfig?.outputType ?? "analysis";
+
+  return `${identity}
 
 ${ANTI_IA_RULE}
 
@@ -116,10 +169,11 @@ RAZONAMIENTO DEL SUPERVISOR:
 
 RESTRICCIONES (ya rechazado por el usuario — no repetir):
 ${rejectedByThisAgent || "Sin restricciones previas."}
+${skillContext}
 
 Devuelve el siguiente JSON con tu análisis:
 {
-  "type": "analysis | recommendation | action_plan | risk_assessment",
+  "type": "${outputType}",
   "title": "título específico del análisis — máx 60 caracteres",
   "summary": "resumen ejecutivo de 2-3 oraciones en tono C-Level",
   "sections": [
@@ -131,9 +185,10 @@ Devuelve el siguiente JSON con tu análisis:
     }
   ],
   "metadata": {
-    "model": "gemini-1.5-flash",
+    "model": "${agentConfig ? "modelo-real" : "gemini-1.5-flash"}",
     "processingTimeMs": 0,
-    "confidenceScore": 0.8
+    "confidenceScore": 0.8,
+    "skillsUsed": []
   }
 }
 

@@ -1,10 +1,11 @@
 // =============================================================================
-// VEXCO-LAB ENGINE — STATE MACHINE
-// Sessions are in-memory (Map). Ephemeral by design.
-// DecisionLog is the real persistence layer.
+// VEXCO-LAB ENGINE — STATE MACHINE (Dual-store)
+// Map for hot reads + DB for persistence across cold starts.
+// Map is source of truth during active session; DB persists on every write.
 // =============================================================================
 
 import { randomUUID } from "crypto";
+import { prisma } from "@/lib/db";
 import type {
   SessionState,
   SessionPhase,
@@ -32,6 +33,62 @@ function addEvent(
   session.history.push({ type, timestamp: now(), data });
 }
 
+function serializeForDB(session: SessionState) {
+  return {
+    phase: session.phase,
+    currentAgentId: session.currentAgentId,
+    supervisorPlan: session.supervisorPlan ? JSON.parse(JSON.stringify(session.supervisorPlan)) : null,
+    agentResult: session.agentResult ? JSON.parse(JSON.stringify(session.agentResult)) : null,
+    history: JSON.parse(JSON.stringify(session.history)),
+    updatedAt: session.updatedAt,
+  };
+}
+
+function deserializeFromDB(row: {
+  id: string;
+  projectId: string;
+  userId: string;
+  phase: string;
+  currentAgentId: string | null;
+  supervisorPlan: unknown;
+  agentResult: unknown;
+  history: unknown;
+  createdAt: Date;
+  updatedAt: Date;
+}): SessionState {
+  return {
+    id: row.id,
+    projectId: row.projectId,
+    userId: row.userId,
+    phase: row.phase as SessionPhase,
+    currentAgentId: row.currentAgentId,
+    supervisorPlan: row.supervisorPlan ? (row.supervisorPlan as SupervisorPlan) : null,
+    agentResult: row.agentResult ? (row.agentResult as AgentResult) : null,
+    history: Array.isArray(row.history) ? (row.history as SessionEvent[]) : [],
+    createdAt: row.createdAt,
+    updatedAt: row.updatedAt,
+  };
+}
+
+// ─── DB persistence (fire-and-forget) ────────────────────────────────────────
+
+function persistToDB(session: SessionState): void {
+  prisma.warRoomSession
+    .upsert({
+      where: { id: session.id },
+      create: {
+        id: session.id,
+        projectId: session.projectId,
+        userId: session.userId,
+        ...serializeForDB(session),
+      },
+      update: serializeForDB(session),
+    })
+    .catch((err) => {
+      console.warn("[STATE-MACHINE] DB persist failed:", err);
+    });
+}
+
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 export function createSession(projectId: string, userId: string): SessionState {
@@ -50,20 +107,48 @@ export function createSession(projectId: string, userId: string): SessionState {
 
   addEvent(session, "supervisor_proposal", { action: "session_created" });
   sessions.set(session.id, session);
+  persistToDB(session);
   return session;
 }
 
-export function getSession(sessionId: string): SessionState | null {
-  return sessions.get(sessionId) ?? null;
+export async function getSession(sessionId: string): Promise<SessionState | null> {
+  // Map first (hot path)
+  const cached = sessions.get(sessionId);
+  if (cached) return cached;
+
+  // DB fallback
+  try {
+    const row = await prisma.warRoomSession.findUnique({ where: { id: sessionId } });
+    if (!row) return null;
+    const session = deserializeFromDB(row);
+    sessions.set(sessionId, session);
+    return session;
+  } catch {
+    return null;
+  }
 }
 
-export function getSessionByProject(projectId: string): SessionState | null {
+export async function getSessionByProject(projectId: string): Promise<SessionState | null> {
+  // Map first
   for (const session of sessions.values()) {
     if (session.projectId === projectId && session.phase !== "completed") {
       return session;
     }
   }
-  return null;
+
+  // DB fallback
+  try {
+    const row = await prisma.warRoomSession.findFirst({
+      where: { projectId, phase: { not: "completed" } },
+      orderBy: { updatedAt: "desc" },
+    });
+    if (!row) return null;
+    const session = deserializeFromDB(row);
+    sessions.set(session.id, session);
+    return session;
+  } catch {
+    return null;
+  }
 }
 
 export function transitionTo(
@@ -91,17 +176,10 @@ export function transitionTo(
   session.phase = newPhase;
   session.updatedAt = now();
 
-  if (data?.supervisorPlan !== undefined) {
-    session.supervisorPlan = data.supervisorPlan;
-  }
-  if (data?.agentResult !== undefined) {
-    session.agentResult = data.agentResult;
-  }
-  if (data?.currentAgentId !== undefined) {
-    session.currentAgentId = data.currentAgentId;
-  }
+  if (data?.supervisorPlan !== undefined) session.supervisorPlan = data.supervisorPlan;
+  if (data?.agentResult !== undefined) session.agentResult = data.agentResult;
+  if (data?.currentAgentId !== undefined) session.currentAgentId = data.currentAgentId;
 
-  // Map phase to event type
   const eventMap: Partial<Record<SessionPhase, SessionEvent["type"]>> = {
     supervisor_thinking: "supervisor_proposal",
     awaiting_human: "supervisor_proposal",
@@ -117,6 +195,7 @@ export function transitionTo(
   }
 
   sessions.set(sessionId, session);
+  persistToDB(session);
   return session;
 }
 
@@ -126,6 +205,7 @@ export function updateSessionPlan(sessionId: string, plan: SupervisorPlan): Sess
   session.supervisorPlan = plan;
   session.updatedAt = now();
   sessions.set(sessionId, session);
+  persistToDB(session);
   return session;
 }
 
@@ -135,6 +215,7 @@ export function updateSessionResult(sessionId: string, result: AgentResult): Ses
   session.agentResult = result;
   session.updatedAt = now();
   sessions.set(sessionId, session);
+  persistToDB(session);
   return session;
 }
 
@@ -148,4 +229,5 @@ export function recordHumanDecision(
   addEvent(session, action, data);
   session.updatedAt = now();
   sessions.set(sessionId, session);
+  persistToDB(session);
 }

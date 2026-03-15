@@ -30,7 +30,7 @@ export async function POST(
       targetAgentId?: string;
     };
 
-    const session = getSession(sessionId);
+    const session = await getSession(sessionId);
     if (!session || session.projectId !== projectId || session.userId !== userId) {
       return NextResponse.json({ error: "Sesión no encontrada o no autorizada" }, { status: 404 });
     }
@@ -71,14 +71,15 @@ export async function POST(
           session.supervisorPlan.targetAgentId,
           memory ?? {},
           session.supervisorPlan,
-          decisions
+          decisions,
+          userId
         );
 
         updateSessionResult(sessionId, agentResult);
         transitionTo(sessionId, "agent_delivered", { agentResult });
         transitionTo(sessionId, "awaiting_human");
 
-        const updated = getSession(sessionId)!;
+        const updated = (await getSession(sessionId))!;
         const checkpoint = buildCheckpoint(updated);
 
         return NextResponse.json({ session: updated, checkpoint, agentResult });
@@ -102,7 +103,7 @@ export async function POST(
         });
 
         transitionTo(sessionId, "completed");
-        const updated = getSession(sessionId)!;
+        const updated = (await getSession(sessionId))!;
         return NextResponse.json({ session: updated, checkpoint: null });
       }
     }
@@ -127,7 +128,7 @@ export async function POST(
       });
 
       transitionTo(sessionId, "completed");
-      const updated = getSession(sessionId)!;
+      const updated = (await getSession(sessionId))!;
       return NextResponse.json({ session: updated, checkpoint: null });
     }
 
@@ -167,8 +168,7 @@ export async function POST(
         agentResult: null,
       });
 
-      const updated = getSession(sessionId)!;
-      // Clear previous agentResult for new plan review
+      const updated = (await getSession(sessionId))!;
       updated.agentResult = null;
       const checkpoint = buildCheckpoint(updated);
 
@@ -193,7 +193,7 @@ export async function POST(
         currentAgentId: null,
       });
 
-      const updated = getSession(sessionId)!;
+      const updated = (await getSession(sessionId))!;
       updated.agentResult = null;
       const checkpoint = buildCheckpoint(updated);
 

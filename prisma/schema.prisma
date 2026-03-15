@@ -9,12 +9,12 @@
 // =============================================================================
 
 generator client {
-    provider = "prisma-client-js"
+  provider = "prisma-client-js"
 }
 
 datasource db {
-    provider = "postgresql"
-    url      = env("DATABASE_URL")
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
 }
 
 // =============================================================================
@@ -23,14 +23,14 @@ datasource db {
 // =============================================================================
 
 model User {
-  id            String    @id @default(cuid())
-  name          String?
-  email         String    @unique
-  emailVerified DateTime?
-  password      String?
-  image         String?
-  createdAt     DateTime  @default(now())
-  updatedAt     DateTime  @updatedAt
+  id               String            @id @default(cuid())
+  name             String?
+  email            String            @unique
+  emailVerified    DateTime?
+  password         String?
+  image            String?
+  createdAt        DateTime          @default(now())
+  updatedAt        DateTime          @updatedAt
   accounts         Account[]
   sessions         Session[]
   projects         Project[]
@@ -47,6 +47,7 @@ model User {
   automationLogs   AutomationLog[]
   userPreferences  UserPreferences?
   decisionLogs     DecisionLog[]
+  warRoomSessions  WarRoomSession[]
 }
 
 model Account {
@@ -109,21 +110,21 @@ enum ProjectStatus {
 // =============================================================================
 
 model ConceptInsight {
-  id                String   @id @default(cuid())
-  projectId         String
-  question          String   @db.Text
-  answer            String?  @db.Text
-  stage             String   // Concepto, Mercado, Negocio, Ejecución
+  id                  String   @id @default(cuid())
+  projectId           String
+  question            String   @db.Text
+  answer              String?  @db.Text
+  stage               String // Concepto, Mercado, Negocio, Ejecución
   // Strategic PM Lab - Enhanced fields
-  userFeedback      String?  @db.Text  // User refinement request ("ajusta X")
-  aiSuggestion      String?  @db.Text  // AI's suggestion/draft
-  alternatives      String?  @db.Text  // JSON array of alternative paths
-  analysisType      String?  // consultation, validation, refinement, cascade
-  costBenefitAnalysis String? @db.Text // Cost/benefit analysis text
-  killSwitchReason  String?  @db.Text  // Reason if kill switch issued
-  createdAt         DateTime @default(now())
-  updatedAt         DateTime @updatedAt
-  project           Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userFeedback        String?  @db.Text // User refinement request ("ajusta X")
+  aiSuggestion        String?  @db.Text // AI's suggestion/draft
+  alternatives        String?  @db.Text // JSON array of alternative paths
+  analysisType        String? // consultation, validation, refinement, cascade
+  costBenefitAnalysis String?  @db.Text // Cost/benefit analysis text
+  killSwitchReason    String?  @db.Text // Reason if kill switch issued
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+  project             Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId])
   @@index([stage])
@@ -141,49 +142,49 @@ model ConceptInsight {
 // =============================================================================
 
 model Project {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   title       String
-  description String?  @db.Text
-  status      String   @default("idea") // idea, development, execution, completed
-  projectType String   @default("idea") // idea, active, operational, completed
+  description String?   @db.Text
+  status      String    @default("idea") // idea, development, execution, completed
+  projectType String    @default("idea") // idea, active, operational, completed
   category    String?
-  tags        String[] @default([])
-  priority    String   @default("medium") // low, medium, high
-  progress    Int      @default(0) // 0-100
+  tags        String[]  @default([])
+  priority    String    @default("medium") // low, medium, high
+  progress    Int       @default(0) // 0-100
   dueDate     DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
   userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   // Strategic Intelligence Engine - Timeline
   // QA: startDate/endDate for agile metrics, red if currentDate > endDate
-  startDate   DateTime?
-  endDate     DateTime?
+  startDate DateTime?
+  endDate   DateTime?
 
   // Strategic Intelligence Engine - 4-Stage Traffic Light System
   // QA: Each stage must be GREEN before proceeding to next
-  conceptStatus   ProjectStatus @default(RED)   // Stage 1: Concepto
-  marketStatus    ProjectStatus @default(RED)   // Stage 2: Mercado
-  businessStatus  ProjectStatus @default(RED)   // Stage 3: Negocio
-  executionStatus ProjectStatus @default(RED)   // Stage 4: Ejecución
+  conceptStatus   ProjectStatus @default(RED) // Stage 1: Concepto
+  marketStatus    ProjectStatus @default(RED) // Stage 2: Mercado
+  businessStatus  ProjectStatus @default(RED) // Stage 3: Negocio
+  executionStatus ProjectStatus @default(RED) // Stage 4: Ejecución
 
   // Framework fields (legacy)
-  concept         String? @db.Text // Step 1
-  problemSolved   String? @db.Text
-  targetMarket    String? @db.Text // Step 2
+  concept          String? @db.Text // Step 1
+  problemSolved    String? @db.Text
+  targetMarket     String? @db.Text // Step 2
   marketValidation String? @db.Text
-  businessModel   String? @db.Text // Step 3
+  businessModel    String? @db.Text // Step 3
   valueProposition String? @db.Text
-  actionPlan      String? @db.Text // Step 4
-  milestones      String? @db.Text
-  resources       String? @db.Text // Step 5
-  metrics         String? @db.Text
-  currentStep     Int     @default(1) // 1-5
+  actionPlan       String? @db.Text // Step 4
+  milestones       String? @db.Text
+  resources        String? @db.Text // Step 5
+  metrics          String? @db.Text
+  currentStep      Int     @default(1) // 1-5
 
   // V4 relations
-  trackType       TrackType @default(GO_TO_MARKET)
-  isArchived      Boolean   @default(false)
+  trackType  TrackType @default(GO_TO_MARKET)
+  isArchived Boolean   @default(false)
 
   // Relations
   ideas            Idea[]
@@ -192,10 +193,11 @@ model Project {
   images           Image[]
   milestoneItems   Milestone[]
   patternCards     PatternCard[]
-  conceptInsights  ConceptInsight[]  // Strategic Intelligence Engine Q&A
+  conceptInsights  ConceptInsight[] // Strategic Intelligence Engine Q&A
   agileTasks       AgileTask[]
   roadmapTimelines RoadmapTimeline[]
   decisionLogs     DecisionLog[]
+  warRoomSessions  WarRoomSession[]
 
   @@index([userId])
   @@index([status])
@@ -246,55 +248,55 @@ model PatternCard {
 // =============================================================================
 
 model Milestone {
-  id                    String    @id @default(cuid())
-  title                 String
-  description           String?   @db.Text
-  projectType           String?   // SaaS, Product, Service
-  isCompleted           Boolean   @default(false)
-  isCertified           Boolean   @default(false)
-  certifiedAt           DateTime?
-  certificationReason   String?   @db.Text
-  order                 Int       @default(0)
-  createdAt             DateTime  @default(now())
-  updatedAt             DateTime  @updatedAt
-  projectId             String
-  project               Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  id                  String    @id @default(cuid())
+  title               String
+  description         String?   @db.Text
+  projectType         String? // SaaS, Product, Service
+  isCompleted         Boolean   @default(false)
+  isCertified         Boolean   @default(false)
+  certifiedAt         DateTime?
+  certificationReason String?   @db.Text
+  order               Int       @default(0)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  projectId           String
+  project             Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
 
   @@index([projectId])
   @@index([isCertified])
 }
 
 model Idea {
-  id          String   @id @default(cuid())
-  title       String
-  content     String   @db.Text
-  category    String?
-  tags        String[] @default([])
-  isFavorite  Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  projectId   String?
-  project     Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  id         String   @id @default(cuid())
+  title      String
+  content    String   @db.Text
+  category   String?
+  tags       String[] @default([])
+  isFavorite Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId  String?
+  project    Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([projectId])
 }
 
 model Note {
-  id          String   @id @default(cuid())
-  title       String
-  content     String   @db.Text
-  category    String?
-  tags        String[] @default([])
-  isFavorite  Boolean  @default(false)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
-  userId      String
-  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  projectId   String?
-  project     Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  id         String   @id @default(cuid())
+  title      String
+  content    String   @db.Text
+  category   String?
+  tags       String[] @default([])
+  isFavorite Boolean  @default(false)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+  userId     String
+  user       User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId  String?
+  project    Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([projectId])
@@ -321,20 +323,20 @@ model Link {
 }
 
 model Image {
-  id              String   @id @default(cuid())
-  title           String?
-  description     String?  @db.Text
+  id               String   @id @default(cuid())
+  title            String?
+  description      String?  @db.Text
   cloudStoragePath String
-  isPublic        Boolean  @default(false)
-  category        String?
-  tags            String[] @default([])
-  isFavorite      Boolean  @default(false)
-  createdAt       DateTime @default(now())
-  updatedAt       DateTime @updatedAt
-  userId          String
-  user            User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  projectId       String?
-  project         Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  isPublic         Boolean  @default(false)
+  category         String?
+  tags             String[] @default([])
+  isFavorite       Boolean  @default(false)
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+  userId           String
+  user             User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  projectId        String?
+  project          Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
 
   @@index([userId])
   @@index([projectId])
@@ -342,7 +344,7 @@ model Image {
 
 model ChatMessage {
   id        String   @id @default(cuid())
-  role      String   // user, assistant
+  role      String // user, assistant
   content   String   @db.Text
   context   String?  @db.Text // context about what project/idea was being discussed
   createdAt DateTime @default(now())
@@ -375,8 +377,8 @@ model AgileTask {
   title       String
   description String?   @db.Text
   status      String    @default("backlog") // backlog, in-progress, review, done
-  priority    String    @default("medium")  // low, medium, high
-  type        String    @default("task")    // task, bug, feature, epic
+  priority    String    @default("medium") // low, medium, high
+  type        String    @default("task") // task, bug, feature, epic
   sprint      String?
   storyPoints Int?
   dueDate     DateTime?
@@ -397,19 +399,19 @@ model AgileTask {
 
 // InboxItem — Capture inbox (Raindrop, Jina, manual)
 model InboxItem {
-  id           String         @id @default(cuid())
-  type         String         // url, text, document, image
-  rawContent   String         @db.Text
-  sourceUrl    String?
-  sourceTitle  String?
-  status       String         @default("unprocessed") // unprocessed, processing, processed, archived
-  priority     String         @default("medium")
-  tags         String[]       @default([])
-  userId       String
-  user         User           @relation(fields: [userId], references: [id], onDelete: Cascade)
-  analysis     AnalysisResult?
-  createdAt    DateTime       @default(now())
-  updatedAt    DateTime       @updatedAt
+  id          String          @id @default(cuid())
+  type        String // url, text, document, image
+  rawContent  String          @db.Text
+  sourceUrl   String?
+  sourceTitle String?
+  status      String          @default("unprocessed") // unprocessed, processing, processed, archived
+  priority    String          @default("medium")
+  tags        String[]        @default([])
+  userId      String
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  analysis    AnalysisResult?
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
 
   @@index([userId])
   @@index([status])
@@ -435,23 +437,23 @@ model AnalysisResult {
 
 // KnowledgeBase — Curated content/knowledge management
 model KnowledgeBase {
-  id           String   @id @default(cuid())
+  id           String    @id @default(cuid())
   title        String
-  content      String   @db.Text
-  contentType  String   @default("article") // article, snippet, template, reference
+  content      String    @db.Text
+  contentType  String    @default("article") // article, snippet, template, reference
   category     String?
-  tags         String[] @default([])
+  tags         String[]  @default([])
   sourceUrl    String?
-  isPublic     Boolean  @default(false)
+  isPublic     Boolean   @default(false)
   authorId     String
-  author       User     @relation(fields: [authorId], references: [id], onDelete: Cascade)
-  viewCount    Int      @default(0)
+  author       User      @relation(fields: [authorId], references: [id], onDelete: Cascade)
+  viewCount    Int       @default(0)
   lastViewedAt DateTime?
   route        String?
-  status       String   @default("draft") // draft, published, archived
-  summary      String?  @db.Text
-  createdAt    DateTime @default(now())
-  updatedAt    DateTime @updatedAt
+  status       String    @default("draft") // draft, published, archived
+  summary      String?   @db.Text
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
 
   @@index([authorId])
   @@index([category])
@@ -460,22 +462,22 @@ model KnowledgeBase {
 
 // RoadmapTimeline — Visual roadmap phases per project
 model RoadmapTimeline {
-  id          String   @id @default(cuid())
+  id          String    @id @default(cuid())
   title       String
-  description String?  @db.Text
-  phase       String   // discovery, build, launch, growth
+  description String?   @db.Text
+  phase       String // discovery, build, launch, growth
   year        Int
-  status      String   @default("planned") // planned, active, completed, blocked
+  status      String    @default("planned") // planned, active, completed, blocked
   startDate   DateTime?
   endDate     DateTime?
-  milestones  Json?    // JSON array of milestone objects
+  milestones  Json? // JSON array of milestone objects
   color       String?
   projectId   String?
-  project     Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  project     Project?  @relation(fields: [projectId], references: [id], onDelete: SetNull)
   ownerId     String
-  owner       User     @relation(fields: [ownerId], references: [id], onDelete: Cascade)
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  owner       User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   @@index([projectId])
   @@index([year, phase])
@@ -485,13 +487,13 @@ model RoadmapTimeline {
 model AutomationLog {
   id             String    @id @default(cuid())
   jobName        String
-  status         String    // running, completed, failed
+  status         String // running, completed, failed
   itemsProcessed Int       @default(0)
   itemsFailed    Int       @default(0)
   errorMessage   String?   @db.Text
   metadata       Json?
   durationMs     Int?
-  triggeredBy    String?   // manual, cron, webhook
+  triggeredBy    String? // manual, cron, webhook
   userId         String?
   user           User?     @relation(fields: [userId], references: [id], onDelete: SetNull)
   startedAt      DateTime  @default(now())
@@ -504,21 +506,21 @@ model AutomationLog {
 
 // UserPreferences — Per-user settings and integrations
 model UserPreferences {
-  id                   String   @id @default(cuid())
-  userId               String   @unique
-  user                 User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-  raindropToken        String?  @db.Text
+  id                   String    @id @default(cuid())
+  userId               String    @unique
+  user                 User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  raindropToken        String?   @db.Text
   raindropLastSync     DateTime?
-  jinaApiKey           String?  @db.Text
-  defaultInboxView     String   @default("list") // list, grid, kanban
-  aiAnalysisEnabled    Boolean  @default(true)
-  autoTagging          Boolean  @default(true)
-  emailDigestEnabled   Boolean  @default(false)
-  emailDigestFrequency String   @default("weekly") // daily, weekly, never
-  theme                String   @default("light") // light, dark, system
-  timezone             String   @default("UTC")
-  createdAt            DateTime @default(now())
-  updatedAt            DateTime @updatedAt
+  jinaApiKey           String?   @db.Text
+  defaultInboxView     String    @default("list") // list, grid, kanban
+  aiAnalysisEnabled    Boolean   @default(true)
+  autoTagging          Boolean   @default(true)
+  emailDigestEnabled   Boolean   @default(false)
+  emailDigestFrequency String    @default("weekly") // daily, weekly, never
+  theme                String    @default("light") // light, dark, system
+  timezone             String    @default("UTC")
+  createdAt            DateTime  @default(now())
+  updatedAt            DateTime  @updatedAt
 }
 
 // DecisionLog — Human-in-the-Loop decision memory (prevents agent repetition)
@@ -531,7 +533,7 @@ model DecisionLog {
   decision    String          @db.Text
   context     String          @db.Text
   outcome     DecisionOutcome
-  agentSource String          // Which agent generated this (strategist, revenue, etc.)
+  agentSource String // Which agent generated this (strategist, revenue, etc.)
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 
@@ -539,4 +541,23 @@ model DecisionLog {
   @@index([userId])
   @@index([agentSource])
   @@index([outcome])
+}
+
+// WarRoomSession — Persistent War Room sessions (Sprint 4)
+model WarRoomSession {
+  id             String   @id @default(cuid())
+  projectId      String
+  project        Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId         String
+  user           User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  phase          String   @default("idle")
+  currentAgentId String?
+  supervisorPlan Json?
+  agentResult    Json?
+  history        Json     @default("[]")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@index([projectId])
+  @@index([userId])
 }
