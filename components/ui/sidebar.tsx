@@ -8,7 +8,6 @@ import {
   Lightbulb,
   FolderKanban,
   Search,
-  MessageSquare,
   Swords,
   Inbox,
   BookOpen,
@@ -20,19 +19,15 @@ import { cn } from "@/lib/utils";
 
 const WORKSPACE = [
   { href: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
+  { href: "/project-builder", icon: FolderKanban, label: "Proyectos" },
   { href: "/idea-vault", icon: Lightbulb, label: "Idea Vault" },
-  { href: "/project-builder", icon: FolderKanban, label: "Projects" },
   { href: "/war-room", icon: Swords, label: "War Room" },
-];
-
-const TOOLS = [
   { href: "/inbox", icon: Inbox, label: "Inbox" },
   { href: "/knowledge", icon: BookOpen, label: "Knowledge Base" },
-  { href: "/search", icon: Search, label: "Búsqueda" },
-  { href: "/assistant", icon: MessageSquare, label: "Asistente IA" },
 ];
 
 const CONFIG = [
+  { href: "/search", icon: Search, label: "Búsqueda" },
   { href: "/preferences", icon: Settings, label: "Preferencias" },
 ];
 
@@ -108,12 +103,6 @@ function SidebarContent({
         <NavSection
           label="workspace"
           items={WORKSPACE}
-          pathname={pathname}
-          onLinkClick={onLinkClick}
-        />
-        <NavSection
-          label="herramientas"
-          items={TOOLS}
           pathname={pathname}
           onLinkClick={onLinkClick}
         />

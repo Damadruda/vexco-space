@@ -84,29 +84,33 @@ export const authOptions: NextAuthOptions = {
       if (user) {
         token.id = user.id;
       }
-      
+
       // Guardar access_token de Google para usar con Google Drive
       if (account?.provider === "google") {
         token.accessToken = account.access_token;
         token.refreshToken = account.refresh_token;
         token.accessTokenExpires = account.expires_at ? account.expires_at * 1000 : Date.now() + 3600 * 1000;
-        
+
         // CRITICAL: Guardar token en la base de datos
         if (token.id && account.access_token) {
-          await updateAccountTokens(
-            token.id as string,
-            account.access_token,
-            account.refresh_token ?? undefined,
-            account.expires_at ?? undefined
-          );
+          try {
+            await updateAccountTokens(
+              token.id as string,
+              account.access_token,
+              account.refresh_token ?? undefined,
+              account.expires_at ?? undefined
+            );
+          } catch (dbError) {
+            console.warn("[JWT] Could not persist initial token to DB:", dbError instanceof Error ? dbError.message : dbError);
+          }
         }
       }
-      
-      // Refresh token if NOT expired
+
+      // Refresh token if NOT expired — return early
       if (token.accessTokenExpires && Date.now() < (token.accessTokenExpires as number)) {
         return token;
       }
-      
+
       // Token has expired, try to refresh it
       if (token.refreshToken) {
         try {
@@ -120,28 +124,32 @@ export const authOptions: NextAuthOptions = {
               refresh_token: token.refreshToken as string,
             }),
           });
-          
+
           const refreshedTokens = await response.json();
-          
+
           if (!response.ok) {
             console.error("[JWT] Error en refresh:", refreshedTokens);
-            throw refreshedTokens;
+            throw new Error(refreshedTokens.error ?? "Token refresh failed");
           }
-          
+
           const newAccessToken = refreshedTokens.access_token;
           const newExpiresAt = Math.floor(Date.now() / 1000) + refreshedTokens.expires_in;
           const newRefreshToken = refreshedTokens.refresh_token ?? token.refreshToken;
-          
-          // CRITICAL: Guardar el token refrescado en la base de datos
+
+          // Guardar el token refrescado en la base de datos
           if (token.id) {
-            await updateAccountTokens(
-              token.id as string,
-              newAccessToken,
-              newRefreshToken as string,
-              newExpiresAt
-            );
+            try {
+              await updateAccountTokens(
+                token.id as string,
+                newAccessToken,
+                newRefreshToken as string,
+                newExpiresAt
+              );
+            } catch (dbError) {
+              console.warn("[JWT] Could not persist refreshed token to DB:", dbError instanceof Error ? dbError.message : dbError);
+            }
           }
-          
+
           return {
             ...token,
             accessToken: newAccessToken,
@@ -149,19 +157,25 @@ export const authOptions: NextAuthOptions = {
             refreshToken: newRefreshToken,
           };
         } catch (error) {
-          console.error("[JWT] Error refreshing access token", error);
-          return { ...token, error: "RefreshAccessTokenError" };
+          console.warn("[JWT] Token refresh failed, using existing token:", error instanceof Error ? error.message : error);
+          // Return existing token gracefully instead of crashing
+          return token;
         }
       }
-      
+
       return token;
     },
     async session({ session, token }) {
-      if (session.user) {
-        (session.user as any).id = token.id;
-        (session.user as any).accessToken = token.accessToken;
+      try {
+        if (session.user) {
+          (session.user as any).id = token.id;
+          (session.user as any).accessToken = token.accessToken;
+        }
+        return session;
+      } catch (error) {
+        console.warn("[Session] Session callback error:", error instanceof Error ? error.message : error);
+        return session;
       }
-      return session;
     }
   },
   cookies: {

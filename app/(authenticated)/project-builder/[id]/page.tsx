@@ -21,7 +21,6 @@ import { useParams, useRouter } from "next/navigation";
 import { Header } from "@/components/ui/header";
 import { ContentGallery } from "@/components/ui/content-gallery";
 import { IdeaForm } from "@/components/ui/idea-form";
-import { AIGenerator, DocumentGenerator } from "@/components/ui/ai-generator";
 import {
   ArrowLeft,
   Check,
@@ -32,14 +31,13 @@ import {
   Target,
   BarChart3,
   Plus,
-  FileText,
-  Wand2,
   MessageSquare,
   ShieldCheck,
   AlertCircle,
   Flag,
   Sparkles,
   ChevronUp,
+  Swords,
   X
 } from "lucide-react";
 import Link from "next/link";
@@ -81,7 +79,6 @@ interface Project {
   milestoneItems: MilestoneItem[];
 }
 
-type GeneratorType = "competitor_analysis" | "business_model_suggestions" | "action_plan" | "market_validation";
 type SectionStatus = 'RED' | 'YELLOW' | 'GREEN';
 
 // =============================================================================
@@ -453,8 +450,6 @@ export default function ProjectDetailPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showForm, setShowForm] = useState(false);
-  const [showDocGenerator, setShowDocGenerator] = useState(false);
-  const [activeAIGenerator, setActiveAIGenerator] = useState<GeneratorType | null>(null);
   const [formData, setFormData] = useState<Record<string, string>>({});
   const [milestones, setMilestones] = useState<MilestoneItem[]>([]);
   const [changingType, setChangingType] = useState(false);
@@ -667,18 +662,11 @@ export default function ProjectDetailPage() {
           </Link>
           <div className="flex flex-wrap gap-2">
             <button
-              onClick={() => setActiveAIGenerator("competitor_analysis")}
+              onClick={() => router.push(`/project-builder/${project.id}/war-room`)}
               className="ql-btn-secondary"
             >
-              <Users className="h-4 w-4" />
-              Análisis Competencia
-            </button>
-            <button
-              onClick={() => setShowDocGenerator(true)}
-              className="ql-btn-secondary"
-            >
-              <FileText className="h-4 w-4" />
-              Generar Documentos
+              <Swords className="h-4 w-4" />
+              Abrir War Room
             </button>
             <button
               onClick={handleSave}
@@ -976,22 +964,6 @@ export default function ProjectDetailPage() {
         />
       )}
 
-      {/* AI Generator */}
-      {activeAIGenerator && (
-        <AIGenerator
-          projectId={project.id}
-          type={activeAIGenerator}
-          onClose={() => setActiveAIGenerator(null)}
-        />
-      )}
-
-      {/* Document Generator */}
-      {showDocGenerator && (
-        <DocumentGenerator
-          projectId={project.id}
-          onClose={() => setShowDocGenerator(false)}
-        />
-      )}
     </div>
   );
 }

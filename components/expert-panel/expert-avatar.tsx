@@ -6,6 +6,8 @@ interface ExpertAvatarProps {
   expert: Expert;
   size?: "sm" | "md" | "lg";
   showRing?: boolean;
+  active?: boolean;
+  hasResponse?: boolean;
 }
 
 const sizes = {
@@ -14,14 +16,29 @@ const sizes = {
   lg: "h-11 w-11 text-base",
 };
 
-export function ExpertAvatar({ expert, size = "md", showRing = false }: ExpertAvatarProps) {
+export function ExpertAvatar({
+  expert,
+  size = "md",
+  showRing = false,
+  active = false,
+  hasResponse = false,
+}: ExpertAvatarProps) {
+  // State-based coloring — monochromatic Quiet Luxury
+  const colorClass = active
+    ? "bg-ql-charcoal text-white"
+    : hasResponse
+    ? "bg-ql-accent/10 text-ql-accent"
+    : "bg-ql-cream text-ql-slate";
+
+  const ringClass = showRing ? "ring-2 ring-offset-1 ring-ql-sand/40" : "";
+
   return (
     <div
       className={`
-        flex shrink-0 items-center justify-center rounded-full font-medium text-white
+        flex shrink-0 items-center justify-center rounded-full font-medium
         ${sizes[size]}
-        ${expert.bgColor}
-        ${showRing ? `ring-2 ring-offset-1 ${expert.ringColor}` : ""}
+        ${colorClass}
+        ${ringClass}
         transition-all duration-200
       `}
       style={{ fontFamily: "var(--font-body)" }}

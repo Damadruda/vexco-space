@@ -29,12 +29,12 @@ function SessionTimeline({ events }: { events: SessionEvent[] }) {
   if (labeled.length === 0) return null;
 
   const ICONS: Record<string, React.ReactNode> = {
-    supervisor_proposal: <Brain className="h-3.5 w-3.5 text-indigo-500" />,
-    human_approval:      <CheckCheck className="h-3.5 w-3.5 text-emerald-500" />,
-    human_rejection:     <XCircle className="h-3.5 w-3.5 text-red-500" />,
-    human_redirect:      <Clock className="h-3.5 w-3.5 text-amber-500" />,
-    agent_complete:      <CheckCheck className="h-3.5 w-3.5 text-blue-500" />,
-    session_end:         <CheckCheck className="h-3.5 w-3.5 text-slate-400" />,
+    supervisor_proposal: <Brain className="h-3.5 w-3.5 text-ql-accent" />,
+    human_approval:      <CheckCheck className="h-3.5 w-3.5 text-ql-success" />,
+    human_rejection:     <XCircle className="h-3.5 w-3.5 text-ql-danger" />,
+    human_redirect:      <Clock className="h-3.5 w-3.5 text-ql-warning" />,
+    agent_complete:      <CheckCheck className="h-3.5 w-3.5 text-ql-charcoal" />,
+    session_end:         <CheckCheck className="h-3.5 w-3.5 text-ql-muted" />,
   };
 
   const LABELS: Record<string, string> = {
@@ -199,7 +199,7 @@ function StrategyMode({ projectId }: { projectId: string }) {
       {!isIdle && session && (
         <div className="space-y-4">
           <div className="flex items-center gap-2">
-            <span className="h-2 w-2 rounded-full bg-amber-400 animate-pulse" />
+            <span className="ql-status-thinking" />
             <p className="text-xs text-ql-muted capitalize">
               {session.phase.replace(/_/g, " ")}
             </p>
@@ -231,7 +231,7 @@ function StrategyMode({ projectId }: { projectId: string }) {
       )}
 
       {error && (
-        <p className="rounded-xl bg-red-50 border border-red-100 px-4 py-3 text-sm text-red-600">
+        <p className="ql-caption normal-case tracking-normal text-ql-danger border border-ql-danger/20 bg-ql-danger/5 px-4 py-3">
           {error}
         </p>
       )}
