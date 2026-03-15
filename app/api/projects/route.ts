@@ -17,8 +17,6 @@ import { authOptions } from '@/lib/auth-options';
 // GET: List all projects for user
 // =============================================================================
 export async function GET() {
-  console.log('[PROJECTS API] GET request');
-  
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user?.email) {
@@ -52,7 +50,6 @@ export async function GET() {
       }
     });
 
-    console.log(`[PROJECTS API] Found ${projects.length} projects`);
     return NextResponse.json({ projects });
 
   } catch (error) {
@@ -68,8 +65,6 @@ export async function GET() {
 // POST: Create new project
 // =============================================================================
 export async function POST(request: NextRequest) {
-  console.log('[PROJECTS API] POST request');
-  
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user?.email) {
@@ -106,7 +101,6 @@ export async function POST(request: NextRequest) {
       }
     });
 
-    console.log(`[PROJECTS API] Created project: ${project.id}`);
     return NextResponse.json({ project }, { status: 201 });
 
   } catch (error) {

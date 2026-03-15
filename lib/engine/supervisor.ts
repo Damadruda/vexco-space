@@ -129,12 +129,8 @@ export async function supervisorAnalyze(
       prompt += `\n\nCONTEXTO ADICIONAL DEL USUARIO:\n"${additionalContext}"`;
     }
 
-    const startTime = Date.now();
     const result = await model.generateContent(prompt);
     const responseText = result.response.text();
-    const elapsed = Date.now() - startTime;
-
-    console.log(`[SUPERVISOR] Gemini responded in ${elapsed}ms`);
 
     const cleaned = responseText.replace(/```json\n?|\n?```/g, "").trim();
     const plan = JSON.parse(cleaned) as SupervisorPlan;

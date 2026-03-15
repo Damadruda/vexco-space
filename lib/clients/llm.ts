@@ -52,7 +52,11 @@ async function callGemini(
     ? `${systemPrompt}\n\n${userPrompt}`
     : userPrompt;
 
-  const result = await model.generateContent(fullPrompt);
+  const timeoutPromise = new Promise<never>((_, reject) =>
+    setTimeout(() => reject(new Error("Gemini timeout after 30s")), 30_000)
+  );
+
+  const result = await Promise.race([model.generateContent(fullPrompt), timeoutPromise]);
   const text = result.response.text();
   const cleaned = text.replace(/```json\n?|\n?```/g, "").trim();
 
@@ -111,21 +115,33 @@ async function callPerplexity(
     return callGemini(systemPrompt, userPrompt, false, undefined, temperature);
   }
 
-  const res = await fetch("https://api.perplexity.ai/chat/completions", {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${apiKey}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify({
-      model: "sonar-pro",
-      messages: [
-        { role: "system", content: systemPrompt },
-        { role: "user", content: userPrompt },
-      ],
-      temperature: temperature ?? 0.7,
-    }),
-  });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 25_000);
+
+  let res: Response;
+  try {
+    res = await fetch("https://api.perplexity.ai/chat/completions", {
+      method: "POST",
+      headers: {
+        Authorization: `Bearer ${apiKey}`,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        model: "sonar-pro",
+        messages: [
+          { role: "system", content: systemPrompt },
+          { role: "user", content: userPrompt },
+        ],
+        temperature: temperature ?? 0.7,
+      }),
+      signal: controller.signal,
+    });
+  } catch (fetchErr) {
+    console.warn(`[LLM] Perplexity fetch failed (timeout or network) — fallback a Gemini Flash:`, fetchErr);
+    return callGemini(systemPrompt, userPrompt, false, undefined, temperature);
+  } finally {
+    clearTimeout(timeout);
+  }
 
   if (!res.ok) {
     console.warn(`[LLM] Perplexity error ${res.status} — fallback a Gemini Flash`);

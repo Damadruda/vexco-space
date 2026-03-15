@@ -141,7 +141,7 @@ export async function executePhase1(session: DebateSession): Promise<DebateSessi
     take: 10,
   });
 
-  const results = await Promise.all(
+  const settled = await Promise.allSettled(
     session.selectedAgents.map(async (agentId) => {
       const supervisorPlan = {
         analysis: `Debate sobre: ${session.topic}`,
@@ -161,6 +161,15 @@ export async function executePhase1(session: DebateSession): Promise<DebateSessi
       );
     })
   );
+
+  const results: AgentResult[] = [];
+  settled.forEach((result, i) => {
+    if (result.status === "fulfilled") {
+      results.push(result.value);
+    } else {
+      console.warn(`[DEBATE] Phase 1 agent ${session.selectedAgents[i]} failed:`, result.reason);
+    }
+  });
 
   session.phase1Results = results;
   session.phase = "phase1_review";
@@ -191,7 +200,7 @@ export async function executePhase2(session: DebateSession): Promise<DebateSessi
     )
     .join("\n\n---\n\n");
 
-  const confrontationResults = await Promise.all(
+  const confrontationSettled = await Promise.allSettled(
     session.selectedAgents.map(async (agentId) => {
       const myResult = session.phase1Results.find((r) => r.agentId === agentId);
       const agentConfig = getAgentConfig(agentId);
@@ -224,6 +233,15 @@ export async function executePhase2(session: DebateSession): Promise<DebateSessi
       );
     })
   );
+
+  const confrontationResults: AgentResult[] = [];
+  confrontationSettled.forEach((result, i) => {
+    if (result.status === "fulfilled") {
+      confrontationResults.push(result.value);
+    } else {
+      console.warn(`[DEBATE] Phase 2 agent ${session.selectedAgents[i]} failed:`, result.reason);
+    }
+  });
 
   const redTeamPlan = {
     analysis: `Stress test del debate completo sobre: "${session.topic}"`,

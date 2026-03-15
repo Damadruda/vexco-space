@@ -19,7 +19,10 @@ export async function PATCH(request: NextRequest, { params }: { params: { id: st
 
     return NextResponse.json({ task });
   } catch (error) {
-    console.error("Error updating agile task:", error);
+    if (error instanceof Error && error.message === "No autenticado") {
+      return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+    }
+    console.error("[AGILE] Error updating task:", error);
     return NextResponse.json({ error: "Error del servidor" }, { status: 500 });
   }
 }
@@ -30,7 +33,10 @@ export async function DELETE(_request: NextRequest, { params }: { params: { id: 
     await prisma.agileTask.delete({ where: { id: params.id } });
     return NextResponse.json({ ok: true });
   } catch (error) {
-    console.error("Error deleting agile task:", error);
+    if (error instanceof Error && error.message === "No autenticado") {
+      return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+    }
+    console.error("[AGILE] Error deleting task:", error);
     return NextResponse.json({ error: "Error del servidor" }, { status: 500 });
   }
 }

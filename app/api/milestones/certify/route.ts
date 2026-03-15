@@ -21,7 +21,6 @@ const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || '');
 // POST HANDLER - Request Certification
 // =============================================================================
 export async function POST(request: NextRequest) {
-  console.log('[MILESTONE CERTIFY] Starting certification request');
   
   try {
     const session = await getServerSession(authOptions);
@@ -120,7 +119,6 @@ export async function POST(request: NextRequest) {
 // BATCH CERTIFICATION - Check all milestones for a project
 // =============================================================================
 export async function PUT(request: NextRequest) {
-  console.log('[MILESTONE CERTIFY] Starting batch certification');
   
   try {
     const session = await getServerSession(authOptions);

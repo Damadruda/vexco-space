@@ -75,7 +75,6 @@ const KILL_SWITCH_BENCHMARKS: Record<string, any> = {
 // POST HANDLER - Field Validation
 // =============================================================================
 export async function POST(request: NextRequest) {
-  console.log('[PM VALIDATE] Starting validation request');
   
   try {
     const session = await getServerSession(authOptions);

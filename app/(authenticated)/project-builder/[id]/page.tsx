@@ -46,11 +46,6 @@ import Link from "next/link";
 import { PROJECT_TYPES, PROJECT_TYPE_ORDER, ProjectType } from "@/lib/project-types";
 
 // =============================================================================
-// DEPLOYMENT VERIFICATION - PRUEBA DE VIDA
-// =============================================================================
-console.log('STRATEGIC_LAB_V2_ACTIVE');
-
-// =============================================================================
 // TYPE DEFINITIONS
 // =============================================================================
 interface MilestoneItem {
@@ -451,8 +446,6 @@ function TrafficLight({ status }: { status: SectionStatus | undefined }) {
 // MAIN COMPONENT
 // =============================================================================
 export default function ProjectDetailPage() {
-  // Deployment verification
-  console.log('STRATEGIC_LAB_V2_ACTIVE');
 
   const params = useParams();
   const router = useRouter();

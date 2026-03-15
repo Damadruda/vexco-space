@@ -28,7 +28,6 @@ async function updateAccountTokens(
         ...(expiresAt && { expires_at: expiresAt }),
       },
     });
-    console.log("[AUTH] Token actualizado en base de datos para userId:", userId);
   } catch (error) {
     console.error("[AUTH] Error actualizando token en DB:", error);
   }
@@ -62,14 +61,8 @@ export const authOptions: NextAuthOptions = {
         
         // Verificar que el email esté verificado y pertenezca al dominio permitido
         if (!emailVerified || !email?.endsWith(`@${ALLOWED_DOMAIN}`)) {
-          console.log(`[AUTH] Acceso denegado para: ${email}. Solo se permite @${ALLOWED_DOMAIN}`);
           return false;
         }
-        
-        // Log de tokens recibidos (para debugging)
-        console.log("[AUTH] SignIn exitoso para:", email);
-        console.log("[AUTH] Token preview (primeros 10 chars):", account.access_token?.substring(0, 10));
-        console.log("[AUTH] Refresh token existe:", !!account.refresh_token);
         
         // CRITICAL: Actualizar tokens en la base de datos inmediatamente al hacer signIn
         // Esto asegura que el nuevo access_token con permisos de Drive se guarda
@@ -94,7 +87,6 @@ export const authOptions: NextAuthOptions = {
       
       // Guardar access_token de Google para usar con Google Drive
       if (account?.provider === "google") {
-        console.log("[JWT] Nuevo login detectado, guardando tokens");
         token.accessToken = account.access_token;
         token.refreshToken = account.refresh_token;
         token.accessTokenExpires = account.expires_at ? account.expires_at * 1000 : Date.now() + 3600 * 1000;
@@ -117,7 +109,6 @@ export const authOptions: NextAuthOptions = {
       
       // Token has expired, try to refresh it
       if (token.refreshToken) {
-        console.log("[JWT] Token expirado, intentando refresh...");
         try {
           const response = await fetch("https://oauth2.googleapis.com/token", {
             method: "POST",
@@ -136,8 +127,6 @@ export const authOptions: NextAuthOptions = {
             console.error("[JWT] Error en refresh:", refreshedTokens);
             throw refreshedTokens;
           }
-          
-          console.log("[JWT] Refresh exitoso, nuevo token preview:", refreshedTokens.access_token?.substring(0, 10));
           
           const newAccessToken = refreshedTokens.access_token;
           const newExpiresAt = Math.floor(Date.now() / 1000) + refreshedTokens.expires_in;

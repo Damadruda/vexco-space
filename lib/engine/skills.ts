@@ -31,23 +31,32 @@ export async function researchSkill(query: string): Promise<SkillResult> {
 Incluye fuentes cuando estén disponibles. Prioriza datos de mercados España y Latam cuando sea relevante.
 NO inventes estadísticas. Si no tienes datos recientes, indícalo claramente.`;
 
-  const response = await callLLM({
-    model: "perplexity-sonar",
-    systemPrompt: system,
-    userPrompt: user,
-    jsonMode: false,
-    temperature: 0.3,
-  });
+  try {
+    const response = await callLLM({
+      model: "perplexity-sonar",
+      systemPrompt: system,
+      userPrompt: user,
+      jsonMode: false,
+      temperature: 0.3,
+    });
 
-  const prefix = hasPerplexity
-    ? "DATOS DE INVESTIGACIÓN (Perplexity Sonar):"
-    : "DATOS DE INVESTIGACIÓN (sin Perplexity — datos no verificados en tiempo real):";
+    const prefix = hasPerplexity
+      ? "DATOS DE INVESTIGACIÓN (Perplexity Sonar):"
+      : "DATOS DE INVESTIGACIÓN (sin Perplexity — datos no verificados en tiempo real):";
 
-  return {
-    skill: "research",
-    data: `${prefix}\n${response.content}`,
-    processingTimeMs: Date.now() - startTime,
-  };
+    return {
+      skill: "research",
+      data: `${prefix}\n${response.content}`,
+      processingTimeMs: Date.now() - startTime,
+    };
+  } catch (err) {
+    console.warn("[SKILLS] researchSkill failed, returning empty:", err);
+    return {
+      skill: "research",
+      data: "",
+      processingTimeMs: Date.now() - startTime,
+    };
+  }
 }
 
 // ─── Skill 2: Inspiration via Raindrop ───────────────────────────────────────
@@ -58,13 +67,21 @@ export async function inspirationSkill(
 ): Promise<SkillResult> {
   const startTime = Date.now();
 
-  const context = await getInspirationContext(userId, keywords);
-
-  return {
-    skill: "inspiration",
-    data: context,
-    processingTimeMs: Date.now() - startTime,
-  };
+  try {
+    const context = await getInspirationContext(userId, keywords);
+    return {
+      skill: "inspiration",
+      data: context,
+      processingTimeMs: Date.now() - startTime,
+    };
+  } catch (err) {
+    console.warn("[SKILLS] inspirationSkill failed, returning empty:", err);
+    return {
+      skill: "inspiration",
+      data: "",
+      processingTimeMs: Date.now() - startTime,
+    };
+  }
 }
 
 // ─── Skill 3: Cross-validation with another agent ────────────────────────────
@@ -98,20 +115,29 @@ Sé directo. Sin adornos.
 ANÁLISIS A REVISAR:
 ${content}`;
 
-  const response = await callLLM({
-    model: agent.preferredLLM,
-    systemPrompt: system,
-    userPrompt: user,
-    jsonMode: false,
-    temperature: 0.5,
-    maxTokens: 1024,
-  });
+  try {
+    const response = await callLLM({
+      model: agent.preferredLLM,
+      systemPrompt: system,
+      userPrompt: user,
+      jsonMode: false,
+      temperature: 0.5,
+      maxTokens: 1024,
+    });
 
-  return {
-    skill: "cross-validation",
-    data: `REVISIÓN CRÍTICA (${agent.name}):\n${response.content}`,
-    processingTimeMs: Date.now() - startTime,
-  };
+    return {
+      skill: "cross-validation",
+      data: `REVISIÓN CRÍTICA (${agent.name}):\n${response.content}`,
+      processingTimeMs: Date.now() - startTime,
+    };
+  } catch (err) {
+    console.warn("[SKILLS] crossValidationSkill failed, returning empty:", err);
+    return {
+      skill: "cross-validation",
+      data: "",
+      processingTimeMs: Date.now() - startTime,
+    };
+  }
 }
 
 // ─── getRequiredSkills ────────────────────────────────────────────────────────

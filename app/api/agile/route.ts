@@ -20,7 +20,10 @@ export async function GET(request: NextRequest) {
 
     return NextResponse.json({ tasks });
   } catch (error) {
-    console.error("Error fetching agile tasks:", error);
+    if (error instanceof Error && error.message === "No autenticado") {
+      return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+    }
+    console.error("[AGILE] Error fetching tasks:", error);
     return NextResponse.json({ error: "Error del servidor" }, { status: 500 });
   }
 }
@@ -45,7 +48,10 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json({ task });
   } catch (error) {
-    console.error("Error creating agile task:", error);
+    if (error instanceof Error && error.message === "No autenticado") {
+      return NextResponse.json({ error: "No autenticado" }, { status: 401 });
+    }
+    console.error("[AGILE] Error creating task:", error);
     return NextResponse.json({ error: "Error del servidor" }, { status: 500 });
   }
 }

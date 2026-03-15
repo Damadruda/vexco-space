@@ -62,7 +62,6 @@ const MILESTONE_TEMPLATES: Record<string, string[]> = {
 // POST HANDLER - Generate Milestones
 // =============================================================================
 export async function POST(request: NextRequest) {
-  console.log('[MILESTONES GENERATE] Starting milestone generation');
   
   try {
     const session = await getServerSession(authOptions);
@@ -124,7 +123,6 @@ export async function POST(request: NextRequest) {
       )
     );
 
-    console.log(`[MILESTONES GENERATE] Created ${createdMilestones.length} milestones`);
 
     return NextResponse.json({
       success: true,
