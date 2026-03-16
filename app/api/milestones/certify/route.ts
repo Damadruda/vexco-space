@@ -217,7 +217,7 @@ async function performAICertification(milestone: any, projectContext: string, ev
   missingEvidence?: string[];
   suggestions?: string[];
 }> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-pro' });
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
   
   const prompt = `Eres un auditor de milestones para startups. Tu trabajo es CERTIFICAR si un milestone ha sido completado basándote en la evidencia disponible.
 

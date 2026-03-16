@@ -10,9 +10,9 @@ const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
 // Configuration constants
 const CONFIG = {
   // Model options optimized for large file processing (try in order if one fails)
-  // Priority: gemini-1.5-pro (large context), gemini-1.5-flash (fast), gemini-pro (fallback)
+  // Priority: gemini-2.0-flash (fast, current), gemini-pro (fallback)
   // CRITICAL: Models require "models/" prefix for Gemini API
-  GEMINI_MODELS: ["models/gemini-1.5-pro", "models/gemini-1.5-flash", "models/gemini-pro"],
+  GEMINI_MODELS: ["models/gemini-2.0-flash", "models/gemini-pro"],
   MAX_FILE_SIZE_MB: 10,
   MAX_TEXT_LENGTH: 8000,
   MAX_FILES_PER_BATCH: 20,

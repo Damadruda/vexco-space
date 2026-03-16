@@ -171,7 +171,7 @@ export async function GET(request: NextRequest) {
 // =============================================================================
 
 async function detectProjectType(project: any): Promise<string> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-pro' });
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
   
   const prompt = `Analiza este proyecto y determina su tipo:\n\nTítulo: ${project.title}\nDescripción: ${project.description}\n\nResponde SOLO con una palabra: SaaS, Product, o Service`;
 
@@ -189,7 +189,7 @@ async function detectProjectType(project: any): Promise<string> {
 }
 
 async function customizeMilestones(project: any, templates: string[], type: string): Promise<any[]> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-pro' });
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
   
   const existingInsights = project.conceptInsights
     .filter((i: any) => i.answer)

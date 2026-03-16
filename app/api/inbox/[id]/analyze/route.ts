@@ -81,7 +81,7 @@ export async function POST(
     }
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-1.5-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
 
     const prompt = ANALYSIS_PROMPT(
       item.sourceTitle ?? item.rawContent.slice(0, 80),
@@ -122,7 +122,7 @@ export async function POST(
         sentiment: aiData.sentiment,
         relevanceScore: aiData.relevanceScore,
         rawAiResponse: responseText,
-        modelUsed: "gemini-1.5-flash",
+        modelUsed: "gemini-2.0-flash",
         processingTimeMs,
       },
       update: {
@@ -133,7 +133,7 @@ export async function POST(
         sentiment: aiData.sentiment,
         relevanceScore: aiData.relevanceScore,
         rawAiResponse: responseText,
-        modelUsed: "gemini-1.5-flash",
+        modelUsed: "gemini-2.0-flash",
         processingTimeMs,
         updatedAt: new Date(),
       },

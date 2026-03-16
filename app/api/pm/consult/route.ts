@@ -141,7 +141,7 @@ export async function POST(request: NextRequest) {
     });
 
     // Call Gemini
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-pro' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
     const result = await model.generateContent(prompt);
     const responseText = result.response.text();
 
@@ -269,7 +269,7 @@ function buildConsultationPrompt(params: {
 }
 
 async function generateCascadeDrafts(project: any, conceptAnalysis: any): Promise<any> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-1.5-pro' });
+  const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
   
   const prompt = `${STRATEGIC_SYSTEM_PROMPT}
 
