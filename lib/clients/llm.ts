@@ -40,7 +40,7 @@ async function callGemini(
 
   const genAI = new GoogleGenerativeAI(apiKey);
   const model = genAI.getGenerativeModel({
-    model: "gemini-1.5-flash",
+    model: "gemini-2.0-flash",
     generationConfig: {
       ...(jsonMode ? { responseMimeType: "application/json" } : {}),
       ...(maxTokens ? { maxOutputTokens: maxTokens } : {}),
@@ -170,17 +170,17 @@ export async function callLLM(request: LLMRequest): Promise<LLMResponse> {
     const res = await callClaude(systemPrompt, userPrompt, jsonMode, maxTokens, temperature);
     content = res.content;
     tokensUsed = res.tokensUsed;
-    realModel = apiKey ? "claude-sonnet-4-20250514" : "gemini-1.5-flash (fallback)";
+    realModel = apiKey ? "claude-sonnet-4-20250514" : "gemini-2.0-flash (fallback)";
   } else if (model === "perplexity-sonar") {
     const apiKey = process.env.PERPLEXITY_API_KEY;
     const res = await callPerplexity(systemPrompt, userPrompt, temperature);
     content = res.content;
-    realModel = apiKey ? "sonar-pro" : "gemini-1.5-flash (fallback)";
+    realModel = apiKey ? "sonar-pro" : "gemini-2.0-flash (fallback)";
   } else {
     const res = await callGemini(systemPrompt, userPrompt, jsonMode, maxTokens, temperature);
     content = res.content;
     tokensUsed = res.tokensUsed;
-    realModel = "gemini-1.5-flash";
+    realModel = "gemini-2.0-flash";
   }
 
   return {
