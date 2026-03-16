@@ -45,8 +45,6 @@ interface ConsultantsThreadProps {
 
 // ─── Constants ───────────────────────────────────────────────────────────────
 
-const DIRECTOR = EXPERTS.find((e) => e.id === "innovation")!;
-
 const PHASE_LABELS: Record<string, string> = {
   A: "Fase A · Debate",
   B: "Fase B · Perspectiva",
@@ -172,31 +170,16 @@ export function ConsultantsThread({
 
   // ── MODE 1: Individual ────────────────────────────────────────────────────
   const runIndividual = async (prompt: string) => {
+    const expert = activeExpert ?? EXPERTS[0];
     setDebatePhase("running");
-    setRunningLabel(`${activeExpert.name} analizando…`);
-    const msgId = addExpertPlaceholder(activeExpert);
-    await callAgent(activeExpert, prompt, msgId);
+    setRunningLabel(`${expert.name} analizando…`);
+    const msgId = addExpertPlaceholder(expert);
+    await callAgent(expert, prompt, msgId);
     setDebatePhase("idle");
     setRunningLabel("");
   };
 
-  // ── MODE 2: Director (ambiguous/short messages) ────────────────────────────
-  const runDirector = async (prompt: string) => {
-    setDebatePhase("running");
-    setRunningLabel("Director en línea…");
-
-    const directorPrompt = `The user sent this to the War Room: "${prompt}".
-As Innovation Architect and panel director, welcome them briefly and ask what area they want to work on.
-Mention the panel includes specialists in strategy, revenue, internationalization, tech, workflows, narrative, and stress-testing.
-Suggest 2-3 concrete angles relevant to the active project context.`;
-
-    const msgId = addExpertPlaceholder(DIRECTOR);
-    await callAgent(DIRECTOR, directorPrompt, msgId);
-    setDebatePhase("idle");
-    setRunningLabel("");
-  };
-
-  // ── MODE 3: Full Debate ────────────────────────────────────────────────────
+  // ── MODE 2: Full Debate ────────────────────────────────────────────────────
   const runFullDebate = async (prompt: string) => {
     if (!projectId) return;
     setDebatePhase("running");
@@ -267,15 +250,7 @@ Suggest 2-3 concrete angles relevant to the active project context.`;
     setInput("");
     setMessages((prev) => [...prev, { id: `user-${Date.now()}`, role: "user", content: prompt }]);
 
-    const isAmbiguous =
-      prompt.split(" ").length <= 4 &&
-      /^(hola|hi|buenos|buenas|hey|qué|que|cómo|como|ayuda|help)/i.test(prompt);
-
-    if (isAmbiguous) {
-      await runDirector(prompt);
-    } else {
-      await runIndividual(prompt);
-    }
+    await runIndividual(prompt);
   };
 
   const handleInitAnalysis = async () => {
