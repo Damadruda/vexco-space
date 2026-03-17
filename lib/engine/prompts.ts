@@ -185,7 +185,7 @@ Devuelve el siguiente JSON con tu análisis:
     }
   ],
   "metadata": {
-    "model": "${agentConfig ? "modelo-real" : "gemini-2.0-flash"}",
+    "model": "${agentConfig ? "modelo-real" : "gemini-2.5-pro"}",
     "processingTimeMs": 0,
     "confidenceScore": 0.8,
     "skillsUsed": []

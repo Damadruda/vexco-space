@@ -41,10 +41,10 @@ export async function POST(
   try {
     const userId = await getDefaultUserId();
 
-    const apiKey = process.env.GEMINI_API_KEY;
+    const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
     if (!apiKey) {
       return NextResponse.json(
-        { error: "GEMINI_API_KEY no configurada en el servidor" },
+        { error: "GOOGLE_GENERATIVE_AI_API_KEY no configurada en el servidor" },
         { status: 500 }
       );
     }
@@ -81,7 +81,7 @@ export async function POST(
     }
 
     const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-2.0-flash" });
+    const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
 
     const prompt = ANALYSIS_PROMPT(
       item.sourceTitle ?? item.rawContent.slice(0, 80),
@@ -122,7 +122,7 @@ export async function POST(
         sentiment: aiData.sentiment,
         relevanceScore: aiData.relevanceScore,
         rawAiResponse: responseText,
-        modelUsed: "gemini-2.0-flash",
+        modelUsed: "gemini-2.5-pro",
         processingTimeMs,
       },
       update: {
@@ -133,7 +133,7 @@ export async function POST(
         sentiment: aiData.sentiment,
         relevanceScore: aiData.relevanceScore,
         rawAiResponse: responseText,
-        modelUsed: "gemini-2.0-flash",
+        modelUsed: "gemini-2.5-pro",
         processingTimeMs,
         updatedAt: new Date(),
       },

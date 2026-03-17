@@ -109,7 +109,7 @@ export async function POST(request: NextRequest) {
     const prompt = buildValidationPrompt(project, fieldKey, content, criteria);
 
     // Call Gemini
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.0-flash' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-pro' });
     const result = await model.generateContent(prompt);
     const responseText = result.response.text();
 

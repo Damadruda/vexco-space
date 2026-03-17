@@ -35,12 +35,12 @@ async function callGemini(
   maxTokens?: number,
   temperature?: number
 ): Promise<{ content: string; tokensUsed?: number }> {
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) throw new Error("GEMINI_API_KEY no configurada");
+  const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+  if (!apiKey) throw new Error("GOOGLE_GENERATIVE_AI_API_KEY no configurada");
 
   const genAI = new GoogleGenerativeAI(apiKey);
   const model = genAI.getGenerativeModel({
-    model: "gemini-2.0-flash",
+    model: "gemini-2.5-pro",
     generationConfig: {
       ...(jsonMode ? { responseMimeType: "application/json" } : {}),
       ...(maxTokens ? { maxOutputTokens: maxTokens } : {}),
@@ -170,17 +170,17 @@ export async function callLLM(request: LLMRequest): Promise<LLMResponse> {
     const res = await callClaude(systemPrompt, userPrompt, jsonMode, maxTokens, temperature);
     content = res.content;
     tokensUsed = res.tokensUsed;
-    realModel = apiKey ? "claude-sonnet-4-20250514" : "gemini-2.0-flash (fallback)";
+    realModel = apiKey ? "claude-sonnet-4-20250514" : "gemini-2.5-pro (fallback)";
   } else if (model === "perplexity-sonar") {
     const apiKey = process.env.PERPLEXITY_API_KEY;
     const res = await callPerplexity(systemPrompt, userPrompt, temperature);
     content = res.content;
-    realModel = apiKey ? "sonar-pro" : "gemini-2.0-flash (fallback)";
+    realModel = apiKey ? "sonar-pro" : "gemini-2.5-pro (fallback)";
   } else {
     const res = await callGemini(systemPrompt, userPrompt, jsonMode, maxTokens, temperature);
     content = res.content;
     tokensUsed = res.tokensUsed;
-    realModel = "gemini-2.0-flash";
+    realModel = "gemini-2.5-pro";
   }
 
   return {

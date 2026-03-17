@@ -1,10 +1,10 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect } from "react";
 import { Header } from "@/components/ui/header";
 import { StatCard } from "@/components/ui/stat-card";
 import { KanbanBoard } from "@/components/ui/kanban-board";
-import { FolderKanban, Lightbulb, FileText, Link as LinkIcon, Image as ImageIcon, TrendingUp, ArrowRight, Sparkles, RefreshCw, CloudDownload, Plus } from "lucide-react";
+import { FolderKanban, Lightbulb, FileText, Link as LinkIcon, Image as ImageIcon, TrendingUp, ArrowRight, Swords, CloudDownload, Plus } from "lucide-react";
 import Link from "next/link";
 import { DriveFolderAnalyzer } from "@/components/ui/drive-folder-analyzer";
 import { PROJECT_TYPES, PROJECT_TYPE_ORDER, ProjectType } from "@/lib/project-types";
@@ -32,10 +32,7 @@ interface Stats {
 export default function DashboardPage() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
-  const [aiInsights, setAiInsights] = useState<string>("");
-  const [loadingInsights, setLoadingInsights] = useState(false);
   const [showDriveAnalyzer, setShowDriveAnalyzer] = useState(false);
-  const insightsRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
     async function fetchStats() {
@@ -51,63 +48,6 @@ export default function DashboardPage() {
     }
     fetchStats();
   }, []);
-
-  const generateInsights = async () => {
-    setLoadingInsights(true);
-    setAiInsights("");
-
-    try {
-      const res = await fetch("/api/ai", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "project_insights",
-          data: { content: "Dame un resumen rápido del estado de mis proyectos y recomendaciones de próximos pasos prioritarios. Sé conciso." },
-          stream: true
-        })
-      });
-
-      if (!res.ok) throw new Error("Error generating insights");
-
-      const reader = res.body?.getReader();
-      const decoder = new TextDecoder();
-      let fullContent = "";
-
-      while (reader) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const chunk = decoder.decode(value);
-        const lines = chunk.split("\n");
-
-        for (const line of lines) {
-          if (line.startsWith("data: ")) {
-            const data = line.slice(6);
-            if (data === "[DONE]") continue;
-            try {
-              const parsed = JSON.parse(data);
-              const text = parsed.choices?.[0]?.delta?.content || "";
-              fullContent += text;
-              setAiInsights(fullContent);
-            } catch (e) {
-              // Skip
-            }
-          }
-        }
-      }
-    } catch (error) {
-      console.error("Insights error:", error);
-      setAiInsights("No se pudieron generar los insights. Intenta de nuevo.");
-    } finally {
-      setLoadingInsights(false);
-    }
-  };
-
-  useEffect(() => {
-    if (insightsRef.current) {
-      insightsRef.current.scrollTop = insightsRef.current.scrollHeight;
-    }
-  }, [aiInsights]);
 
   return (
     <div className="ql-page">
@@ -224,51 +164,6 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* AI Insights Section */}
-        <div className="ql-card">
-          <div className="flex items-center justify-between mb-4">
-            <div className="flex items-center gap-3">
-              <div className="flex h-9 w-9 items-center justify-center rounded-full bg-ql-cream">
-                <Sparkles className="h-4 w-4 text-ql-accent" />
-              </div>
-              <div>
-                <h3 className="ql-h3">Insights con IA</h3>
-                <p className="ql-body">Análisis automático de tus proyectos.</p>
-              </div>
-            </div>
-            <button
-              onClick={generateInsights}
-              disabled={loadingInsights}
-              className="ql-btn-secondary disabled:opacity-50"
-            >
-              {loadingInsights ? (
-                <span className="ql-status-thinking" />
-              ) : (
-                <RefreshCw className="h-4 w-4" />
-              )}
-              {aiInsights ? "Actualizar" : "Generar Insights"}
-            </button>
-          </div>
-
-          {aiInsights && (
-            <div
-              ref={insightsRef}
-              className="mt-4 max-h-64 overflow-y-auto rounded-md bg-ql-offwhite p-4"
-            >
-              <div className="ql-body whitespace-pre-wrap">
-                {aiInsights}
-                {loadingInsights && <span className="ql-status-thinking ml-2" />}
-              </div>
-            </div>
-          )}
-
-          {!aiInsights && !loadingInsights && (
-            <p className="ql-body mt-2">
-              Genera un análisis personalizado de tus proyectos y recomendaciones.
-            </p>
-          )}
-        </div>
-
         {/* Quick Actions */}
         <div>
           <p className="ql-label mb-4">Acciones rápidas</p>
@@ -282,9 +177,9 @@ export default function DashboardPage() {
               <Lightbulb className="h-4 w-4" />
               Capturar Idea
             </Link>
-            <Link href="/assistant" className="ql-btn-ghost">
-              <Sparkles className="h-4 w-4" />
-              Asistente IA
+            <Link href="/war-room" className="ql-btn-ghost">
+              <Swords className="h-4 w-4" />
+              War Room
             </Link>
           </div>
         </div>

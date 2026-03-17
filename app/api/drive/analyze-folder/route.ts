@@ -5,14 +5,14 @@ import { prisma } from "@/lib/db";
 import { GoogleGenerativeAI, Part } from "@google/generative-ai";
 
 // Initialize Gemini
-const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY!);
+const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GENERATIVE_AI_API_KEY!);
 
 // Configuration constants
 const CONFIG = {
   // Model options optimized for large file processing (try in order if one fails)
   // Priority: gemini-2.0-flash (fast, current), gemini-pro (fallback)
   // CRITICAL: Models require "models/" prefix for Gemini API
-  GEMINI_MODELS: ["models/gemini-2.0-flash", "models/gemini-pro"],
+  GEMINI_MODELS: ["models/gemini-2.5-pro"],
   MAX_FILE_SIZE_MB: 10,
   MAX_TEXT_LENGTH: 8000,
   MAX_FILES_PER_BATCH: 20,

@@ -84,9 +84,9 @@ export async function supervisorAnalyze(
   userId: string,
   additionalContext?: string
 ): Promise<SupervisorPlan> {
-  const apiKey = process.env.GEMINI_API_KEY;
+  const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
   if (!apiKey) {
-    console.error("[SUPERVISOR] GEMINI_API_KEY not set");
+    console.error("[SUPERVISOR] GOOGLE_GENERATIVE_AI_API_KEY not set");
     return FALLBACK_PLAN;
   }
 
@@ -119,7 +119,7 @@ export async function supervisorAnalyze(
   try {
     const genAI = new GoogleGenerativeAI(apiKey);
     const model = genAI.getGenerativeModel({
-      model: "gemini-2.0-flash",
+      model: "gemini-2.5-pro",
       generationConfig: { responseMimeType: "application/json" },
     });
 
@@ -145,7 +145,7 @@ export async function supervisorAnalyze(
     console.error("[SUPERVISOR] Gemini error:", error);
     return {
       ...FALLBACK_PLAN,
-      analysis: "Error al analizar el proyecto. Revisa tu clave GEMINI_API_KEY.",
+      analysis: "Error al analizar el proyecto. Revisa tu clave GOOGLE_GENERATIVE_AI_API_KEY.",
     };
   }
 }
