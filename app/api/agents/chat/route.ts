@@ -78,8 +78,10 @@ PROJECT CONTEXT:
       userPrompt,
       jsonMode: false,
       temperature: 0.7,
-      maxTokens: 1024,
+      maxTokens: 8192, // gemini-2.5-pro needs room for thinking budget + response
     });
+
+    console.log("[AGENT_CHAT] agentId:", agentId, "llmResponse:", JSON.stringify(llmResponse).substring(0, 500));
 
     return NextResponse.json({
       response: llmResponse.content,
