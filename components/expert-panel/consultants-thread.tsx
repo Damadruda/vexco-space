@@ -1,17 +1,26 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Send, BookmarkPlus, X, Lightbulb, FileText, CheckSquare, Check } from "lucide-react";
+import { Send, BookmarkPlus, X, Lightbulb, FileText, CheckSquare, Check, Zap } from "lucide-react";
+import ReactMarkdown from "react-markdown";
 import { EXPERTS, Expert } from "./experts-data";
 import { ExpertAvatar } from "./expert-avatar";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
+
+interface AssignedAgent {
+  agentId: string;
+  mission: string;
+  suggestedQuestion: string;
+  priority: number;
+}
 
 interface ExpertMessage {
   id: string;
   expertId: string;
   content: string;
   loading: boolean;
+  assignedAgents?: AssignedAgent[];
 }
 
 interface UserMessage {
@@ -29,6 +38,7 @@ interface ConsultantsThreadProps {
   activeExpert: Expert;
   projectId?: string;
   projectTitle?: string;
+  onActivateAgent?: (agentId: string, question: string) => void;
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -45,6 +55,7 @@ export function ConsultantsThread({
   activeExpert,
   projectId,
   projectTitle = "Sin proyecto activo",
+  onActivateAgent,
 }: ConsultantsThreadProps) {
   const [messages, setMessages] = useState<ThreadMessage[]>([]);
   const [input, setInput] = useState("");
@@ -81,10 +92,13 @@ export function ConsultantsThread({
       if (!res.ok) throw new Error(`API error ${res.status}`);
       const data = await res.json();
       const content: string = data.response ?? "Sin respuesta.";
+      const assignedAgents: AssignedAgent[] = data.assignedAgents ?? [];
 
       setMessages((prev) =>
         prev.map((m) =>
-          m.id === msgId && "expertId" in m ? { ...m, content, loading: false } : m
+          m.id === msgId && "expertId" in m
+            ? { ...m, content, loading: false, assignedAgents }
+            : m
         )
       );
     } catch {
@@ -240,12 +254,66 @@ export function ConsultantsThread({
                         <span className="ql-status-thinking" />
                         <span className="ql-loading">Analizando…</span>
                       </div>
+                    ) : dm.expertId === "strategist" ? (
+                      <div className="prose prose-sm prose-neutral max-w-none text-ql-slate
+                        prose-headings:font-medium prose-headings:text-ql-charcoal prose-headings:text-sm prose-headings:mt-4 prose-headings:mb-1
+                        prose-p:leading-relaxed prose-p:my-1
+                        prose-li:my-0.5 prose-ul:my-1 prose-strong:text-ql-charcoal
+                        prose-hr:border-ql-sand/30">
+                        <ReactMarkdown>{dm.content}</ReactMarkdown>
+                      </div>
                     ) : (
                       <p className="text-sm text-ql-slate leading-relaxed whitespace-pre-wrap">
                         {dm.content}
                       </p>
                     )}
                   </div>
+
+                  {/* ── Assigned agents panel (strategist only) ─────────── */}
+                  {!dm.loading && dm.assignedAgents && dm.assignedAgents.length > 0 && (
+                    <div className="mt-3 space-y-2">
+                      <p className="ql-label text-[10px]">Equipo asignado · activa por orden de prioridad</p>
+                      {[...dm.assignedAgents]
+                        .sort((a, b) => a.priority - b.priority)
+                        .map((agent) => {
+                          const expert = EXPERTS.find((e) => e.id === agent.agentId);
+                          if (!expert) return null;
+                          return (
+                            <div
+                              key={agent.agentId}
+                              className="border border-ql-sand/30 bg-ql-offwhite px-4 py-3 space-y-1"
+                            >
+                              <div className="flex items-start justify-between gap-3">
+                                <div className="flex-1 min-w-0">
+                                  <div className="flex items-center gap-2 mb-0.5">
+                                    <span className="text-xs font-medium text-ql-charcoal">
+                                      {agent.priority}. {expert.name}
+                                    </span>
+                                    <span className="ql-caption text-[10px]">{expert.role}</span>
+                                  </div>
+                                  <p className="text-xs text-ql-slate leading-snug">{agent.mission}</p>
+                                  <p className="text-xs text-ql-muted italic mt-1">
+                                    &ldquo;{agent.suggestedQuestion}&rdquo;
+                                  </p>
+                                </div>
+                                {onActivateAgent && (
+                                  <button
+                                    onClick={() =>
+                                      onActivateAgent(agent.agentId, agent.suggestedQuestion)
+                                    }
+                                    className="shrink-0 inline-flex items-center gap-1 text-[11px] border border-ql-charcoal/20 px-2.5 py-1 text-ql-slate hover:bg-ql-charcoal hover:text-white hover:border-ql-charcoal transition-colors"
+                                  >
+                                    <Zap className="h-3 w-3" />
+                                    Activar
+                                  </button>
+                                )}
+                              </div>
+                            </div>
+                          );
+                        })}
+                    </div>
+                  )}
+
                   {!dm.loading && dm.content && hoveredId === dm.id && (
                     <button
                       onClick={() => {

@@ -7,6 +7,85 @@ import { loadProjectMemory } from "@/lib/engine/supervisor";
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
 
+// ─── Types ────────────────────────────────────────────────────────────────────
+
+interface AssignedAgent {
+  agentId: string;
+  mission: string;
+  suggestedQuestion: string;
+  priority: number;
+}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────────
+
+/** Parse the <!-- AGENT_ASSIGNMENTS_JSON --> block from the strategist response. */
+function parseAssignedAgents(content: string): {
+  display: string;
+  assignedAgents: AssignedAgent[];
+} {
+  const OPEN = "<!-- AGENT_ASSIGNMENTS_JSON -->";
+  const CLOSE = "<!-- /AGENT_ASSIGNMENTS_JSON -->";
+  const match = content.match(
+    /<!-- AGENT_ASSIGNMENTS_JSON -->([\s\S]*?)<!-- \/AGENT_ASSIGNMENTS_JSON -->/
+  );
+  if (!match) return { display: content, assignedAgents: [] };
+
+  let assignedAgents: AssignedAgent[] = [];
+  try {
+    assignedAgents = JSON.parse(match[1].trim()) as AssignedAgent[];
+  } catch {
+    // malformed JSON — return empty, do not crash
+  }
+
+  const display = content
+    .replace(OPEN, "")
+    .replace(CLOSE, "")
+    .replace(match[1], "")
+    .trim();
+
+  return { display, assignedAgents };
+}
+
+/** Build enriched project context block from ProjectMemory. */
+function buildProjectContext(memory: Record<string, unknown>): string {
+  const project = memory.project as Record<string, unknown>;
+  const notes = (memory.recentNotes as Array<{ content: string; title?: string }>) ?? [];
+  const ideas = (memory.recentIdeas as Array<{ title: string; description?: string }>) ?? [];
+  const tasks = (memory.agileTasks as Array<{ title: string; status: string }>) ?? [];
+
+  const noteLines = notes
+    .slice(0, 5)
+    .map((n) => `  - ${n.title ? `[${n.title}] ` : ""}${n.content.slice(0, 200)}`)
+    .join("\n");
+
+  const ideaLines = ideas
+    .slice(0, 5)
+    .map((i) => `  - ${i.title}${i.description ? `: ${i.description.slice(0, 120)}` : ""}`)
+    .join("\n");
+
+  const taskLines = tasks
+    .slice(0, 8)
+    .map((t) => `  - [${t.status.toUpperCase()}] ${t.title}`)
+    .join("\n");
+
+  return [
+    "CONTEXTO DEL PROYECTO:",
+    `- Nombre: ${project.title ?? "Sin título"}`,
+    `- Descripción: ${project.description ?? "Sin descripción"}`,
+    `- Status: ${project.status ?? "Desconocido"}`,
+    `- Concepto: ${(project as Record<string, unknown>).concept ?? "No definido"}`,
+    `- Mercado objetivo: ${(project as Record<string, unknown>).targetMarket ?? "No definido"}`,
+    `- Modelo de negocio: ${(project as Record<string, unknown>).businessModel ?? "No definido"}`,
+    notes.length > 0 ? `- Notas recientes (${notes.length}):\n${noteLines}` : "",
+    ideas.length > 0 ? `- Ideas en pipeline (${ideas.length}):\n${ideaLines}` : "",
+    tasks.length > 0 ? `- Tareas activas (${tasks.length}):\n${taskLines}` : "",
+  ]
+    .filter(Boolean)
+    .join("\n");
+}
+
+// ─── Route ────────────────────────────────────────────────────────────────────
+
 export async function POST(request: NextRequest) {
   try {
     const userId = await getDefaultUserId();
@@ -33,60 +112,101 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Load project context if projectId provided
+    const isStrategist = agentId === "strategist";
+
+    // ── Load project context ───────────────────────────────────────────────
     let projectContext = "";
     if (projectId) {
       try {
         const memory = await loadProjectMemory(projectId, userId);
         if (memory) {
-          const project = memory.project as Record<string, unknown>;
-          projectContext = `
-PROJECT CONTEXT:
-- Title: ${project.title ?? "Untitled"}
-- Description: ${project.description ?? "No description"}
-- Status: ${project.status ?? "Unknown"}
-- Concept: ${(project as any).concept ?? "Not defined"}
-- Target Market: ${(project as any).targetMarket ?? "Not defined"}
-- Business Model: ${(project as any).businessModel ?? "Not defined"}`;
+          projectContext = buildProjectContext(memory);
         }
       } catch {
-        // If project load fails, continue without context
+        // continue without context
       }
     }
+
+    // ── Build system prompt ────────────────────────────────────────────────
+    const toneRules = isStrategist
+      ? [
+          "",
+          "REGLAS DE TONO (obligatorias):",
+          "Oraciones cortas e impactantes. Voz activa. Tono ejecutivo.",
+          "Prohibido: 'sumérgete', 'tapiz', 'crucial', 'descubre', 'imperativo', 'sinergias'.",
+          "Usa los headers ## exactos indicados en tu estructura. Usa - para bullets.",
+        ]
+      : [
+          "",
+          "TONE RULES (Anti-IA filter — mandatory):",
+          "Write with short, impactful sentences. Use active voice. Remove jargon and filler words.",
+          "No buzzwords like 'revolutionary', 'crucial', 'discover', 'dive into', 'tapestry'.",
+          "C-Level tone. Direct. Plain text only — no markdown, no bullet symbols, no headers.",
+          "Maximum 4 concise paragraphs.",
+        ];
+
+    // For the strategist: append JSON block instruction so we can parse assigned agents
+    const strategistJsonInstruction = isStrategist
+      ? `
+
+AL FINAL de tu respuesta (después de ## VALIDACIÓN), añade EXACTAMENTE este bloque con los agentes que seleccionaste:
+
+<!-- AGENT_ASSIGNMENTS_JSON -->
+[
+  {
+    "agentId": "id-del-agente",
+    "mission": "misión específica en 1 oración",
+    "suggestedQuestion": "pregunta concreta que el usuario debe hacerle a este agente",
+    "priority": 1
+  }
+]
+<!-- /AGENT_ASSIGNMENTS_JSON -->
+
+IDs de agente válidos: revenue, redteam, navigator, innovation, workflow, infrastructure, narrative, strategist.
+Selecciona 2-4 agentes. Ordena por prioridad (1 = activar primero).`
+      : "";
 
     const systemPrompt = [
       agentConfig.consultingDNA,
       agentConfig.geographicContext,
       agentConfig.domainInstructions,
-      "",
-      "TONE RULES (Anti-IA filter — mandatory):",
-      "Write with short, impactful sentences. Use active voice. Remove jargon and filler words.",
-      "No buzzwords like 'revolutionary', 'crucial', 'discover', 'dive into', 'tapestry'.",
-      "C-Level tone. Direct. Plain text only — no markdown, no bullet symbols, no headers.",
-      "Maximum 4 concise paragraphs.",
+      ...toneRules,
+      strategistJsonInstruction,
     ]
       .filter(Boolean)
       .join("\n");
 
     const userPrompt = projectContext
-      ? `${projectContext}\n\nUSER MESSAGE:\n${message}`
+      ? `${projectContext}\n\nMENSAJE DEL USUARIO:\n${message}`
       : message;
 
+    // ── Call LLM ──────────────────────────────────────────────────────────
     const llmResponse = await callLLM({
       model: agentConfig.preferredLLM,
       systemPrompt,
       userPrompt,
       jsonMode: false,
       temperature: 0.7,
-      maxTokens: 8192, // gemini-2.5-pro needs room for thinking budget + response
+      maxTokens: 8192,
     });
 
-    console.log("[AGENT_CHAT] agentId:", agentId, "llmResponse:", JSON.stringify(llmResponse).substring(0, 500));
+    console.log(
+      "[AGENT_CHAT] agentId:", agentId,
+      "contentLength:", llmResponse.content.length,
+      "model:", llmResponse.model,
+      "ms:", llmResponse.processingTimeMs
+    );
+
+    // ── Parse assigned agents (strategist only) ───────────────────────────
+    const { display, assignedAgents } = isStrategist
+      ? parseAssignedAgents(llmResponse.content)
+      : { display: llmResponse.content, assignedAgents: [] };
 
     return NextResponse.json({
-      response: llmResponse.content,
+      response: display,
       agentId: agentConfig.id,
       agentName: agentConfig.name,
+      assignedAgents,
     });
   } catch (error) {
     if (error instanceof Error && error.message === "No autenticado") {

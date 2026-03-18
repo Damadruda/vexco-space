@@ -337,6 +337,10 @@ export default function ProjectWarRoomPage() {
               activeExpert={activeExpert}
               projectId={projectId}
               projectTitle={projectTitle}
+              onActivateAgent={(agentId) => {
+                const expert = EXPERTS.find((e) => e.id === agentId);
+                if (expert) setActiveExpert(expert);
+              }}
             />
           )}
           {activeTab === "estrategia" && (
