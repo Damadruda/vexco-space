@@ -65,6 +65,13 @@ ${rejectedDecisions || "Ninguna hasta ahora."}
 DECISIONES APROBADAS (ya en marcha):
 ${approvedDecisions || "Ninguna hasta ahora."}
 
+SELECCIÓN INTELIGENTE DE AGENTES:
+NO llames a todos los agentes. Analiza el proyecto y selecciona SOLO los relevantes. Ejemplos:
+- Un comparador de precios local NO necesita Cross-Border Navigator
+- Un SaaS B2B NO necesita Content Strategist si no hay estrategia de contenido
+- Una automatización técnica NO necesita B2B Revenue Hunter si no hay venta activa
+Máximo 4 agentes por análisis. Sé selectivo y justifica cada exclusión.
+
 Basándote en este estado, devuelve el siguiente JSON:
 {
   "analysis": "2-3 oraciones: estado real del proyecto y el gap más importante ahora",
@@ -72,7 +79,11 @@ Basándote en este estado, devuelve el siguiente JSON:
   "targetAgentId": "uno de: strategist | revenue | navigator | infrastructure | workflow | innovation | narrative | redteam",
   "reasoning": "por qué ese agente y no otro — 1 oración",
   "priority": "high | medium | low",
-  "estimatedScope": "qué va a cubrir el análisis del agente — 1 oración"${isNewProject ? `,
+  "estimatedScope": "qué va a cubrir el análisis del agente — 1 oración",
+  "selectedAgents": ["id1", "id2", "id3"],
+  "excludedAgents": [
+    { "id": "agentId", "reason": "No aplica porque..." }
+  ]${isNewProject ? `,
   "archetype": {
     "name": "nombre descriptivo del tipo de proyecto",
     "phases": [

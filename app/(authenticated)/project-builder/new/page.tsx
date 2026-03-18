@@ -3,7 +3,7 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { Header } from "@/components/ui/header";
-import { ArrowLeft, Calendar, Tag, X, Plus, Sparkles, CheckCircle2 } from "lucide-react";
+import { ArrowLeft, Calendar, Tag, X, Plus, CheckCircle2 } from "lucide-react";
 import Link from "next/link";
 import { PROJECT_TYPES, ProjectType, PROJECT_TYPE_ORDER } from "@/lib/project-types";
 
@@ -20,51 +20,10 @@ export default function NewProjectPage() {
   const [dueDate, setDueDate] = useState("");
   const [tags, setTags] = useState<string[]>([]);
   const [tagInput, setTagInput] = useState("");
-  const [suggestingType, setSuggestingType] = useState(false);
-
   const handleAddTag = () => {
     if (tagInput.trim() && !tags.includes(tagInput.trim())) {
       setTags([...tags, tagInput.trim()]);
       setTagInput("");
-    }
-  };
-
-  const suggestProjectType = async () => {
-    if (!description.trim() && !title.trim()) return;
-    setSuggestingType(true);
-    try {
-      const res = await fetch("/api/ai", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "suggest_project_type",
-          data: {
-            content: `Analiza este proyecto y sugiere el tipo más adecuado.
-Título: ${title}
-Descripción: ${description}
-
-Tipos disponibles:
-- idea: Exploración inicial, validando hipótesis, sin desarrollo activo
-- active: En desarrollo activo, equipo trabajando, progresando hacia lanzamiento
-- operational: Ya lanzado, generando valor/ingresos, en operación
-- completed: Finalizado, archivado, objetivos cumplidos o cancelado
-
-Responde ÚNICAMENTE con una de estas palabras: idea, active, operational, completed`
-          }
-        })
-      });
-
-      if (!res.ok) throw new Error("Error");
-      const data = await res.json();
-      const suggested = data?.content?.trim().toLowerCase();
-      const validTypes: ProjectType[] = ["idea", "active", "operational", "completed"];
-      if (validTypes.includes(suggested as ProjectType)) {
-        setProjectType(suggested as ProjectType);
-      }
-    } catch {
-      // Silent fail - user can select manually
-    } finally {
-      setSuggestingType(false);
     }
   };
 
@@ -161,23 +120,10 @@ Responde ÚNICAMENTE con una de estas palabras: idea, active, operational, compl
 
               {/* Project Type */}
               <div>
-                <div className="mb-1.5 flex items-center justify-between">
+                <div className="mb-1.5">
                   <label className="ql-label">
                     Tipo de Proyecto (PM Ágil)
                   </label>
-                  <button
-                    type="button"
-                    onClick={suggestProjectType}
-                    disabled={suggestingType || (!title.trim() && !description.trim())}
-                    className="ql-btn-ghost text-xs py-1.5 px-3 disabled:opacity-40 disabled:cursor-not-allowed"
-                  >
-                    {suggestingType ? (
-                      <span className="ql-status-thinking" />
-                    ) : (
-                      <Sparkles className="h-3 w-3" />
-                    )}
-                    Sugerir con IA
-                  </button>
                 </div>
                 <div className="grid gap-2 sm:grid-cols-2">
                   {PROJECT_TYPE_ORDER.map((type) => {

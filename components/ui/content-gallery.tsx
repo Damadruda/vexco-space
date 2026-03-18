@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Link as LinkIcon, FileText, Image as ImageIcon, ExternalLink, Star, Trash2, Loader2, Search, Filter, Sparkles, X } from "lucide-react";
+import { Link as LinkIcon, FileText, Image as ImageIcon, ExternalLink, Star, Trash2, Loader2, Search, Filter } from "lucide-react";
 import Image from "next/image";
 
 type ContentType = "all" | "notes" | "links" | "images";
@@ -19,18 +19,11 @@ interface ContentItem {
   createdAt: string;
 }
 
-interface AIAnalysis {
-  item: ContentItem;
-  analysis: string;
-  loading: boolean;
-}
-
 export function ContentGallery({ projectId }: { projectId?: string }) {
   const [content, setContent] = useState<ContentItem[]>([]);
   const [loading, setLoading] = useState(true);
   const [filter, setFilter] = useState<ContentType>("all");
   const [searchQuery, setSearchQuery] = useState("");
-  const [aiAnalysis, setAiAnalysis] = useState<AIAnalysis | null>(null);
 
   useEffect(() => {
     fetchContent();
@@ -92,48 +85,6 @@ export function ContentGallery({ projectId }: { projectId?: string }) {
     }
   };
 
-  const analyzeWithAI = async (item: ContentItem) => {
-    setAiAnalysis({ item, analysis: "", loading: true });
-    
-    try {
-      const action = item.type === "note" ? "summarize_note" : "analyze_link";
-      const contentToAnalyze = item.type === "note"
-        ? `Título: ${item.title}\nContenido: ${item.content}`
-        : `URL: ${item.url}\nTítulo: ${item.title}`;
-
-      const res = await fetch("/api/ai", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action,
-          data: { content: contentToAnalyze }
-        })
-      });
-      
-      const result = await res.json();
-      let analysisText = "";
-      
-      if (result.success) {
-        if (typeof result.data === "object") {
-          const parts = [];
-          if (result.data.summary) parts.push(`**Resumen:** ${result.data.summary}`);
-          if (result.data.keyPoints) parts.push(`**Puntos clave:** ${result.data.keyPoints.join(", ")}`);
-          if (result.data.mainIdeas) parts.push(`**Ideas principales:** ${result.data.mainIdeas.join(", ")}`);
-          if (result.data.relevance) parts.push(`**Relevancia:** ${result.data.relevance}`);
-          if (result.data.suggestedActions) parts.push(`**Acciones sugeridas:** ${result.data.suggestedActions.join(", ")}`);
-          analysisText = parts.join("\n\n");
-        } else {
-          analysisText = result.data;
-        }
-      }
-      
-      setAiAnalysis({ item, analysis: analysisText || "No se pudo generar el análisis.", loading: false });
-    } catch (error) {
-      console.error("Error analyzing with AI:", error);
-      setAiAnalysis({ item, analysis: "Error al analizar el contenido.", loading: false });
-    }
-  };
-
   const filteredContent = content.filter((item) => {
     if (filter !== "all" && item.type + "s" !== filter) return false;
     if (searchQuery) {
@@ -170,40 +121,6 @@ export function ContentGallery({ projectId }: { projectId?: string }) {
 
   return (
     <div className="space-y-4">
-      {/* AI Analysis Modal */}
-      {aiAnalysis && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
-          <div className="w-full max-w-lg rounded-xl bg-white shadow-xl">
-            <div className="flex items-center justify-between border-b border-slate-200 px-6 py-4">
-              <div className="flex items-center gap-2">
-                <Sparkles className="h-5 w-5 text-amber-500" />
-                <h3 className="font-semibold text-slate-800">Análisis IA</h3>
-              </div>
-              <button onClick={() => setAiAnalysis(null)} className="text-slate-400 hover:text-slate-600">
-                <X className="h-5 w-5" />
-              </button>
-            </div>
-            <div className="p-6">
-              <div className="mb-4">
-                <span className="text-sm text-slate-500">Analizando:</span>
-                <h4 className="font-medium text-slate-800">{aiAnalysis.item.title}</h4>
-              </div>
-              {aiAnalysis.loading ? (
-                <div className="flex items-center justify-center py-8">
-                  <Loader2 className="h-8 w-8 animate-spin text-slate-400" />
-                </div>
-              ) : (
-                <div className="rounded-lg bg-slate-50 p-4">
-                  <div className="prose prose-sm max-w-none text-slate-700 whitespace-pre-wrap">
-                    {aiAnalysis.analysis}
-                  </div>
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-      )}
-
       {/* Filters */}
       <div className="flex flex-wrap items-center gap-4">
         <div className="relative flex-1">

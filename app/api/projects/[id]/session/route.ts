@@ -8,6 +8,7 @@ import {
 } from "@/lib/engine/state-machine";
 import { supervisorAnalyze } from "@/lib/engine/supervisor";
 import { buildCheckpoint } from "@/lib/engine/router";
+import { triggerRaindropSyncIfNeeded } from "@/lib/background/raindrop-sync";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -24,6 +25,9 @@ export async function POST(
 
     const body = await request.json().catch(() => ({}));
     const { additionalContext } = body as { additionalContext?: string };
+
+    // Background Raindrop sync (non-blocking — does not delay the session)
+    void triggerRaindropSyncIfNeeded(userId);
 
     // Create session + transition to supervisor_thinking
     const session = createSession(projectId, userId);

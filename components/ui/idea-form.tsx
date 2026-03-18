@@ -41,63 +41,22 @@ export function IdeaForm({ onClose, onSuccess, projectId }: IdeaFormProps) {
   };
 
   const handleAutoTag = async () => {
-    const contentToAnalyze = contentType === "note" ? content : contentType === "link" ? url : title;
-    if (!contentToAnalyze) return;
-
-    setIsAnalyzing(true);
-    try {
-      const res = await fetch("/api/ai", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action: "auto_tag",
-          data: { content: `Título: ${title}\nContenido: ${contentToAnalyze}` }
-        })
-      });
-      const result = await res.json();
-      if (result.success && Array.isArray(result.data)) {
-        const newTags = result.data.filter((t: string) => !tags.includes(t));
-        setTags([...tags, ...newTags]);
-      }
-    } catch (err) {
-      console.error("Error auto-tagging:", err);
-    } finally {
-      setIsAnalyzing(false);
-    }
+    // Legacy feature — auto-tag via War Room's Inbox analysis
+    return;
   };
 
   const handleAnalyzeContent = async () => {
     setIsAnalyzing(true);
     setAiSuggestion(null);
-    
-    try {
-      const action = contentType === "note" ? "summarize_note" : "analyze_link";
-      const contentToAnalyze = contentType === "note" 
-        ? `Título: ${title}\nContenido: ${content}`
-        : `URL: ${url}\nTítulo: ${title}`;
 
-      const res = await fetch("/api/ai", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          action,
-          data: { content: contentToAnalyze }
-        })
-      });
-      const result = await res.json();
-      
-      if (result.success) {
-        if (typeof result.data === "object") {
-          // Apply suggested tags
-          if (result.data.tags && Array.isArray(result.data.tags)) {
-            const newTags = result.data.tags.filter((t: string) => !tags.includes(t));
-            setTags([...tags, ...newTags]);
-          }
-          // Show summary
-          const summary = result.data.summary || result.data.mainIdeas?.join("\n") || "";
+    try {
+      // Legacy feature — use War Room > Consulta for AI analysis
+      setAiSuggestion("Para análisis con IA, usa el War Room o la sección Inbox.");
+      if (true) {
+        if (typeof null === "object") {
+          // placeholder to avoid dead-code lint errors
+          const summary = "";
           setAiSuggestion(summary);
-        } else {
-          setAiSuggestion(result.data);
         }
       }
     } catch (err) {

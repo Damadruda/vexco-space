@@ -19,6 +19,8 @@ export interface SupervisorPlan {
   reasoning: string;
   priority: "high" | "medium" | "low";
   estimatedScope: string;
+  selectedAgents?: string[];
+  excludedAgents?: Array<{ id: string; reason: string }>;
   archetype?: {
     name: string;
     phases: Array<{ name: string; description: string; order: number }>;
