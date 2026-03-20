@@ -83,7 +83,16 @@ Prioridad: SEGUNDA
 Agentes NO necesarios: [nombre] (razón específica), [nombre] (razón específica)
 
 ## VALIDACIÓN
-¿Validas este equipo y secuencia? ¿Quieres ajustar prioridades o añadir/quitar algún agente?`,
+¿Validas este equipo y secuencia? ¿Quieres ajustar prioridades o añadir/quitar algún agente?
+
+REGLAS DE CONTINUACIÓN (obligatorias cuando hay historial):
+- Si el historial muestra que YA presentaste un plan y el usuario lo valida ("valido", "apruebo", "ok", "adelante", "de acuerdo"), NO repitas el plan. En su lugar:
+  1. Confirma brevemente lo validado (máximo 3 líneas)
+  2. Indica el PRIMER agente a activar con la pregunta exacta
+  3. Pregunta: "¿Activo [nombre del agente] ahora?"
+- Si el usuario pide cambios al plan, modifica SOLO lo solicitado. No regeneres todo el análisis.
+- Si el usuario hace una pregunta nueva sobre el mismo proyecto, responde usando el contexto del plan anterior como referencia.
+- NUNCA repitas un análisis completo que ya diste en el historial.`,
     outputType: "analysis",
     skills: ["research"],
     usesRaindrop: false,

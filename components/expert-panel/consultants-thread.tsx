@@ -72,6 +72,51 @@ export function ConsultantsThread({
     threadEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
 
+  // ── 4A: Load persisted messages on mount ──────────────────────────────────
+  useEffect(() => {
+    if (!projectId) return;
+    fetch(`/api/projects/${projectId}/messages`)
+      .then((r) => r.ok ? r.json() : null)
+      .then((data) => {
+        if (!data?.messages || data.messages.length === 0) return;
+        const loaded: ThreadMessage[] = data.messages.map(
+          (m: { id: string; role: string; content: string; agentId?: string; agentName?: string }) => {
+            if (m.role === "user") {
+              return { id: m.id, role: "user" as const, content: m.content };
+            }
+            return {
+              id: m.id,
+              expertId: m.agentId ?? activeExpert.id,
+              content: m.content,
+              loading: false,
+            } as ExpertMessage;
+          }
+        );
+        setMessages(loaded);
+      })
+      .catch(() => {/* silently ignore */});
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [projectId]);
+
+  // ── 4B: Persist a single message to the DB ────────────────────────────────
+  const persistMessage = async (
+    role: string,
+    content: string,
+    agentId?: string,
+    agentName?: string
+  ): Promise<void> => {
+    if (!projectId) return;
+    try {
+      await fetch(`/api/projects/${projectId}/messages`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ role, content, agentId, agentName }),
+      });
+    } catch {
+      /* fire-and-forget — do not block UI */
+    }
+  };
+
   // ── Core: call individual agent via /api/agents/chat ──────────────────────
   const callAgent = async (
     expert: Expert,
@@ -79,6 +124,17 @@ export function ConsultantsThread({
     msgId: string
   ): Promise<void> => {
     try {
+      // Build conversationHistory from current messages (4D)
+      const conversationHistory = messages
+        .filter((m) => !("loading" in m && (m as ExpertMessage).loading))
+        .map((m) => {
+          if ("role" in m && m.role === "user") {
+            return { role: "user", content: m.content };
+          }
+          const em = m as ExpertMessage;
+          return { role: "assistant", content: em.content, agentId: em.expertId };
+        });
+
       const res = await fetch("/api/agents/chat", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -86,6 +142,7 @@ export function ConsultantsThread({
           agentId: expert.id,
           message: prompt,
           ...(projectId ? { projectId } : {}),
+          ...(conversationHistory.length > 0 ? { conversationHistory } : {}),
         }),
       });
 
@@ -101,6 +158,9 @@ export function ConsultantsThread({
             : m
         )
       );
+
+      // 4C: Persist agent response
+      persistMessage("assistant", content, expert.id, expert.name);
     } catch {
       setMessages((prev) =>
         prev.map((m) =>
@@ -133,6 +193,9 @@ export function ConsultantsThread({
       ...prev,
       { id: `user-${Date.now()}`, role: "user", content: prompt },
     ]);
+
+    // 4C: Persist user message
+    persistMessage("user", prompt);
 
     const expert = activeExpert ?? EXPERTS[0];
     const msgId = addExpertPlaceholder(expert);

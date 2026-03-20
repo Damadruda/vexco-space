@@ -91,10 +91,15 @@ export async function POST(request: NextRequest) {
     const userId = await getDefaultUserId();
 
     const body = await request.json();
-    const { agentId, message, projectId } = body as {
+    const { agentId, message, projectId, conversationHistory } = body as {
       agentId: string;
       message: string;
       projectId?: string;
+      conversationHistory?: Array<{
+        role: string;
+        content: string;
+        agentId?: string;
+      }>;
     };
 
     if (!agentId || !message) {
@@ -176,9 +181,23 @@ Selecciona 2-4 agentes. Ordena por prioridad (1 = activar primero).`
       .filter(Boolean)
       .join("\n");
 
+    let historyBlock = "";
+    if (conversationHistory && conversationHistory.length > 0) {
+      const recent = conversationHistory.slice(-6);
+      historyBlock =
+        "HISTORIAL RECIENTE DE ESTA CONVERSACIÓN:\n" +
+        recent
+          .map((m) => {
+            const prefix = m.role === "user" ? "USUARIO" : `AGENTE (${m.agentId ?? "unknown"})`;
+            return `${prefix}: ${m.content.substring(0, 800)}`;
+          })
+          .join("\n\n") +
+        "\n\n---\nNUEVO MENSAJE DEL USUARIO:\n";
+    }
+
     const userPrompt = projectContext
-      ? `${projectContext}\n\nMENSAJE DEL USUARIO:\n${message}`
-      : message;
+      ? `${projectContext}\n\n${historyBlock}${message}`
+      : `${historyBlock}${message}`;
 
     // ── Call LLM ──────────────────────────────────────────────────────────
     const llmResponse = await callLLM({

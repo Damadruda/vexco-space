@@ -198,6 +198,7 @@ model Project {
   roadmapTimelines RoadmapTimeline[]
   decisionLogs     DecisionLog[]
   warRoomSessions  WarRoomSession[]
+  chatMessages     ChatMessage[]
 
   @@index([userId])
   @@index([status])
@@ -351,7 +352,14 @@ model ChatMessage {
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
 
+  // ── Sprint B: War Room persistence ──
+  projectId String?
+  project   Project? @relation(fields: [projectId], references: [id], onDelete: SetNull)
+  agentId   String?
+  agentName String?
+
   @@index([userId])
+  @@index([projectId, createdAt])
 }
 
 // =============================================================================
