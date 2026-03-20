@@ -26,21 +26,25 @@ export interface LLMResponse {
   tokensUsed?: number;
 }
 
-// ─── Gemini Flash ─────────────────────────────────────────────────────────────
+// ─── Gemini (Pro + Flash with retry/fallback) ─────────────────────────────────
 
 async function callGemini(
   systemPrompt: string,
   userPrompt: string,
   jsonMode: boolean,
   maxTokens?: number,
-  temperature?: number
+  temperature?: number,
+  modelOverride?: string
 ): Promise<{ content: string; tokensUsed?: number }> {
   const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
   if (!apiKey) throw new Error("GOOGLE_GENERATIVE_AI_API_KEY no configurada");
 
+  const modelName = modelOverride ?? "gemini-2.5-pro";
+  const timeoutMs = modelName.includes("flash") ? 25_000 : 55_000;
+
   const genAI = new GoogleGenerativeAI(apiKey);
   const model = genAI.getGenerativeModel({
-    model: "gemini-2.5-pro",
+    model: modelName,
     generationConfig: {
       ...(jsonMode ? { responseMimeType: "application/json" } : {}),
       ...(maxTokens ? { maxOutputTokens: maxTokens } : {}),
@@ -52,15 +56,33 @@ async function callGemini(
     ? `${systemPrompt}\n\n${userPrompt}`
     : userPrompt;
 
-  const timeoutPromise = new Promise<never>((_, reject) =>
-    setTimeout(() => reject(new Error("Gemini timeout after 55s")), 55_000)
-  );
+  // Hasta 2 intentos con el modelo actual
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(() => reject(new Error(`Gemini timeout after ${timeoutMs / 1000}s`)), timeoutMs)
+      );
+      const result = await Promise.race([model.generateContent(fullPrompt), timeoutPromise]);
+      const text = result.response.text();
+      const cleaned = text.replace(/```json\n?|\n?```/g, "").trim();
 
-  const result = await Promise.race([model.generateContent(fullPrompt), timeoutPromise]);
-  const text = result.response.text();
-  const cleaned = text.replace(/```json\n?|\n?```/g, "").trim();
+      if (!cleaned) throw new Error("Gemini returned empty response");
 
-  return { content: cleaned };
+      return { content: cleaned };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[GEMINI] ${modelName} attempt ${attempt} failed: ${msg}`);
+      if (attempt < 2) await new Promise((r) => setTimeout(r, 2_000));
+    }
+  }
+
+  // Fallback Pro → Flash
+  if (!modelOverride && modelName === "gemini-2.5-pro") {
+    console.warn("[GEMINI] Pro failed twice, falling back to gemini-2.5-flash");
+    return callGemini(systemPrompt, userPrompt, jsonMode, maxTokens, temperature, "gemini-2.5-flash");
+  }
+
+  throw new Error(`Gemini ${modelName} failed after all retries`);
 }
 
 // ─── Claude Sonnet ────────────────────────────────────────────────────────────
