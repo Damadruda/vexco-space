@@ -212,9 +212,11 @@ Selecciona 2-4 agentes. Ordena por prioridad (1 = activar primero).`
     if (error instanceof Error && error.message === "No autenticado") {
       return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
     }
-    console.error("[AGENTS/CHAT] Error:", error);
+    const errMsg = error instanceof Error ? error.message : String(error);
+    const errStack = error instanceof Error ? error.stack?.substring(0, 300) : "";
+    console.error("[AGENTS/CHAT] Error:", errMsg, errStack);
     return NextResponse.json(
-      { error: "LLM error. Try again." },
+      { error: `LLM error: ${errMsg}` },
       { status: 500 }
     );
   }

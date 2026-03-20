@@ -53,7 +53,7 @@ async function callGemini(
     : userPrompt;
 
   const timeoutPromise = new Promise<never>((_, reject) =>
-    setTimeout(() => reject(new Error("Gemini timeout after 30s")), 30_000)
+    setTimeout(() => reject(new Error("Gemini timeout after 55s")), 55_000)
   );
 
   const result = await Promise.race([model.generateContent(fullPrompt), timeoutPromise]);
