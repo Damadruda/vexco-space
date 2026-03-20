@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { Link as LinkIcon, FileText, Image as ImageIcon, ExternalLink, Star, Trash2, Loader2, Search, Filter } from "lucide-react";
+import { Link as LinkIcon, FileText, Image as ImageIcon, ExternalLink, Star, Trash2, Loader2, Search, Filter, Sparkles } from "lucide-react";
 import Image from "next/image";
 
 type ContentType = "all" | "notes" | "links" | "images";
