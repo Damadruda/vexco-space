@@ -260,12 +260,9 @@ export function ConsultantsThread({
           {messages.length === 0 && (
             <div className="flex flex-col items-center justify-center h-full text-center py-16">
               <div className="flex -space-x-2 mb-6">
-                {EXPERTS.slice(0, 5).map((e) => (
+                {EXPERTS.map((e) => (
                   <ExpertAvatar key={e.id} expert={e} size="lg" showRing />
                 ))}
-                <div className="flex h-11 w-11 items-center justify-center rounded-full bg-ql-cream ring-2 ring-white text-xs font-medium text-ql-muted">
-                  +3
-                </div>
               </div>
               <h3 className="ql-h3 mb-2">{activeExpert.name} en línea</h3>
               <p className="ql-body max-w-sm">
@@ -295,8 +292,17 @@ export function ConsultantsThread({
 
             // ── Expert message ────────────────────────────────────────────
             const dm = msg as ExpertMessage;
-            const expert = EXPERTS.find((e) => e.id === dm.expertId);
-            if (!expert) return null;
+            const expert = EXPERTS.find((e) => e.id === dm.expertId) || {
+              id: dm.expertId,
+              name: dm.expertId,
+              role: "Agente anterior",
+              initials: dm.expertId.substring(0, 2).toUpperCase(),
+              bgColor: "bg-ql-charcoal",
+              textColor: "text-ql-charcoal",
+              ringColor: "ring-ql-sand/40",
+              focus: "",
+              persona: "",
+            };
 
             return (
               <div
@@ -317,7 +323,7 @@ export function ConsultantsThread({
                         <span className="ql-status-thinking" />
                         <span className="ql-loading">Analizando…</span>
                       </div>
-                    ) : dm.expertId === "strategist" ? (
+                    ) : (
                       <div className="prose prose-sm prose-neutral max-w-none text-ql-slate
                         prose-headings:font-medium prose-headings:text-ql-charcoal prose-headings:text-sm prose-headings:mt-4 prose-headings:mb-1
                         prose-p:leading-relaxed prose-p:my-1
@@ -325,10 +331,6 @@ export function ConsultantsThread({
                         prose-hr:border-ql-sand/30">
                         <ReactMarkdown>{dm.content}</ReactMarkdown>
                       </div>
-                    ) : (
-                      <p className="text-sm text-ql-slate leading-relaxed whitespace-pre-wrap">
-                        {dm.content}
-                      </p>
                     )}
                   </div>
 

@@ -99,7 +99,7 @@ Devuelve SOLO este JSON:
     temperature: 0.3,
   });
 
-  let selectedAgents = ["revenue", "redteam", "navigator"];
+  let selectedAgents = ["revenue", "redteam", "infrastructure"];
   try {
     const parsed = JSON.parse(response.content) as { selectedAgents?: string[] };
     if (Array.isArray(parsed.selectedAgents) && parsed.selectedAgents.length >= 2) {
