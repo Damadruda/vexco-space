@@ -509,10 +509,13 @@ export function ConsultantsThread({
                    dm.content.toUpperCase().includes("SPRINT 0") && (
                     <div className="mt-2">
                       {convertedMsgIds.has(dm.id) ? (
-                        <span className="inline-flex items-center gap-1.5 text-xs text-ql-muted">
+                        <a
+                          href={`/project-builder/${projectId}/agile`}
+                          className="inline-flex items-center gap-1.5 text-xs text-ql-slate hover:text-ql-charcoal underline underline-offset-2 transition-colors"
+                        >
                           <Check className="h-3.5 w-3.5" />
-                          Tareas creadas en Agile Board
-                        </span>
+                          Tareas creadas — Ver en Agile Board →
+                        </a>
                       ) : (
                         <button
                           onClick={() => convertToTasks(dm.id, dm.content)}
