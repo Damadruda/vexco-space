@@ -342,41 +342,72 @@ function ItemCard({
             </div>
           )}
 
-          {/* Project linker — visible siempre que el item esté expandido */}
-          <div className="flex items-center gap-2 pt-2 border-t border-ql-sand/20">
-            <span className="ql-caption shrink-0">Vincular a proyecto:</span>
-            <select
-              value={item.projectId ?? ""}
-              onChange={async (e) => {
-                const val = e.target.value || null;
-                setLinking(true);
-                try {
-                  const res = await fetch(`/api/inbox/${item.id}/link-project`, {
-                    method: "PATCH",
-                    headers: { "Content-Type": "application/json" },
-                    body: JSON.stringify({ projectId: val }),
-                  });
-                  if (res.ok) onLinked(item.id, val);
-                } catch {}
-                setLinking(false);
-              }}
-              disabled={linking}
-              className="ql-input text-xs py-1 flex-1 max-w-xs"
-            >
-              <option value="">Sin proyecto</option>
-              {projects.map(p => (
-                <option key={p.id} value={p.id}>{p.title}</option>
-              ))}
-            </select>
-            {item.projectId && (
-              <a
-                href={`/project-builder/${item.projectId}/war-room`}
-                className="text-xs text-ql-accent hover:text-ql-charcoal"
+          {/* Category selector */}
+          {analysis && (
+            <div className="flex items-center gap-2 pt-2 border-t border-ql-sand/20">
+              <span className="ql-caption shrink-0">Categoría:</span>
+              <select
+                value={analysis.category}
+                onChange={async (e) => {
+                  const newCat = e.target.value;
+                  try {
+                    const res = await fetch(`/api/inbox/${item.id}/recategorize`, {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ category: newCat }),
+                    });
+                    if (res.ok) {
+                      onAnalyzed(item.id, { ...analysis, category: newCat });
+                    }
+                  } catch {}
+                }}
+                className="ql-input text-xs py-1 max-w-[180px]"
               >
-                Ir al War Room →
-              </a>
-            )}
-          </div>
+                <option value="project">🎯 Project (1 proyecto)</option>
+                <option value="trend">📈 Trend (cross-project)</option>
+                <option value="discovery">💡 Discovery (cross-project)</option>
+                <option value="noise">⏸ Noise (pendiente)</option>
+              </select>
+            </div>
+          )}
+
+          {/* Project linker — solo visible cuando categoría es "project" */}
+          {analysis?.category === "project" && (
+            <div className="flex items-center gap-2 pt-2 border-t border-ql-sand/20">
+              <span className="ql-caption shrink-0">Vincular a proyecto:</span>
+              <select
+                value={item.projectId ?? ""}
+                onChange={async (e) => {
+                  const val = e.target.value || null;
+                  setLinking(true);
+                  try {
+                    const res = await fetch(`/api/inbox/${item.id}/link-project`, {
+                      method: "PATCH",
+                      headers: { "Content-Type": "application/json" },
+                      body: JSON.stringify({ projectId: val }),
+                    });
+                    if (res.ok) onLinked(item.id, val);
+                  } catch {}
+                  setLinking(false);
+                }}
+                disabled={linking}
+                className="ql-input text-xs py-1 flex-1 max-w-xs"
+              >
+                <option value="">Sin proyecto</option>
+                {projects.map(p => (
+                  <option key={p.id} value={p.id}>{p.title}</option>
+                ))}
+              </select>
+              {item.projectId && (
+                <a
+                  href={`/project-builder/${item.projectId}/war-room`}
+                  className="text-xs text-ql-accent hover:text-ql-charcoal"
+                >
+                  Ir al War Room →
+                </a>
+              )}
+            </div>
+          )}
         </div>
       )}
     </div>
