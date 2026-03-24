@@ -181,6 +181,28 @@ export function ConsultantsThread({
     return msgId;
   };
 
+  // ── Activate agent from panel + auto-send suggested question ─────────────
+  const handleActivateAgent = async (agentId: string, question: string) => {
+    if (onActivateAgent) {
+      onActivateAgent(agentId, question);
+    }
+
+    await new Promise(r => setTimeout(r, 100));
+
+    const userMsgId = `user-${Date.now()}`;
+    setMessages(prev => [...prev, { id: userMsgId, role: "user" as const, content: question }]);
+
+    persistMessage("user", question);
+
+    const newExpert = EXPERTS.find(e => e.id === agentId) || EXPERTS[0];
+    const msgId = `${agentId}-${Date.now()}-${Math.random()}`;
+    setMessages(prev => [...prev, { id: msgId, expertId: agentId, content: "", loading: true }]);
+    setIsLoading(true);
+
+    await callAgent(newExpert, question, msgId);
+    setIsLoading(false);
+  };
+
   // ── Send message → active expert ──────────────────────────────────────────
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -364,7 +386,7 @@ export function ConsultantsThread({
                                 {onActivateAgent && (
                                   <button
                                     onClick={() =>
-                                      onActivateAgent(agent.agentId, agent.suggestedQuestion)
+                                      handleActivateAgent(agent.agentId, agent.suggestedQuestion)
                                     }
                                     className="shrink-0 inline-flex items-center gap-1 text-[11px] border border-ql-charcoal/20 px-2.5 py-1 text-ql-slate hover:bg-ql-charcoal hover:text-white hover:border-ql-charcoal transition-colors"
                                   >
