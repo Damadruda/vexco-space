@@ -92,6 +92,33 @@ async function buildProjectContext(memory: Record<string, unknown>, projectId?: 
     } catch {
       // continue without inbox context
     }
+
+    // Items cross-project: trend y discovery de alta relevancia
+    try {
+      const crossItems = await prisma.inboxItem.findMany({
+        where: {
+          projectId: null,
+          status: "processed",
+          analysis: {
+            category: { in: ["trend", "discovery"] },
+            relevanceScore: { gte: 0.5 },
+          },
+        },
+        include: { analysis: true },
+        orderBy: { createdAt: "desc" },
+        take: 5,
+      });
+      if (crossItems.length > 0) {
+        const crossLines = crossItems.map(item => {
+          const title = item.sourceTitle || item.rawContent.slice(0, 60);
+          const cat = item.analysis?.category ?? "unknown";
+          const summary = item.analysis?.summary ? ` — ${item.analysis.summary.slice(0, 120)}` : "";
+          return `  - [${cat}] ${title}${summary}`;
+        }).join("\n");
+        inboxLines += (inboxLines ? "\n" : "") +
+          `- Conocimiento cross-project (${crossItems.length} items trend/discovery):\n${crossLines}`;
+      }
+    } catch {}
   }
 
   return [

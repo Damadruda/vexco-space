@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { Header } from "@/components/ui/header";
 import { StatCard } from "@/components/ui/stat-card";
 import { KanbanBoard } from "@/components/ui/kanban-board";
-import { FolderKanban, Lightbulb, FileText, Link as LinkIcon, Image as ImageIcon, TrendingUp, ArrowRight, Swords, CloudDownload, Plus } from "lucide-react";
+import { FolderKanban, Lightbulb, FileText, Link as LinkIcon, Image as ImageIcon, TrendingUp, ArrowRight, Swords, CloudDownload, Plus, Inbox, Sparkles } from "lucide-react";
 import Link from "next/link";
 import { DriveFolderAnalyzer } from "@/components/ui/drive-folder-analyzer";
 import { PROJECT_TYPES, PROJECT_TYPE_ORDER, ProjectType } from "@/lib/project-types";
@@ -27,6 +27,9 @@ interface Stats {
   totalLinks: number;
   totalImages: number;
   totalContent: number;
+  tasksByProject?: Record<string, { total: number; done: number }>;
+  inboxTotal?: number;
+  inboxUnprocessed?: number;
 }
 
 export default function DashboardPage() {
@@ -191,39 +194,39 @@ export default function DashboardPage() {
           <KanbanBoard />
         </div>
 
-        {/* Content Summary */}
+        {/* Inbox Summary */}
         {!loading && stats && (
           <div>
-            <p className="ql-label mb-2">Contenido capturado</p>
-            <h3 className="ql-h3 mb-6">Tu repositorio de conocimiento</h3>
+            <p className="ql-label mb-2">Intelligence feed</p>
+            <h3 className="ql-h3 mb-6">Raindrop Inbox</h3>
             <div className="grid gap-4 sm:grid-cols-3">
-              <div className="ql-card">
+              <Link href="/inbox" className="ql-card group hover:border-ql-charcoal/30 transition-colors">
                 <div className="flex items-center gap-4">
-                  <FileText className="h-4 w-4 text-ql-muted" strokeWidth={1.5} />
+                  <Inbox className="h-4 w-4 text-ql-muted" strokeWidth={1.5} />
                   <div>
-                    <p className="ql-h2">{stats.totalNotes}</p>
-                    <p className="ql-body">Notas guardadas</p>
+                    <p className="ql-h2">{stats.inboxTotal ?? 0}</p>
+                    <p className="ql-body">Items totales</p>
                   </div>
                 </div>
-              </div>
-              <div className="ql-card">
+              </Link>
+              <Link href="/inbox?status=unprocessed" className="ql-card group hover:border-ql-charcoal/30 transition-colors">
                 <div className="flex items-center gap-4">
-                  <LinkIcon className="h-4 w-4 text-ql-muted" strokeWidth={1.5} />
+                  <Sparkles className="h-4 w-4 text-ql-muted" strokeWidth={1.5} />
                   <div>
-                    <p className="ql-h2">{stats.totalLinks}</p>
-                    <p className="ql-body">Links capturados</p>
+                    <p className="ql-h2">{stats.inboxUnprocessed ?? 0}</p>
+                    <p className="ql-body">Sin procesar</p>
                   </div>
                 </div>
-              </div>
-              <div className="ql-card">
+              </Link>
+              <Link href="/war-room" className="ql-card group hover:border-ql-charcoal/30 transition-colors">
                 <div className="flex items-center gap-4">
-                  <ImageIcon className="h-4 w-4 text-ql-muted" strokeWidth={1.5} />
+                  <Swords className="h-4 w-4 text-ql-muted" strokeWidth={1.5} />
                   <div>
-                    <p className="ql-h2">{stats.totalImages}</p>
-                    <p className="ql-body">Imágenes subidas</p>
+                    <p className="ql-h2">4</p>
+                    <p className="ql-body">Agentes activos</p>
                   </div>
                 </div>
-              </div>
+              </Link>
             </div>
           </div>
         )}

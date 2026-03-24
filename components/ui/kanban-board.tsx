@@ -28,9 +28,24 @@ export function KanbanBoard() {
   const [projects, setProjects] = useState<Project[]>([]);
   const [loading, setLoading] = useState(true);
   const [draggedProject, setDraggedProject] = useState<string | null>(null);
+  const [tasksByProject, setTasksByProject] = useState<Record<string, { total: number; done: number }>>({});
 
   useEffect(() => {
     fetchProjects();
+    fetch("/api/agile")
+      .then(r => r.json())
+      .then(data => {
+        const tasks = data.tasks ?? [];
+        const grouped: Record<string, { total: number; done: number }> = {};
+        for (const t of tasks) {
+          if (!t.projectId) continue;
+          if (!grouped[t.projectId]) grouped[t.projectId] = { total: 0, done: 0 };
+          grouped[t.projectId].total++;
+          if (t.status === "done") grouped[t.projectId].done++;
+        }
+        setTasksByProject(grouped);
+      })
+      .catch(() => {});
   }, []);
 
   const fetchProjects = async () => {
@@ -138,6 +153,7 @@ export function KanbanBoard() {
                     {...project}
                     isDragging={draggedProject === project.id}
                     onDelete={handleDelete}
+                    taskProgress={tasksByProject[project.id] ?? null}
                   />
                 </div>
               ))}

@@ -8,7 +8,7 @@ export async function GET(request: NextRequest) {
   try {
     const userId = await getDefaultUserId();
 
-    const [projectCounts, projectTypeCounts, totalNotes, totalLinks, totalImages] = await Promise.all([
+    const [projectCounts, projectTypeCounts, totalNotes, totalLinks, totalImages, taskStats, doneTaskStats, inboxTotal, inboxUnprocessed] = await Promise.all([
       prisma.project.groupBy({
         by: ["status"],
         where: { userId },
@@ -21,7 +21,19 @@ export async function GET(request: NextRequest) {
       }),
       prisma.note.count({ where: { userId } }),
       prisma.link.count({ where: { userId } }),
-      prisma.image.count({ where: { userId } })
+      prisma.image.count({ where: { userId } }),
+      prisma.agileTask.groupBy({
+        by: ["projectId"],
+        _count: { id: true },
+        where: { projectId: { not: null } },
+      }),
+      prisma.agileTask.groupBy({
+        by: ["projectId"],
+        _count: { id: true },
+        where: { projectId: { not: null }, status: "done" },
+      }),
+      prisma.inboxItem.count({ where: { userId } }),
+      prisma.inboxItem.count({ where: { userId, status: "unprocessed" } }),
     ]);
 
     const stats = {
@@ -41,7 +53,15 @@ export async function GET(request: NextRequest) {
       totalNotes,
       totalLinks,
       totalImages,
-      totalContent: totalNotes + totalLinks + totalImages
+      totalContent: totalNotes + totalLinks + totalImages,
+      tasksByProject: Object.fromEntries(
+        taskStats.map(t => [t.projectId, {
+          total: t._count.id,
+          done: doneTaskStats.find(d => d.projectId === t.projectId)?._count.id ?? 0,
+        }])
+      ),
+      inboxTotal,
+      inboxUnprocessed,
     };
 
     return NextResponse.json({ stats });

@@ -19,6 +19,7 @@ interface ProjectCardProps {
   onDelete?: (id: string) => void;
   onStatusChange?: (id: string, status: string) => void;
   isDragging?: boolean;
+  taskProgress?: { total: number; done: number } | null;
 }
 
 const priorityLabels: Record<string, string> = {
@@ -38,7 +39,8 @@ export function ProjectCard({
   priority,
   dueDate,
   onDelete,
-  isDragging
+  isDragging,
+  taskProgress,
 }: ProjectCardProps) {
   const [showMenu, setShowMenu] = useState(false);
 
@@ -53,19 +55,24 @@ export function ProjectCard({
     ? PROJECT_TYPES[projectType as ProjectType]
     : null;
 
+  const realProgress = taskProgress && taskProgress.total > 0
+    ? Math.round((taskProgress.done / taskProgress.total) * 100)
+    : progress;
+
   return (
-    <div
-      className={`group relative border border-gray-200 bg-white p-4 transition-all hover:border-gray-300 ${
+    <Link
+      href={`/project-builder/${id}`}
+      className={`group relative block border border-gray-200 bg-white p-4 transition-all hover:border-gray-300 hover:shadow-sm ${
         isDragging ? "rotate-2 scale-105 shadow-lg border-gray-400" : ""
       }`}
     >
       {/* Header */}
       <div className="mb-2 flex items-start justify-between">
         <div className="flex-1 min-w-0">
-          <Link href={`/project-builder/${id}`} className="group/link flex items-center gap-1">
-            <h3 className="font-medium text-gray-800 line-clamp-2 group-hover/link:text-gray-600">{title}</h3>
-            <ArrowRight className="h-3 w-3 shrink-0 opacity-0 transition-all group-hover/link:opacity-100 group-hover/link:translate-x-0.5" />
-          </Link>
+          <div className="flex items-center gap-1">
+            <h3 className="font-medium text-gray-800 line-clamp-2 group-hover:text-gray-600">{title}</h3>
+            <ArrowRight className="h-3 w-3 shrink-0 opacity-0 transition-all group-hover:opacity-100 group-hover:translate-x-0.5" />
+          </div>
           <div className="mt-1 flex items-center gap-2 flex-wrap">
             {typeInfo && (
               <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs font-medium ${typeInfo.bgColor} ${typeInfo.color}`}>
@@ -124,12 +131,12 @@ export function ProjectCard({
       <div className="mb-3">
         <div className="mb-1.5 flex items-center justify-between text-xs">
           <span className="text-gray-400">Progreso</span>
-          <span className="font-medium text-gray-600">{progress}%</span>
+          <span className="font-medium text-gray-600">{realProgress}%</span>
         </div>
         <div className="h-1 w-full overflow-hidden bg-gray-100">
           <div
             className="h-full bg-gray-800 transition-all"
-            style={{ width: `${progress}%` }}
+            style={{ width: `${realProgress}%` }}
           />
         </div>
       </div>
@@ -163,6 +170,6 @@ export function ProjectCard({
           </span>
         )}
       </div>
-    </div>
+    </Link>
   );
 }
