@@ -2,10 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { getDefaultUserId } from "@/lib/get-default-user";
 import { prisma } from "@/lib/db";
 import { jinaClient } from "@/lib/clients/jina";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { callLLM } from "@/lib/clients/llm";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 30;
+export const maxDuration = 60;
 
 const ANALYSIS_PROMPT = (
   sourceTitle: string,
@@ -41,14 +41,6 @@ export async function POST(
   try {
     const userId = await getDefaultUserId();
 
-    const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-    if (!apiKey) {
-      return NextResponse.json(
-        { error: "GOOGLE_GENERATIVE_AI_API_KEY no configurada en el servidor" },
-        { status: 500 }
-      );
-    }
-
     const item = await prisma.inboxItem.findFirst({
       where: { id: params.id, userId },
       include: { analysis: true },
@@ -80,17 +72,22 @@ export async function POST(
       }
     }
 
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
-
     const prompt = ANALYSIS_PROMPT(
       item.sourceTitle ?? item.rawContent.slice(0, 80),
       item.sourceUrl ?? "",
       content
     );
 
-    const result = await model.generateContent(prompt);
-    const responseText = result.response.text();
+    const llmResponse = await callLLM({
+      model: "gemini-flash",
+      systemPrompt: "Eres un analista estratégico. Devuelve SOLO JSON válido, sin markdown ni explicaciones.",
+      userPrompt: prompt,
+      jsonMode: true,
+      temperature: 0.3,
+      maxTokens: 2048,
+    });
+
+    const responseText = llmResponse.content;
 
     const processingTimeMs = Date.now() - processingStart;
 
@@ -122,7 +119,7 @@ export async function POST(
         sentiment: aiData.sentiment,
         relevanceScore: aiData.relevanceScore,
         rawAiResponse: responseText,
-        modelUsed: "gemini-2.5-pro",
+        modelUsed: llmResponse.model,
         processingTimeMs,
       },
       update: {
@@ -133,7 +130,7 @@ export async function POST(
         sentiment: aiData.sentiment,
         relevanceScore: aiData.relevanceScore,
         rawAiResponse: responseText,
-        modelUsed: "gemini-2.5-pro",
+        modelUsed: llmResponse.model,
         processingTimeMs,
         updatedAt: new Date(),
       },
