@@ -41,6 +41,40 @@ interface ConsultantsThreadProps {
   onActivateAgent?: (agentId: string, question: string) => void;
 }
 
+// ─── Helpers ─────────────────────────────────────────────────────────────────
+
+function parseAgentsFromContent(content: string): AssignedAgent[] {
+  const agents: AssignedAgent[] = [];
+  const EXPERT_IDS: Record<string, string> = {
+    "revenue & growth": "revenue",
+    "revenue": "revenue",
+    "product & tech": "infrastructure",
+    "product": "infrastructure",
+    "challenger": "redteam",
+    "strategist": "strategist",
+  };
+
+  const regex = /\*?\*?([\w\s&]+?)\*?\*?\s*—\s*Misión:\s*([^\n]+?)\.?\s*Pregunta inicial:\s*"([^"]+)"\s*(?:Prioridad:\s*(\d+))?/gi;
+  let match;
+  let priority = 1;
+
+  while ((match = regex.exec(content)) !== null) {
+    const name = match[1].trim().toLowerCase();
+    const agentId = EXPERT_IDS[name];
+    if (agentId && agentId !== "strategist") {
+      agents.push({
+        agentId,
+        mission: match[2].trim(),
+        suggestedQuestion: match[3].trim(),
+        priority: match[4] ? parseInt(match[4]) : priority,
+      });
+      priority++;
+    }
+  }
+
+  return agents;
+}
+
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const SAVE_CONFIG: Record<SaveType, { label: string; icon: React.ElementType }> = {
@@ -65,6 +99,8 @@ export function ConsultantsThread({
   const [saveTitle, setSaveTitle] = useState("");
   const [saving, setSaving] = useState(false);
   const [savedType, setSavedType] = useState<SaveType | null>(null);
+  const [convertedMsgIds, setConvertedMsgIds] = useState<Set<string>>(new Set());
+  const [converting, setConverting] = useState(false);
 
   const threadEndRef = useRef<HTMLDivElement>(null);
 
@@ -84,11 +120,18 @@ export function ConsultantsThread({
             if (m.role === "user") {
               return { id: m.id, role: "user" as const, content: m.content };
             }
+
+            let assignedAgents: AssignedAgent[] = [];
+            if (m.agentId === "strategist" && m.content) {
+              assignedAgents = parseAgentsFromContent(m.content);
+            }
+
             return {
               id: m.id,
               expertId: m.agentId ?? activeExpert.id,
               content: m.content,
               loading: false,
+              assignedAgents,
             } as ExpertMessage;
           }
         );
@@ -223,6 +266,67 @@ export function ConsultantsThread({
     const msgId = addExpertPlaceholder(expert);
     await callAgent(expert, prompt, msgId);
     setIsLoading(false);
+  };
+
+  // ── Convert Sprint 0 tasks → Agile Board ─────────────────────────────────
+  const convertToTasks = async (msgId: string, content: string) => {
+    if (!projectId || converting) return;
+    setConverting(true);
+    try {
+      const sprint0Match = content.match(/SPRINT 0[^\n]*\n([\s\S]*?)(?=\n##|\n<!-- |$)/i);
+      if (!sprint0Match) return;
+
+      const lines = sprint0Match[1].split("\n").filter(l => l.trim());
+      const tasks: Array<{ title: string; description: string; priority: string }> = [];
+
+      for (const line of lines) {
+        const cleanLine = line.replace(/^\s*\d+[\.\)]\s*/, "").trim();
+        if (!cleanLine || cleanLine.length < 5) continue;
+
+        const title = cleanLine
+          .replace(/\*\*/g, "")
+          .replace(/→.*$/, "")
+          .replace(/Owner:.*$/i, "")
+          .replace(/\.\s*$/, "")
+          .trim();
+
+        if (title.length < 3) continue;
+
+        const ownerMatch = cleanLine.match(/(?:Owner|owner)[:\s]+(.+?)(?:\.|$)/);
+        const description = ownerMatch
+          ? `Owner sugerido: ${ownerMatch[1].trim()}`
+          : "";
+
+        tasks.push({
+          title,
+          description,
+          priority: tasks.length === 0 ? "high" : "medium",
+        });
+      }
+
+      if (tasks.length === 0) return;
+
+      const res = await fetch("/api/agile/batch", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          tasks: tasks.map(t => ({
+            ...t,
+            projectId,
+            labels: ["sprint-0", "strategist"],
+            sprint: "Sprint 0",
+          })),
+        }),
+      });
+
+      if (res.ok) {
+        setConvertedMsgIds(prev => new Set([...prev, msgId]));
+      }
+    } catch (err) {
+      console.error("Error converting tasks:", err);
+    } finally {
+      setConverting(false);
+    }
   };
 
   // ── Save to project ───────────────────────────────────────────────────────
@@ -398,6 +502,27 @@ export function ConsultantsThread({
                             </div>
                           );
                         })}
+                    </div>
+                  )}
+
+                  {!dm.loading && dm.content && dm.expertId === "strategist" &&
+                   dm.content.toUpperCase().includes("SPRINT 0") && (
+                    <div className="mt-2">
+                      {convertedMsgIds.has(dm.id) ? (
+                        <span className="inline-flex items-center gap-1.5 text-xs text-ql-muted">
+                          <Check className="h-3.5 w-3.5" />
+                          Tareas creadas en Agile Board
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => convertToTasks(dm.id, dm.content)}
+                          disabled={converting}
+                          className="inline-flex items-center gap-1.5 text-xs border border-ql-charcoal/20 px-3 py-1.5 text-ql-slate hover:bg-ql-charcoal hover:text-white transition-colors disabled:opacity-50"
+                        >
+                          <CheckSquare className="h-3.5 w-3.5" />
+                          {converting ? "Creando tareas..." : "Convertir Sprint 0 en tareas"}
+                        </button>
+                      )}
                     </div>
                   )}
 

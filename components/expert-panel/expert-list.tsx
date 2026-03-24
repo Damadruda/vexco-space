@@ -60,7 +60,7 @@ export function ExpertList({ activeExpertId, onlineIds = [], onSelect }: ExpertL
       <div className="px-4 py-3 border-t border-ql-sand/20">
         <div className="flex items-center gap-2">
           <span className="ql-status-active" />
-          <span className="ql-caption">8 agentes en línea</span>
+          <span className="ql-caption">{EXPERTS.length} agentes en línea</span>
         </div>
       </div>
     </div>

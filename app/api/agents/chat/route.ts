@@ -143,11 +143,11 @@ export async function POST(request: NextRequest) {
         ]
       : [
           "",
-          "TONE RULES (Anti-IA filter — mandatory):",
-          "Write with short, impactful sentences. Use active voice. Remove jargon and filler words.",
-          "No buzzwords like 'revolutionary', 'crucial', 'discover', 'dive into', 'tapestry'.",
-          "C-Level tone. Direct. Plain text only — no markdown, no bullet symbols, no headers.",
-          "Maximum 4 concise paragraphs.",
+          "REGLAS DE TONO (obligatorias):",
+          "Oraciones cortas e impactantes. Voz activa. Tono ejecutivo.",
+          "Prohibido: 'sumérgete', 'tapiz', 'crucial', 'descubre', 'imperativo', 'sinergias'.",
+          "Usa los headers ## exactos indicados en tu estructura.",
+          "Responde en español a menos que el usuario escriba en otro idioma.",
         ];
 
     // For the strategist: append JSON block instruction so we can parse assigned agents
