@@ -25,6 +25,11 @@ interface AnalysisResult {
   relevanceScore: number;
 }
 
+interface ProjectOption {
+  id: string;
+  title: string;
+}
+
 interface InboxItem {
   id: string;
   type: string;
@@ -35,6 +40,7 @@ interface InboxItem {
   priority: string;
   tags: string[];
   createdAt: string;
+  projectId?: string | null;
   analysis?: AnalysisResult | null;
 }
 
@@ -181,14 +187,19 @@ function AddItemForm({ onSuccess, onClose }: { onSuccess: () => void; onClose: (
 
 function ItemCard({
   item,
+  projects,
   onAnalyzed,
+  onLinked,
 }: {
   item: InboxItem;
+  projects: ProjectOption[];
   onAnalyzed: (id: string, analysis: AnalysisResult) => void;
+  onLinked: (id: string, projectId: string | null) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzeError, setAnalyzeError] = useState("");
+  const [linking, setLinking] = useState(false);
 
   const handleAnalyze = async () => {
     setAnalyzing(true);
@@ -330,6 +341,42 @@ function ItemCard({
               )}
             </div>
           )}
+
+          {/* Project linker — visible siempre que el item esté expandido */}
+          <div className="flex items-center gap-2 pt-2 border-t border-ql-sand/20">
+            <span className="ql-caption shrink-0">Vincular a proyecto:</span>
+            <select
+              value={item.projectId ?? ""}
+              onChange={async (e) => {
+                const val = e.target.value || null;
+                setLinking(true);
+                try {
+                  const res = await fetch(`/api/inbox/${item.id}/link-project`, {
+                    method: "PATCH",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify({ projectId: val }),
+                  });
+                  if (res.ok) onLinked(item.id, val);
+                } catch {}
+                setLinking(false);
+              }}
+              disabled={linking}
+              className="ql-input text-xs py-1 flex-1 max-w-xs"
+            >
+              <option value="">Sin proyecto</option>
+              {projects.map(p => (
+                <option key={p.id} value={p.id}>{p.title}</option>
+              ))}
+            </select>
+            {item.projectId && (
+              <a
+                href={`/project-builder/${item.projectId}/war-room`}
+                className="text-xs text-ql-accent hover:text-ql-charcoal"
+              >
+                Ir al War Room →
+              </a>
+            )}
+          </div>
         </div>
       )}
     </div>
@@ -345,6 +392,14 @@ export default function InboxPage() {
   const [showAddForm, setShowAddForm] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<string>("");
+  const [projects, setProjects] = useState<ProjectOption[]>([]);
+
+  useEffect(() => {
+    fetch("/api/projects")
+      .then(r => r.json())
+      .then(data => setProjects(data.projects ?? []))
+      .catch(() => {});
+  }, []);
 
   const fetchItems = useCallback(async () => {
     setLoading(true);
@@ -478,7 +533,13 @@ export default function InboxPage() {
               <ItemCard
                 key={item.id}
                 item={item}
+                projects={projects}
                 onAnalyzed={handleAnalyzed}
+                onLinked={(id, projectId) => {
+                  setItems(prev => prev.map(i =>
+                    i.id === id ? { ...i, projectId } : i
+                  ));
+                }}
               />
             ))}
           </div>

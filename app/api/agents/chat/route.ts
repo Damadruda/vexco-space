@@ -3,6 +3,7 @@ import { getDefaultUserId } from "@/lib/get-default-user";
 import { getAgentConfig } from "@/lib/engine/agents";
 import { callLLM } from "@/lib/clients/llm";
 import { loadProjectMemory } from "@/lib/engine/supervisor";
+import { prisma } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -47,7 +48,7 @@ function parseAssignedAgents(content: string): {
 }
 
 /** Build enriched project context block from ProjectMemory. */
-function buildProjectContext(memory: Record<string, unknown>): string {
+async function buildProjectContext(memory: Record<string, unknown>, projectId?: string): Promise<string> {
   const project = memory.project as Record<string, unknown>;
   const notes = (memory.recentNotes as Array<{ content: string; title?: string }>) ?? [];
   const ideas = (memory.recentIdeas as Array<{ title: string; description?: string }>) ?? [];
@@ -68,6 +69,31 @@ function buildProjectContext(memory: Record<string, unknown>): string {
     .map((t) => `  - [${t.status.toUpperCase()}] ${t.title}`)
     .join("\n");
 
+  // Inbox items vinculados a este proyecto
+  let inboxLines = "";
+  if (projectId) {
+    try {
+      const inboxItems = await prisma.inboxItem.findMany({
+        where: { projectId },
+        include: { analysis: true },
+        orderBy: { createdAt: "desc" },
+        take: 10,
+      });
+      if (inboxItems.length > 0) {
+        inboxLines = `- Items de Raindrop vinculados (${inboxItems.length}):\n` +
+          inboxItems.map(item => {
+            const title = item.sourceTitle || item.rawContent.slice(0, 60);
+            const analysis = item.analysis;
+            const summary = analysis?.summary ? ` — ${analysis.summary.slice(0, 150)}` : "";
+            const relevance = analysis?.relevanceScore ? ` (${Math.round(analysis.relevanceScore * 100)}% relevancia)` : "";
+            return `  - ${title}${summary}${relevance}`;
+          }).join("\n");
+      }
+    } catch {
+      // continue without inbox context
+    }
+  }
+
   return [
     "CONTEXTO DEL PROYECTO:",
     `- Nombre: ${project.title ?? "Sin título"}`,
@@ -79,6 +105,7 @@ function buildProjectContext(memory: Record<string, unknown>): string {
     notes.length > 0 ? `- Notas recientes (${notes.length}):\n${noteLines}` : "",
     ideas.length > 0 ? `- Ideas en pipeline (${ideas.length}):\n${ideaLines}` : "",
     tasks.length > 0 ? `- Tareas activas (${tasks.length}):\n${taskLines}` : "",
+    inboxLines || "",
   ]
     .filter(Boolean)
     .join("\n");
@@ -125,7 +152,7 @@ export async function POST(request: NextRequest) {
       try {
         const memory = await loadProjectMemory(projectId, userId);
         if (memory) {
-          projectContext = buildProjectContext(memory);
+          projectContext = await buildProjectContext(memory, projectId);
         }
       } catch {
         // continue without context

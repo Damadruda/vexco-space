@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Send, BookmarkPlus, X, Lightbulb, FileText, CheckSquare, Check, Zap } from "lucide-react";
+import { Send, BookmarkPlus, X, Lightbulb, FileText, CheckSquare, Check, Zap, Copy } from "lucide-react";
 import ReactMarkdown from "react-markdown";
 import { EXPERTS, Expert } from "./experts-data";
 import { ExpertAvatar } from "./expert-avatar";
@@ -459,6 +459,39 @@ export function ConsultantsThread({
                       </div>
                     )}
                   </div>
+
+                  {/* ── Perplexity prompt block ──────────────────────────── */}
+                  {!dm.loading && dm.content && dm.content.includes("Prompt para Perplexity:") && (() => {
+                    const match = dm.content.match(/Prompt para Perplexity:\s*"?([^"]+)"?/i) ||
+                                  dm.content.match(/Prompt para Perplexity:\n+(.+)/i);
+                    if (!match) return null;
+                    const prompt = match[1].trim().replace(/^"|"$/g, "");
+                    return (
+                      <div className="mt-3 p-3 bg-ql-offwhite border border-ql-sand/30 rounded-md">
+                        <div className="flex items-center justify-between mb-2">
+                          <span className="text-xs font-medium text-ql-slate">Prompt para Perplexity Pro</span>
+                          <button
+                            onClick={() => {
+                              navigator.clipboard.writeText(prompt);
+                              const btn = document.activeElement as HTMLButtonElement;
+                              if (btn) {
+                                const orig = btn.textContent;
+                                btn.textContent = "¡Copiado!";
+                                setTimeout(() => { btn.textContent = orig; }, 1500);
+                              }
+                            }}
+                            className="inline-flex items-center gap-1 text-xs border border-ql-charcoal/20 px-2 py-1 text-ql-slate hover:bg-ql-charcoal hover:text-white transition-colors"
+                          >
+                            <Copy className="h-3 w-3" />
+                            Copiar prompt
+                          </button>
+                        </div>
+                        <p className="text-sm text-ql-charcoal font-mono bg-white/50 p-2 rounded border border-ql-sand/20">
+                          {prompt}
+                        </p>
+                      </div>
+                    );
+                  })()}
 
                   {/* ── Assigned agents panel (strategist only) ─────────── */}
                   {!dm.loading && dm.assignedAgents && dm.assignedAgents.length > 0 && (

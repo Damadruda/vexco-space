@@ -195,6 +195,7 @@ model Project {
   patternCards     PatternCard[]
   conceptInsights  ConceptInsight[] // Strategic Intelligence Engine Q&A
   agileTasks       AgileTask[]
+  inboxItems       InboxItem[]
   roadmapTimelines RoadmapTimeline[]
   decisionLogs     DecisionLog[]
   warRoomSessions  WarRoomSession[]
@@ -418,11 +419,14 @@ model InboxItem {
   userId      String
   user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
   analysis    AnalysisResult?
+  projectId   String?
+  project     Project?        @relation(fields: [projectId], references: [id], onDelete: SetNull)
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 
   @@index([userId])
   @@index([status])
+  @@index([projectId])
 }
 
 // AnalysisResult — AI analysis output for InboxItems
