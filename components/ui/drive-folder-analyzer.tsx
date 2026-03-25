@@ -84,6 +84,7 @@ export function DriveFolderAnalyzer({ isOpen, onClose, onProjectCreated }: Drive
   const [analysisResult, setAnalysisResult] = useState<AnalysisResult | null>(null);
   const [analysisStep, setAnalysisStep] = useState<string>("");
   const [createdProjectId, setCreatedProjectId] = useState<string | null>(null);
+  const [importStats, setImportStats] = useState<{ processed: string[]; ignored: { name: string; reason: string }[] } | null>(null);
   
   // Navegación de carpetas
   const [currentFolder, setCurrentFolder] = useState<{ id: string; name: string } | null>(null);
@@ -141,6 +142,7 @@ export function DriveFolderAnalyzer({ isOpen, onClose, onProjectCreated }: Drive
       setFolderStats(null);
       setAnalysisResult(null);
       setCreatedProjectId(null);
+      setImportStats(null);
       setError(null);
       setLinkMode("create");
       setSelectedProjectId(null);
@@ -318,8 +320,26 @@ export function DriveFolderAnalyzer({ isOpen, onClose, onProjectCreated }: Drive
         throw new Error(data.error || "Error al analizar la carpeta");
       }
       
-      setAnalysisResult(data.analysis);
-      setCreatedProjectId(data.project?.id);
+      const project = data.project;
+      setAnalysisResult({
+        title: project?.title || selectedFolder.name,
+        description: project?.description || "",
+        category: project?.category || "",
+        tags: [],
+        concept: project?.concept || "",
+        problemSolved: "",
+        targetMarket: project?.targetMarket || "",
+        marketValidation: "",
+        businessModel: project?.businessModel || "",
+        valueProposition: "",
+        actionPlan: project?.actionPlan || "",
+        milestones: "",
+        resources: project?.resources || "",
+        metrics: project?.metrics || "",
+        insights: "",
+      });
+      setCreatedProjectId(project?.id ?? null);
+      setImportStats(data.stats?.files ?? null);
       setAnalysisStep("");
       
     } catch (err) {
@@ -576,7 +596,44 @@ export function DriveFolderAnalyzer({ isOpen, onClose, onProjectCreated }: Drive
                       <Check className="h-5 w-5" />
                       <span className="font-medium">¡Proyecto creado exitosamente!</span>
                     </div>
-                    
+
+                    {importStats && (
+                      <div className="text-xs space-y-2">
+                        {importStats.processed.length > 0 && (
+                          <div className="bg-gray-50 p-3 rounded-lg">
+                            <p className="font-medium text-gray-700 mb-1">
+                              Archivos procesados ({importStats.processed.length})
+                            </p>
+                            <ul className="space-y-0.5">
+                              {importStats.processed.map((name, i) => (
+                                <li key={i} className="flex items-center gap-1.5 text-gray-600">
+                                  <Check className="h-3 w-3 text-green-500 shrink-0" />
+                                  {name}
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                        {importStats.ignored.length > 0 && (
+                          <div className="bg-gray-50 p-3 rounded-lg">
+                            <p className="font-medium text-gray-700 mb-1">
+                              Archivos ignorados ({importStats.ignored.length})
+                            </p>
+                            <ul className="space-y-0.5">
+                              {importStats.ignored.map((f, i) => (
+                                <li key={i} className="flex items-center gap-1.5 text-gray-400">
+                                  <AlertCircle className="h-3 w-3 shrink-0" />
+                                  <span>{f.name}</span>
+                                  <span className="text-gray-300">—</span>
+                                  <span className="text-gray-400">{f.reason}</span>
+                                </li>
+                              ))}
+                            </ul>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
                     <div>
                       <h3 className="font-serif text-xl font-medium text-gray-900">
                         {analysisResult.title}

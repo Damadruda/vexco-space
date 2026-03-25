@@ -4,6 +4,7 @@ import { authOptions } from "@/lib/auth-options";
 import { prisma } from "@/lib/db";
 import { Part } from "@google/generative-ai";
 import { callLLM, callGeminiMultimodal } from "@/lib/clients/llm";
+import mammoth from "mammoth";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 60;
@@ -27,7 +28,7 @@ const CONFIG = {
   ],
   // File extensions to ALWAYS process as text (regardless of MIME type)
   // This handles Google Drive reporting .json/.md/.html as application/octet-stream
-  TEXT_EXTENSIONS: [".json", ".md", ".html", ".pdf", ".txt", ".csv", ".markdown"],
+  TEXT_EXTENSIONS: [".json", ".md", ".html", ".pdf", ".txt", ".csv", ".markdown", ".docx"],
   // UX/UI Expert Mode folder ID
   EXPERT_MODE_FOLDER_ID: "1ekDx8PsLfS2Dgn4C7qMTYRcx_yDti2Lh",
 };
@@ -209,6 +210,22 @@ async function processTextFile(
   file: DriveFile,
   accessToken: string
 ): Promise<ProcessedFile> {
+  // Special handler for .docx files (mammoth extracts text from binary)
+  if (file.name.toLowerCase().endsWith(".docx")) {
+    try {
+      const downloadUrl = `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`;
+      const response = await fetch(downloadUrl, { headers: { Authorization: `Bearer ${accessToken}` } });
+      if (!response.ok) { return { name: file.name, type: "skipped", error: `HTTP ${response.status}` }; }
+      const buffer = Buffer.from(await response.arrayBuffer());
+      const result = await mammoth.extractRawText({ buffer });
+      let text = result.value || "";
+      if (text.length > CONFIG.MAX_TEXT_LENGTH) { text = text.substring(0, CONFIG.MAX_TEXT_LENGTH) + "\n[... contenido truncado ...]"; }
+      return { name: file.name, type: "text", content: { text: `\n--- Archivo: ${file.name} ---\n${text}\n` } };
+    } catch (error: any) {
+      return { name: file.name, type: "skipped", error: `docx error: ${error.message}` };
+    }
+  }
+
   try {
     let exportUrl: string;
 
@@ -560,15 +577,23 @@ export async function POST(request: Request) {
 
     // 4. DESCARGAR texto de cada archivo
     const textContents: string[] = [];
+    const processedNames: string[] = [];
+    const ignoredFiles: { name: string; reason: string }[] = [];
+
     for (const file of textFiles) {
       const processed = await processTextFile(file, accessToken);
       if (processed.type === "text" && processed.content && "text" in processed.content) {
         textContents.push((processed.content as { text: string }).text);
+        processedNames.push(file.name);
+      } else {
+        ignoredFiles.push({ name: file.name, reason: processed.error ?? "tipo no soportado" });
       }
     }
 
     const downloadTime = ((Date.now() - startTime) / 1000).toFixed(1);
-    console.log(`[DRIVE_IMPORT] Descarga: ${downloadTime}s — ${textContents.length} archivos con contenido`);
+    console.log(`[DRIVE_IMPORT] Descarga: ${downloadTime}s`);
+    console.log(`[DRIVE_IMPORT] Procesados (${processedNames.length}): ${processedNames.join(", ") || "ninguno"}`);
+    console.log(`[DRIVE_IMPORT] Ignorados (${ignoredFiles.length}): ${ignoredFiles.map(f => `${f.name}(${f.reason})`).join(", ") || "ninguno"}`);
 
     if (textContents.length === 0) {
       return NextResponse.json({
@@ -609,6 +634,7 @@ export async function POST(request: Request) {
           processedFiles: textContents.length,
           duration: `${((Date.now() - startTime) / 1000).toFixed(2)}s`,
           warning: "Análisis AI omitido por tiempo. Re-importa para completar.",
+          files: { processed: processedNames, ignored: ignoredFiles },
         },
       });
     }
@@ -831,6 +857,7 @@ INSTRUCCIONES:
         images: 0,
         docSummaries: docsSaved,
         duration: `${duration}s`,
+        files: { processed: processedNames, ignored: ignoredFiles },
         ...(isExpertMode && {
           patterns: {
             extracted: patternsExtracted.length,
