@@ -545,10 +545,10 @@ export async function POST(request: Request) {
 
     // 2. RECURSIVE FOLDER SCAN (subcarpetas)
     
-    const allFiles = await scanFolderRecursively(folderId, accessToken, 0, 3, folderName);
+    const allFiles = await scanFolderRecursively(folderId, accessToken, 0, 2, folderName);
 
     // HOTFIX: Limit total files to prevent timeout on large folders
-    const MAX_FILES = 15;
+    const MAX_FILES = 10;
     const allFilesLimited = allFiles.slice(0, MAX_FILES);
     if (allFiles.length > MAX_FILES) {
       console.log(`[SPRINT_G] Carpeta tiene ${allFiles.length} archivos, procesando solo los primeros ${MAX_FILES}`);
@@ -564,8 +564,16 @@ export async function POST(request: Request) {
     const scanDuration = ((Date.now() - startTime) / 1000).toFixed(1);
     console.log(`[SPRINT_G] Scan completado en ${scanDuration}s — ${allFiles.length} archivos encontrados, procesando ${allFilesLimited.length}`);
 
+    // HOTFIX 3: Solo procesar texto (imágenes = descarga base64 lenta)
+    const textOnlyFiles = allFilesLimited.filter(file => {
+      const isImage = isImageFileByExtension(file.name) ||
+        file.mimeType.startsWith("image/");
+      return !isImage;
+    });
+    console.log(`[SPRINT_G] ${allFilesLimited.length} archivos limitados, ${textOnlyFiles.length} son texto (imágenes excluidas)`);
+
     // 3. MULTIMODAL PROCESSING (Images → Base64, Docs → Text)
-    const { parts, analysis } = await processFilesInBatches(allFilesLimited, accessToken);
+    const { parts, analysis } = await processFilesInBatches(textOnlyFiles, accessToken);
 
     // ENHANCED ERROR: If no parts processed, include folder ID in error message
     if (parts.length === 0) {
@@ -577,58 +585,59 @@ export async function POST(request: Request) {
 
     // 4. AI ANALYSIS — Two phases: per-doc summaries + global analysis
 
-    // Phase 1: Per-document summaries (only for text files, parallel batches of 5)
-    const textParts = allFilesLimited.filter((f) => {
-      const isText =
-        isTextFileByExtension(f.name) ||
-        CONFIG.SUPPORTED_TEXT_TYPES.some(
-          (type) =>
-            f.mimeType === type ||
-            f.mimeType.includes(type.replace("application/vnd.", ""))
-        ) ||
-        f.mimeType.includes("document") ||
-        f.mimeType.startsWith("text/") ||
-        f.mimeType.includes("spreadsheet");
-      return isText;
-    });
-
-    const projectContextForSummary = existingProjectId
-      ? `Proyecto existente siendo enriquecido con documentos de Drive.`
-      : `Nuevo proyecto: ${folderName}`;
-
-    // Limit per-doc summaries to first 5 files to stay within time budget
-    const textPartsLimited = textParts.slice(0, 5);
-
+    // Phase 1: SKIP per-doc summaries (moved to future async job)
+    // Per-doc summaries consume too much time in sync flow
     const docSummaries: Array<{
-      file: (typeof allFiles)[0];
+      file: typeof allFilesLimited[0];
       summary: string;
       keyInsights: string[];
       category: string | null;
       wordCount: number;
     }> = [];
-
-    for (let i = 0; i < textPartsLimited.length; i += 5) {
-      const batch = textPartsLimited.slice(i, i + 5);
-      const batchResults = await Promise.all(
-        batch.map(async (file) => {
-          const processed = await processTextFile(file, accessToken);
-          if (processed.type === "text" && processed.content && "text" in processed.content) {
-            const rawText = (processed.content as { text: string }).text;
-            const result = await summarizeDocument(file.name, rawText, projectContextForSummary);
-            return { file, ...result };
-          }
-          return null;
-        })
-      );
-      for (const r of batchResults) {
-        if (r) docSummaries.push(r);
-      }
-    }
-
-    console.log(`[SPRINT_G] ${docSummaries.length} documentos resumidos individualmente`);
+    console.log(`[SPRINT_G] Per-doc summaries SKIPPED (async job pendiente)`);
 
     const elapsedBeforeGlobal = ((Date.now() - startTime) / 1000).toFixed(1);
-    console.log(`[SPRINT_G] Phase 1 completada en ${elapsedBeforeGlobal}s — ${docSummaries.length} docs resumidos. Iniciando análisis global con Flash.`);
+    console.log(`[SPRINT_G] Listo para análisis global en ${elapsedBeforeGlobal}s — ${parts.length} parts, ${analysis.processedFiles} procesados de ${allFiles.length} totales`);
+
+    // SAFETY CHECK: if we've already used > 40s, skip global analysis
+    if (parseFloat(elapsedBeforeGlobal) > 40) {
+      console.warn(`[SPRINT_G] ⚠️ ${elapsedBeforeGlobal}s elapsed — skipping global analysis to avoid timeout`);
+      const project = existingProjectId
+        ? await prisma.project.update({
+            where: { id: existingProjectId },
+            data: { driveFolderId: folderId },
+          })
+        : await prisma.project.create({
+            data: {
+              title: folderName,
+              description: `Proyecto importado desde Drive. ${allFiles.length} archivos encontrados, ${analysis.processedFiles} procesados. Análisis completo pendiente (timeout).`,
+              status: "active",
+              projectType: "idea",
+              category: "Google Drive Import",
+              priority: "medium",
+              progress: 5,
+              userId: session.user.id,
+              driveFolderId: folderId,
+              currentStep: 1,
+            },
+          });
+
+      const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+      return NextResponse.json({
+        success: true,
+        project,
+        linkedToExisting: !!existingProjectId,
+        stats: {
+          totalFiles: allFiles.length,
+          processedFiles: analysis.processedFiles,
+          images: analysis.images,
+          documents: analysis.documents,
+          docSummaries: 0,
+          duration: `${duration}s`,
+          warning: "Análisis global omitido por timeout. Re-escanea la carpeta para completar.",
+        },
+      });
+    }
 
     // Phase 2: Global project analysis using all parts (multimodal if images exist)
     let aiResponse: string;
@@ -767,7 +776,7 @@ RESPONDE ÚNICAMENTE con JSON válido:
           userPrompt: analysisPrompt,
           jsonMode: true,
           temperature: 0.5,
-          maxTokens: 4096,
+          maxTokens: 2048,
         });
         aiResponse = result.content;
       }
