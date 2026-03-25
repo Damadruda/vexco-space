@@ -5,7 +5,7 @@
 // Fallback: Claude → Gemini Flash | Perplexity → Gemini Flash (with warning).
 // =============================================================================
 
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenerativeAI, Part } from "@google/generative-ai";
 import Anthropic from "@anthropic-ai/sdk";
 
 // ─── Public Types ─────────────────────────────────────────────────────────────
@@ -175,6 +175,81 @@ async function callPerplexity(
   };
 
   return { content: data.choices[0]?.message?.content ?? "" };
+}
+
+// ─── Gemini Multimodal (for Drive folder analysis with images) ────────────────
+
+/**
+ * callGeminiMultimodal — Para análisis que incluyen imágenes.
+ * Mismo retry/fallback que callGemini pero acepta Parts[].
+ * Solo se usa desde analyze-folder.
+ */
+export async function callGeminiMultimodal(
+  systemPrompt: string,
+  userPrompt: string,
+  parts: Part[],
+  jsonMode: boolean = false,
+  maxTokens?: number,
+  temperature?: number,
+  modelOverride?: string
+): Promise<{ content: string; model: string; processingTimeMs: number }> {
+  const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+  if (!apiKey) throw new Error("GOOGLE_GENERATIVE_AI_API_KEY no configurada");
+
+  const startTime = Date.now();
+  const modelName = modelOverride || "gemini-2.5-pro";
+  const timeoutMs = modelName.includes("flash") ? 25000 : 55000;
+
+  const genAI = new GoogleGenerativeAI(apiKey);
+  const model = genAI.getGenerativeModel({
+    model: modelName,
+    generationConfig: {
+      ...(jsonMode ? { responseMimeType: "application/json" } : {}),
+      ...(maxTokens ? { maxOutputTokens: maxTokens } : {}),
+      temperature: temperature ?? 0.7,
+    },
+  });
+
+  const fullPrompt = systemPrompt ? `${systemPrompt}\n\n${userPrompt}` : userPrompt;
+
+  for (let attempt = 1; attempt <= 2; attempt++) {
+    try {
+      const timeoutPromise = new Promise<never>((_, reject) =>
+        setTimeout(
+          () => reject(new Error(`Gemini timeout after ${timeoutMs / 1000}s`)),
+          timeoutMs
+        )
+      );
+      const result = await Promise.race([
+        model.generateContent([fullPrompt, ...parts]),
+        timeoutPromise,
+      ]);
+      const text = result.response.text();
+      const cleaned = text.replace(/```json\n?|\n?```/g, "").trim();
+      if (!cleaned) throw new Error("Gemini returned empty response");
+      return { content: cleaned, model: modelName, processingTimeMs: Date.now() - startTime };
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      console.warn(`[GEMINI_MULTIMODAL] ${modelName} attempt ${attempt} failed: ${msg}`);
+      if (attempt < 2) await new Promise((r) => setTimeout(r, 2000));
+    }
+  }
+
+  // Fallback Pro → Flash
+  if (!modelOverride && modelName === "gemini-2.5-pro") {
+    console.warn("[GEMINI_MULTIMODAL] Pro failed, falling back to gemini-2.5-flash");
+    return callGeminiMultimodal(
+      systemPrompt,
+      userPrompt,
+      parts,
+      jsonMode,
+      maxTokens,
+      temperature,
+      "gemini-2.5-flash"
+    );
+  }
+
+  throw new Error(`Gemini multimodal ${modelName} failed after all retries`);
 }
 
 // ─── Public API ───────────────────────────────────────────────────────────────

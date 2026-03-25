@@ -121,6 +121,33 @@ async function buildProjectContext(memory: Record<string, unknown>, projectId?: 
     } catch {}
   }
 
+  // Drive document summaries
+  let driveLines = "";
+  if (projectId) {
+    try {
+      const driveDocs = await prisma.driveDocSummary.findMany({
+        where: { projectId },
+        orderBy: { createdAt: "desc" },
+        take: 15,
+      });
+      if (driveDocs.length > 0) {
+        driveLines =
+          `- Documentos de Drive vinculados (${driveDocs.length}):\n` +
+          driveDocs
+            .map((doc) => {
+              const insights =
+                doc.keyInsights.length > 0
+                  ? ` | Insights: ${doc.keyInsights.slice(0, 2).join("; ")}`
+                  : "";
+              return `  - [${doc.fileType}] ${doc.fileName}: ${doc.summary.slice(0, 200)}${insights}`;
+            })
+            .join("\n");
+      }
+    } catch {
+      // continue without drive context
+    }
+  }
+
   return [
     "CONTEXTO DEL PROYECTO:",
     `- Nombre: ${project.title ?? "Sin título"}`,
@@ -133,6 +160,7 @@ async function buildProjectContext(memory: Record<string, unknown>, projectId?: 
     ideas.length > 0 ? `- Ideas en pipeline (${ideas.length}):\n${ideaLines}` : "",
     tasks.length > 0 ? `- Tareas activas (${tasks.length}):\n${taskLines}` : "",
     inboxLines || "",
+    driveLines || "",
   ]
     .filter(Boolean)
     .join("\n");

@@ -183,8 +183,9 @@ model Project {
   currentStep      Int     @default(1) // 1-5
 
   // V4 relations
-  trackType  TrackType @default(GO_TO_MARKET)
-  isArchived Boolean   @default(false)
+  trackType     TrackType @default(GO_TO_MARKET)
+  isArchived    Boolean   @default(false)
+  driveFolderId String?   // Google Drive folder ID linked to this project
 
   // Relations
   ideas            Idea[]
@@ -198,8 +199,9 @@ model Project {
   inboxItems       InboxItem[]
   roadmapTimelines RoadmapTimeline[]
   decisionLogs     DecisionLog[]
-  warRoomSessions  WarRoomSession[]
-  chatMessages     ChatMessage[]
+  warRoomSessions   WarRoomSession[]
+  chatMessages      ChatMessage[]
+  driveDocSummaries DriveDocSummary[]
 
   @@index([userId])
   @@index([status])
@@ -572,4 +574,24 @@ model WarRoomSession {
 
   @@index([projectId])
   @@index([userId])
+}
+
+// DriveDocSummary — Per-document AI summary from Drive folder scan
+model DriveDocSummary {
+  id          String   @id @default(cuid())
+  projectId   String
+  project     Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  driveFileId String   // Google Drive file ID
+  fileName    String
+  fileType    String   // "document", "image", "spreadsheet", "code", "pdf"
+  summary     String   @db.Text
+  keyInsights String[] @default([])
+  category    String?  // auto-classified: "strategy", "technical", "financial", "design", "research"
+  wordCount   Int?     // approximate word count of source doc
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([projectId, driveFileId])
+  @@index([projectId])
+  @@index([category])
 }

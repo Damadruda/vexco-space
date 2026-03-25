@@ -2,17 +2,14 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth-options";
 import { prisma } from "@/lib/db";
-import { GoogleGenerativeAI, Part } from "@google/generative-ai";
+import { Part } from "@google/generative-ai";
+import { callLLM, callGeminiMultimodal } from "@/lib/clients/llm";
 
-// Initialize Gemini
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_GENERATIVE_AI_API_KEY!);
+export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 // Configuration constants
 const CONFIG = {
-  // Model options optimized for large file processing (try in order if one fails)
-  // Priority: gemini-2.0-flash (fast, current), gemini-pro (fallback)
-  // CRITICAL: Models require "models/" prefix for Gemini API
-  GEMINI_MODELS: ["models/gemini-2.5-pro"],
   MAX_FILE_SIZE_MB: 10,
   MAX_TEXT_LENGTH: 8000,
   MAX_FILES_PER_BATCH: 20,
@@ -345,39 +342,74 @@ async function processFilesInBatches(
 }
 
 /**
- * Try multiple Gemini models until one works
- * Includes diagnostic logging and model availability check
+ * Infer file type category from filename and MIME type
  */
-async function generateWithFallback(
-  prompt: string,
-  parts: Part[]
-): Promise<string> {
-  let lastError: Error | null = null;
+function inferFileType(fileName: string, mimeType: string): string {
+  const lower = fileName.toLowerCase();
+  if (lower.endsWith(".pdf")) return "pdf";
+  if (lower.match(/\.(js|ts|tsx|jsx|py|java|go|rs|rb|php|css|scss|html)$/)) return "code";
+  if (lower.match(/\.(jpg|jpeg|png|gif|webp|svg)$/)) return "image";
+  if (lower.match(/\.(csv|xlsx|xls)$/) || mimeType.includes("spreadsheet")) return "spreadsheet";
+  if (lower.match(/\.(md|markdown|txt)$/) || mimeType.includes("document") || mimeType.startsWith("text/")) return "document";
+  if (lower.endsWith(".json")) return "data";
+  return "document";
+}
 
-  // DIAGNOSTIC: List available models before attempting analysis
+/**
+ * Generate individual summary for a text document using callLLM (fast, with retry)
+ */
+async function summarizeDocument(
+  fileName: string,
+  textContent: string,
+  projectContext: string
+): Promise<{
+  summary: string;
+  keyInsights: string[];
+  category: string | null;
+  wordCount: number;
+}> {
+  const wordCount = textContent.split(/\s+/).length;
+
+  // Truncate very long docs for summary
+  const truncated =
+    textContent.length > 6000
+      ? textContent.substring(0, 6000) + "\n[... contenido truncado ...]"
+      : textContent;
+
   try {
-    const modelList = await genAI.listModels();
-    const modelNames = [];
-    for await (const model of modelList) {
-      modelNames.push(model.name);
-    }
-  } catch (listError: any) {
-  }
+    const response = await callLLM({
+      model: "gemini-flash",
+      systemPrompt: `Eres un analista de documentos. Resume el documento de forma concisa y extrae insights clave.
+Contexto del proyecto: ${projectContext}
 
-  // Try each configured model
-  for (const modelName of CONFIG.GEMINI_MODELS) {
-    try {
-      const model = genAI.getGenerativeModel({ model: modelName });
-      const result = await model.generateContent([prompt, ...parts]);
-      const response = result.response.text();
-      return response;
-    } catch (error: any) {
-      lastError = error;
-      continue;
-    }
-  }
+RESPONDE ÚNICAMENTE con JSON válido (sin markdown, sin backticks):
+{
+  "summary": "Resumen de 2-3 oraciones del documento",
+  "keyInsights": ["insight 1", "insight 2", "insight 3"],
+  "category": "strategy|technical|financial|design|research|operations|legal|other"
+}`,
+      userPrompt: `Documento: ${fileName}\n\nContenido:\n${truncated}`,
+      jsonMode: true,
+      temperature: 0.3,
+      maxTokens: 1024,
+    });
 
-  throw lastError || new Error("Todos los modelos de Gemini fallaron");
+    const parsed = JSON.parse(response.content);
+    return {
+      summary: parsed.summary || `Documento: ${fileName}`,
+      keyInsights: parsed.keyInsights || [],
+      category: parsed.category || null,
+      wordCount,
+    };
+  } catch (error: any) {
+    console.warn(`[DOC_SUMMARY] Error summarizing ${fileName}: ${error.message}`);
+    return {
+      summary: `Documento importado: ${fileName} (${wordCount} palabras)`,
+      keyInsights: [],
+      category: null,
+      wordCount,
+    };
+  }
 }
 
 /**
@@ -495,9 +527,9 @@ export async function POST(request: Request) {
       return NextResponse.json({ error: "Token de Google no encontrado" }, { status: 401 });
     }
 
-    const { folderId, folderName } = await request.json();
+    const { folderId, folderName, existingProjectId } = await request.json();
     requestFolderId = folderId;
-    
+
     if (!folderId || !folderName) {
       return NextResponse.json({ error: "folderId y folderName son requeridos" }, { status: 400 });
     }
@@ -534,16 +566,76 @@ export async function POST(request: Request) {
       }, { status: 400 });
     }
 
-    // 4. GEMINI AI ANALYSIS
+    // 4. AI ANALYSIS — Two phases: per-doc summaries + global analysis
+
+    // Phase 1: Per-document summaries (only for text files, parallel batches of 5)
+    const textParts = allFiles.filter((f) => {
+      const isText =
+        isTextFileByExtension(f.name) ||
+        CONFIG.SUPPORTED_TEXT_TYPES.some(
+          (type) =>
+            f.mimeType === type ||
+            f.mimeType.includes(type.replace("application/vnd.", ""))
+        ) ||
+        f.mimeType.includes("document") ||
+        f.mimeType.startsWith("text/") ||
+        f.mimeType.includes("spreadsheet");
+      return isText;
+    });
+
+    const projectContextForSummary = existingProjectId
+      ? `Proyecto existente siendo enriquecido con documentos de Drive.`
+      : `Nuevo proyecto: ${folderName}`;
+
+    const docSummaries: Array<{
+      file: (typeof allFiles)[0];
+      summary: string;
+      keyInsights: string[];
+      category: string | null;
+      wordCount: number;
+    }> = [];
+
+    for (let i = 0; i < textParts.length; i += 5) {
+      const batch = textParts.slice(i, i + 5);
+      const batchResults = await Promise.all(
+        batch.map(async (file) => {
+          const processed = await processTextFile(file, accessToken);
+          if (processed.type === "text" && processed.content && "text" in processed.content) {
+            const rawText = (processed.content as { text: string }).text;
+            const result = await summarizeDocument(file.name, rawText, projectContextForSummary);
+            return { file, ...result };
+          }
+          return null;
+        })
+      );
+      for (const r of batchResults) {
+        if (r) docSummaries.push(r);
+      }
+    }
+
+    console.log(`[SPRINT_G] ${docSummaries.length} documentos resumidos individualmente`);
+
+    // Phase 2: Global project analysis using all parts (multimodal if images exist)
     let aiResponse: string;
     let parsedResponse: any = {};
     let patternsExtracted: ExtractedPattern[] = [];
 
+    const docDigest =
+      docSummaries.length > 0
+        ? `\n\nRESÚMENES DE DOCUMENTOS INDIVIDUALES:\n` +
+          docSummaries
+            .map(
+              (d) =>
+                `- ${d.file.name} [${d.category || "sin categoría"}]: ${d.summary}`
+            )
+            .join("\n")
+        : "";
+
     if (isExpertMode) {
-      // EXPERT MODE PROMPT: Extract patterns and tools
       const expertPrompt = `Eres un experto en UX/UI Design Systems analizando recursos del proyecto "${folderName}".
 
 Tienes acceso a ${analysis.processedFiles} archivos (${analysis.images} imágenes, ${analysis.documents} documentos).
+${docDigest}
 
 MISIÓN: Extraer TODOS los patrones de diseño visual y herramientas de implementación encontrados en estos archivos.
 
@@ -563,7 +655,7 @@ FORMATO DE RESPUESTA (JSON array):
       "description": "Descripción detallada de qué es y para qué sirve",
       "category": "VISUAL_PATTERN" | "TOOL_IMPLEMENTATION",
       "howToApply": "Guía paso a paso de cómo aplicar este patrón (OBLIGATORIO para VISUAL_PATTERN)",
-      "cssCode": "/* Código CSS ejemplo */\\n.clase { ... } (OBLIGATORIO para VISUAL_PATTERN)",
+      "cssCode": "/* Código CSS ejemplo */ (OBLIGATORIO para VISUAL_PATTERN)",
       "installationCommand": "npm install package-name (OBLIGATORIO para TOOL_IMPLEMENTATION)",
       "docsUrl": "https://docs.example.com (OBLIGATORIO para TOOL_IMPLEMENTATION)",
       "sourceUrl": "URL de origen o referencia única del archivo/sitio donde se encontró"
@@ -574,147 +666,183 @@ FORMATO DE RESPUESTA (JSON array):
 REGLAS:
 - VISUAL_PATTERN DEBE tener: cssCode y howToApply
 - TOOL_IMPLEMENTATION DEBE tener: installationCommand y docsUrl
-- sourceUrl DEBE ser único para cada patrón (usa la URL del archivo o sitio de referencia)
-- Extrae el máximo de patrones posibles (mínimo 5, máximo 50)
-- Si un archivo .json o .md contiene URLs, analiza esas URLs y extrae patrones inferidos
+- sourceUrl DEBE ser único para cada patrón
+- Extrae el máximo de patrones posibles (mínimo 5, máximo 50)`;
 
-RESPONDE ÚNICAMENTE con el objeto JSON (sin texto antes o después):`;
+      const expertResult = await callGeminiMultimodal("", expertPrompt, parts, true);
+      aiResponse = expertResult.content;
 
-      aiResponse = await generateWithFallback(expertPrompt, parts);
-
-      // Parse Expert Mode response
       try {
-        let jsonString = aiResponse.trim();
-        if (jsonString.startsWith("```json")) {
-          jsonString = jsonString.replace(/^```json\s*/, "").replace(/\s*```$/, "");
-        } else if (jsonString.startsWith("```")) {
-          jsonString = jsonString.replace(/^```\s*/, "").replace(/\s*```$/, "");
-        }
-        
-        const parsed = JSON.parse(jsonString);
+        const parsed = JSON.parse(aiResponse);
         patternsExtracted = parsed.patterns || [];
       } catch (parseError: any) {
         console.error("[EXPERT MODE] Error parseando patrones JSON:", parseError.message);
         patternsExtracted = [];
       }
 
-      // Also generate standard PM analysis for the Project
-      const pmPrompt = `Eres un Product Manager experto analizando el proyecto "${folderName}" para la plataforma VEXCO.
+      // PM analysis for Expert Mode project
+      const pmResult = await callLLM({
+        model: "gemini-flash",
+        systemPrompt: `Eres un Product Manager experto analizando el proyecto "${folderName}" para la plataforma VEXCO. Este es un proyecto de RECURSOS UX/UI.`,
+        userPrompt: `Archivos: ${analysis.processedFiles} (${analysis.images} imágenes, ${analysis.documents} documentos).${docDigest}
 
-Tienes acceso a ${analysis.processedFiles} archivos del proyecto (${analysis.images} imágenes, ${analysis.documents} documentos).
-
-Este es un proyecto de RECURSOS UX/UI. Resume los recursos encontrados.
-
-INSTRUCCIONES CRÍTICAS:
-- Tu respuesta DEBE ser ÚNICAMENTE un objeto JSON válido (sin markdown, sin \`\`\`json, sin texto adicional)
-
-RESPONDE ÚNICAMENTE con este objeto JSON:
-
+RESPONDE ÚNICAMENTE con JSON válido:
 {
-  "concept": "Descripción del tipo de recursos UX/UI encontrados. Máximo 2000 caracteres.",
-  "targetMarket": "Diseñadores y desarrolladores que buscan recursos de UI/UX. Máximo 2000 caracteres.",
-  "metrics": "Cantidad de patrones, herramientas, y categorías encontradas. Máximo 2000 caracteres.",
-  "actionPlan": "Cómo utilizar estos recursos en proyectos. Máximo 2000 caracteres.",
-  "resources": "Lista de las principales herramientas y recursos identificados. Máximo 2000 caracteres.",
-  "description": "Resumen ejecutivo de la colección de recursos UX/UI. Máximo 2000 caracteres."
-}`;
+  "concept": "Descripción del tipo de recursos UX/UI encontrados. Max 2000 chars.",
+  "targetMarket": "Diseñadores y desarrolladores que buscan recursos de UI/UX. Max 2000 chars.",
+  "metrics": "Cantidad de patrones, herramientas, y categorías encontradas. Max 2000 chars.",
+  "actionPlan": "Cómo utilizar estos recursos en proyectos. Max 2000 chars.",
+  "resources": "Lista de las principales herramientas y recursos identificados. Max 2000 chars.",
+  "description": "Resumen ejecutivo de la colección de recursos UX/UI. Max 2000 chars."
+}`,
+        jsonMode: true,
+        temperature: 0.5,
+        maxTokens: 4096,
+      });
 
-      const pmResponse = await generateWithFallback(pmPrompt, parts);
-      
       try {
-        let jsonString = pmResponse.trim();
-        if (jsonString.startsWith("```json")) {
-          jsonString = jsonString.replace(/^```json\s*/, "").replace(/\s*```$/, "");
-        } else if (jsonString.startsWith("```")) {
-          jsonString = jsonString.replace(/^```\s*/, "").replace(/\s*```$/, "");
-        }
-        parsedResponse = JSON.parse(jsonString);
-      } catch (e) {
+        parsedResponse = JSON.parse(pmResult.content);
+      } catch {
         parsedResponse = {
           concept: `Colección de recursos UX/UI: ${folderName}`,
-          description: pmResponse.substring(0, 2000),
+          description: pmResult.content.substring(0, 2000),
         };
       }
-
     } else {
-      // STANDARD MODE: Original PM analysis prompt
       const analysisPrompt = `Eres un Product Manager experto analizando el proyecto "${folderName}" para la plataforma VEXCO.
 
 Tienes acceso a ${analysis.processedFiles} archivos del proyecto (${analysis.images} imágenes, ${analysis.documents} documentos).
+${docDigest}
 
-IMPORTANTE: Con ${analysis.processedFiles} archivos, debes RESUMIR y SINTETIZAR la información. NO copies texto completo. Extrae insights clave, tendencias y métricas. Mantén cada campo conciso (máximo 2000 caracteres por campo).
+IMPORTANTE: SINTETIZA la información. NO copies texto completo. Extrae insights clave, tendencias y métricas.
 
-INSTRUCCIONES CRÍTICAS:
-- Tu respuesta DEBE ser ÚNICAMENTE un objeto JSON válido (sin markdown, sin \`\`\`json, sin texto adicional)
-- El JSON debe poder ser parseado directamente con JSON.parse()
-- Analiza TODOS los archivos proporcionados
-- Para el campo "metrics", da PRIORIDAD ABSOLUTA a los datos de archivos .json de Twitter: engagement, impresiones, likes, retweets, alcance, crecimiento de seguidores, etc.
-
-RESPONDE ÚNICAMENTE con este objeto JSON (sin texto antes o después):
-
+RESPONDE ÚNICAMENTE con JSON válido:
 {
-  "concept": "Descripción del concepto del proyecto. Incluye: problema que resuelve, solución propuesta, y diferenciadores clave. Máximo 2000 caracteres.",
-  "targetMarket": "Define el público objetivo: demografía, psicografía, tamaño estimado del mercado, y tendencias relevantes. Máximo 2000 caracteres.",
-  "metrics": "PRIORIDAD: Datos de Twitter/X JSON (engagement, impresiones, likes, retweets, seguidores, mejores posts, hashtags efectivos). Si no hay datos Twitter, incluye KPIs sugeridos. Máximo 2000 caracteres.",
-  "actionPlan": "Próximos pasos concretos: 1) Esta semana, 2) Este mes, 3) Este trimestre. Incluye timeline estimado. Máximo 2000 caracteres.",
-  "resources": "Recursos necesarios: técnicos (tecnologías), humanos (roles), financieros (estimación). Máximo 2000 caracteres.",
-  "description": "Resumen ejecutivo completo del análisis PM. Incluye modelo de negocio, propuesta de valor, y validación de mercado. Máximo 2000 caracteres."
+  "concept": "Descripción del concepto del proyecto. Problema, solución, diferenciadores. Max 2000 chars.",
+  "targetMarket": "Público objetivo: demografía, psicografía, tamaño estimado, tendencias. Max 2000 chars.",
+  "metrics": "PRIORIDAD: Datos de Twitter/X JSON si existen. Si no, KPIs sugeridos. Max 2000 chars.",
+  "actionPlan": "Próximos pasos: 1) Esta semana, 2) Este mes, 3) Este trimestre. Max 2000 chars.",
+  "resources": "Recursos necesarios: técnicos, humanos, financieros. Max 2000 chars.",
+  "description": "Resumen ejecutivo: modelo de negocio, propuesta de valor, validación de mercado. Max 2000 chars."
 }`;
 
-      aiResponse = await generateWithFallback(analysisPrompt, parts);
+      if (analysis.images > 0 && parts.length > 0) {
+        const result = await callGeminiMultimodal("", analysisPrompt, parts, true);
+        aiResponse = result.content;
+      } else {
+        const result = await callLLM({
+          model: "gemini-flash",
+          systemPrompt: "",
+          userPrompt: analysisPrompt,
+          jsonMode: true,
+          temperature: 0.5,
+          maxTokens: 4096,
+        });
+        aiResponse = result.content;
+      }
 
-      // Parse standard response
       try {
-        let jsonString = aiResponse.trim();
-        if (jsonString.startsWith("```json")) {
-          jsonString = jsonString.replace(/^```json\s*/, "").replace(/\s*```$/, "");
-        } else if (jsonString.startsWith("```")) {
-          jsonString = jsonString.replace(/^```\s*/, "").replace(/\s*```$/, "");
-        }
-        parsedResponse = JSON.parse(jsonString);
+        parsedResponse = JSON.parse(aiResponse);
       } catch (parseError: any) {
-        console.error("[JSON PARSER] ❌ Error parseando JSON:", parseError.message);
+        console.error("[JSON PARSER] Error parseando JSON:", parseError.message);
         parsedResponse = {
           concept: `Proyecto importado desde Google Drive: ${folderName}`,
-          description: aiResponse,
+          description: aiResponse?.substring(0, 2000) || "Análisis completado",
         };
       }
     }
 
-    // Truncate fields to prevent database errors (max 2000 chars each)
+    // 5. SAVE OR UPDATE PROJECT
     const truncate = (str: string | undefined, maxLen: number = 2000): string | null => {
       if (!str) return null;
       return str.length > maxLen ? str.substring(0, maxLen) + "..." : str;
     };
 
-    // Map to database fields
     const concept = truncate(parsedResponse.concept) || `Proyecto importado desde Google Drive: ${folderName}`;
     const targetMarket = truncate(parsedResponse.targetMarket);
     const metrics = truncate(parsedResponse.metrics);
     const actionPlan = truncate(parsedResponse.actionPlan);
-    const resources = truncate(parsedResponse.resources) || `Archivos analizados: ${analysis.processedFiles}\nImágenes: ${analysis.images}\nDocumentos: ${analysis.documents}`;
-    const description = truncate(parsedResponse.description) || (aiResponse ? aiResponse.substring(0, 2000) : "Análisis completado");
+    const resources =
+      truncate(parsedResponse.resources) ||
+      `Archivos: ${analysis.processedFiles} | Imágenes: ${analysis.images} | Documentos: ${analysis.documents}`;
+    const description = truncate(parsedResponse.description) || "Análisis completado";
 
+    let project;
 
-    // 5. SAVE TO PROJECT TABLE (NEON DB) - Structured JSON mapping
-    const project = await prisma.project.create({
-      data: {
-        title: folderName,
-        description: description,
-        status: "active",
-        projectType: isExpertMode ? "ux_resources" : "idea",
-        category: isExpertMode ? "UX/UI Resources" : "Google Drive Import",
-        priority: "medium",
-        progress: 10,
-        userId: session.user.id,
-        concept: concept,
-        targetMarket: targetMarket,
-        metrics: metrics,
-        actionPlan: actionPlan,
-        resources: resources,
-        currentStep: 1,
-      },
-    });
+    if (existingProjectId) {
+      // UPDATE existing project — enrich with Drive data
+      const existing = await prisma.project.findUnique({ where: { id: existingProjectId } });
+      project = await prisma.project.update({
+        where: { id: existingProjectId },
+        data: {
+          driveFolderId: folderId,
+          ...(!existing?.concept ? { concept } : {}),
+          ...(!existing?.targetMarket ? { targetMarket } : {}),
+          ...(!existing?.metrics ? { metrics } : {}),
+          ...(!existing?.actionPlan ? { actionPlan } : {}),
+          ...(!existing?.resources ? { resources } : {}),
+          ...(!existing?.description ? { description } : {}),
+        },
+      });
+      console.log(`[SPRINT_G] Proyecto existente actualizado: ${project.id}`);
+    } else {
+      project = await prisma.project.create({
+        data: {
+          title: folderName,
+          description,
+          status: "active",
+          projectType: isExpertMode ? "ux_resources" : "idea",
+          category: isExpertMode ? "UX/UI Resources" : "Google Drive Import",
+          priority: "medium",
+          progress: 10,
+          userId: session.user.id,
+          concept,
+          targetMarket,
+          metrics,
+          actionPlan,
+          resources,
+          currentStep: 1,
+          driveFolderId: folderId,
+        },
+      });
+      console.log(`[SPRINT_G] Nuevo proyecto creado: ${project.id}`);
+    }
+
+    // 5B. SAVE PER-DOCUMENT SUMMARIES
+    let docsSaved = 0;
+    for (const doc of docSummaries) {
+      try {
+        await prisma.driveDocSummary.upsert({
+          where: {
+            projectId_driveFileId: {
+              projectId: project.id,
+              driveFileId: doc.file.id,
+            },
+          },
+          update: {
+            summary: doc.summary,
+            keyInsights: doc.keyInsights,
+            category: doc.category,
+            wordCount: doc.wordCount,
+            fileName: doc.file.name,
+          },
+          create: {
+            projectId: project.id,
+            driveFileId: doc.file.id,
+            fileName: doc.file.name,
+            fileType: inferFileType(doc.file.name, doc.file.mimeType),
+            summary: doc.summary,
+            keyInsights: doc.keyInsights,
+            category: doc.category,
+            wordCount: doc.wordCount,
+          },
+        });
+        docsSaved++;
+      } catch (err: any) {
+        console.warn(`[DOC_SAVE] Error saving summary for ${doc.file.name}: ${err.message}`);
+      }
+    }
+    console.log(`[SPRINT_G] ${docsSaved}/${docSummaries.length} resúmenes guardados`);
 
     // 6. EXPERT MODE: Save patterns to PatternCard table
     let patternStats = { saved: 0, duplicates: 0, invalid: 0 };
@@ -727,12 +855,14 @@ RESPONDE ÚNICAMENTE con este objeto JSON (sin texto antes o después):
     return NextResponse.json({
       success: true,
       project,
+      linkedToExisting: !!existingProjectId,
       expertMode: isExpertMode,
       stats: {
         totalFiles: analysis.totalFiles,
         processedFiles: analysis.processedFiles,
         images: analysis.images,
         documents: analysis.documents,
+        docSummaries: docsSaved,
         duration: `${duration}s`,
         errors: analysis.errors.length > 0 ? analysis.errors.slice(0, 5) : undefined,
         ...(isExpertMode && {
@@ -741,7 +871,7 @@ RESPONDE ÚNICAMENTE con este objeto JSON (sin texto antes o después):
             saved: patternStats.saved,
             duplicates: patternStats.duplicates,
             invalid: patternStats.invalid,
-          }
+          },
         }),
       },
     });

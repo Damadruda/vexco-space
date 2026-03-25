@@ -72,6 +72,9 @@ export function DriveFolderAnalyzer({ isOpen, onClose, onProjectCreated }: Drive
   const [files, setFiles] = useState<DriveFile[]>([]);
   const [loading, setLoading] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
+  const [linkMode, setLinkMode] = useState<"create" | "link">("create");
+  const [existingProjects, setExistingProjects] = useState<Array<{ id: string; title: string }>>([]);
+  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedFolder, setSelectedFolder] = useState<DriveFile | null>(null);
   const [expandedFolders, setExpandedFolders] = useState<Set<string>>(new Set());
@@ -119,6 +122,18 @@ export function DriveFolderAnalyzer({ isOpen, onClose, onProjectCreated }: Drive
   }, []);
   
   useEffect(() => {
+    if (linkMode === "link") {
+      fetch("/api/projects")
+        .then((res) => res.json())
+        .then((data) => {
+          const projects = Array.isArray(data) ? data : data.projects || [];
+          setExistingProjects(projects.map((p: any) => ({ id: p.id, title: p.title })));
+        })
+        .catch(() => setExistingProjects([]));
+    }
+  }, [linkMode]);
+
+  useEffect(() => {
     if (isOpen) {
       // Reset state when modal opens
       setSearchQuery("");
@@ -127,6 +142,8 @@ export function DriveFolderAnalyzer({ isOpen, onClose, onProjectCreated }: Drive
       setAnalysisResult(null);
       setCreatedProjectId(null);
       setError(null);
+      setLinkMode("create");
+      setSelectedProjectId(null);
       
       // Reset to root folder if configured
       if (rootFolder) {
@@ -291,7 +308,7 @@ export function DriveFolderAnalyzer({ isOpen, onClose, onProjectCreated }: Drive
         body: JSON.stringify({
           folderId: selectedFolder.id,
           folderName: selectedFolder.name,
-          createProject: true
+          ...(linkMode === "link" && selectedProjectId ? { existingProjectId: selectedProjectId } : {}),
         })
       });
       
@@ -726,6 +743,47 @@ export function DriveFolderAnalyzer({ isOpen, onClose, onProjectCreated }: Drive
                       </ul>
                     </div>
                     
+                    {/* Mode selector: Create new or Link to existing */}
+                    <div className="space-y-3">
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => { setLinkMode("create"); setSelectedProjectId(null); }}
+                          className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                            linkMode === "create"
+                              ? "bg-blue-600 text-white"
+                              : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                          }`}
+                        >
+                          Crear proyecto nuevo
+                        </button>
+                        <button
+                          onClick={() => setLinkMode("link")}
+                          className={`px-3 py-1.5 rounded-md text-sm font-medium transition-colors ${
+                            linkMode === "link"
+                              ? "bg-blue-600 text-white"
+                              : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                          }`}
+                        >
+                          Vincular a existente
+                        </button>
+                      </div>
+
+                      {linkMode === "link" && (
+                        <select
+                          value={selectedProjectId || ""}
+                          onChange={(e) => setSelectedProjectId(e.target.value || null)}
+                          className="w-full p-2 border rounded-md text-sm"
+                        >
+                          <option value="">Selecciona un proyecto...</option>
+                          {existingProjects.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.title}
+                            </option>
+                          ))}
+                        </select>
+                      )}
+                    </div>
+
                     {/* Set as root folder option */}
                     {selectedFolder && rootFolder?.id !== selectedFolder.id && (
                       <button
@@ -759,7 +817,7 @@ export function DriveFolderAnalyzer({ isOpen, onClose, onProjectCreated }: Drive
                 ) : (
                   <button
                     onClick={analyzeFolder}
-                    disabled={!selectedFolder || analyzing}
+                    disabled={analyzing || !selectedFolder || (linkMode === "link" && !selectedProjectId)}
                     className="w-full px-4 py-2.5 bg-gray-900 text-white rounded-md hover:bg-gray-800 disabled:opacity-50 disabled:cursor-not-allowed flex items-center justify-center gap-2"
                   >
                     {analyzing ? (
