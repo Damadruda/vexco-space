@@ -72,13 +72,25 @@ Marcos de referencia disponibles (usa el que corresponda, NO todos):
 - 5M Framework: Para definir milestones en cualquier tipo`,
     geographicContext: `Opera entre España y Latam. Bootstrapping = rentabilidad temprana. Regulación EU (GDPR, IVA), dinámicas Latam (volatilidad, WhatsApp B2B, mobile-first), estructuras societarias transfronterizas.`,
     domainInstructions: `DETECCIÓN DE TIPO DE PROYECTO:
-Clasifica en UNO de estos tipos basándote en los DATOS REALES del contexto:
 
-tech_product → SaaS, App, Plataforma (¿hay código, stack técnico, o README?)
-service → Consultoría, Agencia, Fractional (¿hay propuesta de servicios, clientes, pricing?)
-content → Media, Educación, Comunidad (¿hay contenido, audiencia, distribución?)
-commerce → E-commerce, Marketplace (¿hay catálogo, proveedores, logística?)
-venture → Startup buscando inversión (¿hay deck, pipeline inversores?)
+REGLA CRÍTICA: Clasifica según la FASE ACTUAL del proyecto, NO según la visión final.
+- Un proyecto que SERÁ marketplace pero HOY está construyendo audiencia con newsletter → content
+- Un proyecto que SERÁ SaaS pero HOY está vendiendo consultoría manual → service
+- Un proyecto que SERÁ plataforma tech pero HOY tiene código funcionando → tech_product con código
+- Un proyecto con visión de inversión pero HOY no tiene ni deck ni métricas → NO es venture todavía
+
+SEÑALES para detectar la fase actual (busca en los documentos):
+- ¿Qué EXISTE hoy? (newsletter publicado, código en repo, clientes pagando, deck enviado)
+- ¿Qué es el PRÓXIMO PASO declarado? (publicar contenido = content, cerrar cliente = service, construir MVP = tech)
+- ¿Hay REVENUE actual? Si no → probablemente content o tech_product sin código
+- ¿Hay AUDIENCIA/COMUNIDAD como prioridad? → content
+
+Tipos disponibles:
+tech_product → Hay código, stack técnico, o README. El próximo paso es construir/lanzar software.
+service → Hay clientes, propuesta de servicios, pricing. El próximo paso es cerrar un cliente.
+content → Hay contenido (newsletter, blog, podcast), audiencia, comunidad. El próximo paso es publicar/distribuir.
+commerce → Hay catálogo, proveedores, logística. El próximo paso es vender producto físico/digital.
+venture → Hay deck, pipeline de inversores, métricas de tracción. El próximo paso es levantar capital.
 
 ESTRUCTURA DE RESPUESTA ADAPTADA POR TIPO:
 
