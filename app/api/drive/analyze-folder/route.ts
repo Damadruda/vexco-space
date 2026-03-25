@@ -513,7 +513,7 @@ export async function POST(request: Request) {
   let requestFolderId: string | undefined;
 
   try {
-    // 1. AUTH VALIDATION
+    // 1. AUTH
     const session = await getServerSession(authOptions);
     if (!session?.user?.id) {
       return NextResponse.json({ error: "No autorizado" }, { status: 401 });
@@ -535,73 +535,52 @@ export async function POST(request: Request) {
     }
 
     const accessToken = account.access_token;
-    
-    // TOKEN DEBUGGING - para verificar que el token está sincronizado correctamente
 
     // EXPERT MODE DETECTION
     const isExpertMode = folderId === CONFIG.EXPERT_MODE_FOLDER_ID;
-    if (isExpertMode) {
-    }
 
-    // 2. RECURSIVE FOLDER SCAN (subcarpetas)
-    
+    // 2. SCAN — depth 2, rápido
     const allFiles = await scanFolderRecursively(folderId, accessToken, 0, 2, folderName);
+    const scanTime = ((Date.now() - startTime) / 1000).toFixed(1);
+    console.log(`[DRIVE_IMPORT] Scan: ${scanTime}s — ${allFiles.length} archivos encontrados`);
 
-    // HOTFIX: Limit total files to prevent timeout on large folders
-    const MAX_FILES = 10;
-    const allFilesLimited = allFiles.slice(0, MAX_FILES);
-    if (allFiles.length > MAX_FILES) {
-      console.log(`[SPRINT_G] Carpeta tiene ${allFiles.length} archivos, procesando solo los primeros ${MAX_FILES}`);
-    }
-
-    // ENHANCED ERROR: If no files found, include folder ID in error message
     if (allFiles.length === 0) {
-      return NextResponse.json({ 
-        error: `La carpeta está vacía o no contiene archivos compatibles. Carpeta ID: ${folderId}` 
+      return NextResponse.json({
+        error: `La carpeta está vacía o no contiene archivos compatibles. Carpeta ID: ${folderId}`
       }, { status: 400 });
     }
 
-    const scanDuration = ((Date.now() - startTime) / 1000).toFixed(1);
-    console.log(`[SPRINT_G] Scan completado en ${scanDuration}s — ${allFiles.length} archivos encontrados, procesando ${allFilesLimited.length}`);
-
-    // HOTFIX 3: Solo procesar texto (imágenes = descarga base64 lenta)
-    const textOnlyFiles = allFilesLimited.filter(file => {
-      const isImage = isImageFileByExtension(file.name) ||
-        file.mimeType.startsWith("image/");
+    // 3. FILTRAR — solo texto, max 10 archivos, sin imágenes
+    const textFiles = allFiles.filter(file => {
+      const isImage = isImageFileByExtension(file.name) || file.mimeType.startsWith("image/");
       return !isImage;
-    });
-    console.log(`[SPRINT_G] ${allFilesLimited.length} archivos limitados, ${textOnlyFiles.length} son texto (imágenes excluidas)`);
+    }).slice(0, 10);
 
-    // 3. MULTIMODAL PROCESSING (Images → Base64, Docs → Text)
-    const { parts, analysis } = await processFilesInBatches(textOnlyFiles, accessToken);
+    console.log(`[DRIVE_IMPORT] Procesando ${textFiles.length} archivos de texto (${allFiles.length - textFiles.length} excluidos)`);
 
-    // ENHANCED ERROR: If no parts processed, include folder ID in error message
-    if (parts.length === 0) {
-      return NextResponse.json({ 
-        error: `La carpeta está vacía o no contiene archivos compatibles. Carpeta ID: ${folderId}`,
-        details: analysis.errors.slice(0, 10)
+    // 4. DESCARGAR texto de cada archivo
+    const textContents: string[] = [];
+    for (const file of textFiles) {
+      const processed = await processTextFile(file, accessToken);
+      if (processed.type === "text" && processed.content && "text" in processed.content) {
+        textContents.push((processed.content as { text: string }).text);
+      }
+    }
+
+    const downloadTime = ((Date.now() - startTime) / 1000).toFixed(1);
+    console.log(`[DRIVE_IMPORT] Descarga: ${downloadTime}s — ${textContents.length} archivos con contenido`);
+
+    if (textContents.length === 0) {
+      return NextResponse.json({
+        error: `No se pudo extraer contenido de los archivos. Carpeta ID: ${folderId}`
       }, { status: 400 });
     }
 
-    // 4. AI ANALYSIS — Two phases: per-doc summaries + global analysis
+    // 5. SAFETY CHECK — si ya llevamos >45s, crear proyecto mínimo
+    const elapsedBeforeAI = parseFloat(((Date.now() - startTime) / 1000).toFixed(1));
+    if (elapsedBeforeAI > 45) {
+      console.warn(`[DRIVE_IMPORT] ⚠️ ${elapsedBeforeAI}s — creando proyecto mínimo`);
 
-    // Phase 1: SKIP per-doc summaries (moved to future async job)
-    // Per-doc summaries consume too much time in sync flow
-    const docSummaries: Array<{
-      file: typeof allFilesLimited[0];
-      summary: string;
-      keyInsights: string[];
-      category: string | null;
-      wordCount: number;
-    }> = [];
-    console.log(`[SPRINT_G] Per-doc summaries SKIPPED (async job pendiente)`);
-
-    const elapsedBeforeGlobal = ((Date.now() - startTime) / 1000).toFixed(1);
-    console.log(`[SPRINT_G] Listo para análisis global en ${elapsedBeforeGlobal}s — ${parts.length} parts, ${analysis.processedFiles} procesados de ${allFiles.length} totales`);
-
-    // SAFETY CHECK: if we've already used > 40s, skip global analysis
-    if (parseFloat(elapsedBeforeGlobal) > 40) {
-      console.warn(`[SPRINT_G] ⚠️ ${elapsedBeforeGlobal}s elapsed — skipping global analysis to avoid timeout`);
       const project = existingProjectId
         ? await prisma.project.update({
             where: { id: existingProjectId },
@@ -610,7 +589,7 @@ export async function POST(request: Request) {
         : await prisma.project.create({
             data: {
               title: folderName,
-              description: `Proyecto importado desde Drive. ${allFiles.length} archivos encontrados, ${analysis.processedFiles} procesados. Análisis completo pendiente (timeout).`,
+              description: `Importado desde Drive. ${allFiles.length} archivos, ${textContents.length} procesados. Análisis pendiente por timeout.`,
               status: "active",
               projectType: "idea",
               category: "Google Drive Import",
@@ -622,195 +601,150 @@ export async function POST(request: Request) {
             },
           });
 
-      const duration = ((Date.now() - startTime) / 1000).toFixed(2);
       return NextResponse.json({
         success: true,
         project,
-        linkedToExisting: !!existingProjectId,
         stats: {
           totalFiles: allFiles.length,
-          processedFiles: analysis.processedFiles,
-          images: analysis.images,
-          documents: analysis.documents,
-          docSummaries: 0,
-          duration: `${duration}s`,
-          warning: "Análisis global omitido por timeout. Re-escanea la carpeta para completar.",
+          processedFiles: textContents.length,
+          duration: `${((Date.now() - startTime) / 1000).toFixed(2)}s`,
+          warning: "Análisis AI omitido por tiempo. Re-importa para completar.",
         },
       });
     }
 
-    // Phase 2: Global project analysis using all parts (multimodal if images exist)
-    let aiResponse: string;
+    // 6. ANÁLISIS AI — concatenar texto + single call a Flash
+    const allText = textContents.join("\n\n");
+    // Truncar a 30000 chars para que Flash lo procese rápido
+    const truncatedText = allText.length > 30000
+      ? allText.substring(0, 30000) + "\n\n[... contenido truncado ...]"
+      : allText;
+
     let parsedResponse: any = {};
     let patternsExtracted: ExtractedPattern[] = [];
 
-    const docDigest =
-      docSummaries.length > 0
-        ? `\n\nRESÚMENES DE DOCUMENTOS INDIVIDUALES:\n` +
-          docSummaries
-            .map(
-              (d) =>
-                `- ${d.file.name} [${d.category || "sin categoría"}]: ${d.summary}`
-            )
-            .join("\n")
-        : "";
-
     if (isExpertMode) {
+      // EXPERT MODE — extracción de patrones UX/UI
       const expertPrompt = `Eres un experto en UX/UI Design Systems analizando recursos del proyecto "${folderName}".
 
-Tienes acceso a ${analysis.processedFiles} archivos (${analysis.images} imágenes, ${analysis.documents} documentos).
-${docDigest}
+Tienes acceso al contenido de ${textContents.length} documentos.
 
-MISIÓN: Extraer TODOS los patrones de diseño visual y herramientas de implementación encontrados en estos archivos.
+MISIÓN: Extraer TODOS los patrones de diseño visual y herramientas de implementación.
 
-INSTRUCCIONES CRÍTICAS:
-1. Tu respuesta DEBE ser ÚNICAMENTE un objeto JSON válido (sin markdown, sin \`\`\`json, sin texto adicional)
-2. Analiza TODOS los archivos buscando:
-   - Patrones visuales de UI (botones, cards, layouts, tipografía, colores, animaciones, etc.)
-   - Herramientas y librerías mencionadas (npm packages, frameworks, APIs)
-3. Si encuentras URLs externas en archivos .json o .md, infiere patrones de diseño de esos sitios basándote en tu conocimiento
-4. Para cada hallazgo, clasifica como VISUAL_PATTERN o TOOL_IMPLEMENTATION
-
-FORMATO DE RESPUESTA (JSON array):
+Tu respuesta DEBE ser ÚNICAMENTE un objeto JSON válido (sin markdown, sin backticks):
 {
   "patterns": [
     {
-      "name": "Nombre descriptivo del patrón o herramienta",
-      "description": "Descripción detallada de qué es y para qué sirve",
+      "name": "Nombre del patrón",
+      "description": "Descripción",
       "category": "VISUAL_PATTERN" | "TOOL_IMPLEMENTATION",
-      "howToApply": "Guía paso a paso de cómo aplicar este patrón (OBLIGATORIO para VISUAL_PATTERN)",
-      "cssCode": "/* Código CSS ejemplo */ (OBLIGATORIO para VISUAL_PATTERN)",
-      "installationCommand": "npm install package-name (OBLIGATORIO para TOOL_IMPLEMENTATION)",
-      "docsUrl": "https://docs.example.com (OBLIGATORIO para TOOL_IMPLEMENTATION)",
-      "sourceUrl": "URL de origen o referencia única del archivo/sitio donde se encontró"
+      "howToApply": "Guía (OBLIGATORIO para VISUAL_PATTERN)",
+      "cssCode": "CSS (OBLIGATORIO para VISUAL_PATTERN)",
+      "installationCommand": "npm install X (OBLIGATORIO para TOOL_IMPLEMENTATION)",
+      "docsUrl": "URL (OBLIGATORIO para TOOL_IMPLEMENTATION)",
+      "sourceUrl": "referencia única"
     }
   ]
-}
-
-REGLAS:
-- VISUAL_PATTERN DEBE tener: cssCode y howToApply
-- TOOL_IMPLEMENTATION DEBE tener: installationCommand y docsUrl
-- sourceUrl DEBE ser único para cada patrón
-- Extrae el máximo de patrones posibles (mínimo 5, máximo 50)`;
-
-      const expertResult = await callGeminiMultimodal(
-        "",
-        expertPrompt,
-        parts,
-        true,       // jsonMode
-        4096,       // maxTokens
-        0.5,        // temperature
-        "gemini-2.5-flash"  // modelOverride — Flash para cumplir timeout
-      );
-      aiResponse = expertResult.content;
-
-      try {
-        const parsed = JSON.parse(aiResponse);
-        patternsExtracted = parsed.patterns || [];
-      } catch (parseError: any) {
-        console.error("[EXPERT MODE] Error parseando patrones JSON:", parseError.message);
-        patternsExtracted = [];
-      }
-
-      // PM analysis for Expert Mode project
-      const pmResult = await callLLM({
-        model: "gemini-flash",
-        systemPrompt: `Eres un Product Manager experto analizando el proyecto "${folderName}" para la plataforma VEXCO. Este es un proyecto de RECURSOS UX/UI.`,
-        userPrompt: `Archivos: ${analysis.processedFiles} (${analysis.images} imágenes, ${analysis.documents} documentos).${docDigest}
-
-RESPONDE ÚNICAMENTE con JSON válido:
-{
-  "concept": "Descripción del tipo de recursos UX/UI encontrados. Max 2000 chars.",
-  "targetMarket": "Diseñadores y desarrolladores que buscan recursos de UI/UX. Max 2000 chars.",
-  "metrics": "Cantidad de patrones, herramientas, y categorías encontradas. Max 2000 chars.",
-  "actionPlan": "Cómo utilizar estos recursos en proyectos. Max 2000 chars.",
-  "resources": "Lista de las principales herramientas y recursos identificados. Max 2000 chars.",
-  "description": "Resumen ejecutivo de la colección de recursos UX/UI. Max 2000 chars."
-}`,
-        jsonMode: true,
-        temperature: 0.5,
-        maxTokens: 4096,
-      });
-
-      try {
-        parsedResponse = JSON.parse(pmResult.content);
-      } catch {
-        parsedResponse = {
-          concept: `Colección de recursos UX/UI: ${folderName}`,
-          description: pmResult.content.substring(0, 2000),
-        };
-      }
-    } else {
-      const analysisPrompt = `Eres un Product Manager experto analizando el proyecto "${folderName}" para la plataforma VEXCO.
-
-Tienes acceso a ${analysis.processedFiles} archivos del proyecto (${analysis.images} imágenes, ${analysis.documents} documentos).
-${docDigest}
-
-IMPORTANTE: SINTETIZA la información. NO copies texto completo. Extrae insights clave, tendencias y métricas.
-
-RESPONDE ÚNICAMENTE con JSON válido:
-{
-  "concept": "Descripción del concepto del proyecto. Problema, solución, diferenciadores. Max 2000 chars.",
-  "targetMarket": "Público objetivo: demografía, psicografía, tamaño estimado, tendencias. Max 2000 chars.",
-  "metrics": "PRIORIDAD: Datos de Twitter/X JSON si existen. Si no, KPIs sugeridos. Max 2000 chars.",
-  "actionPlan": "Próximos pasos: 1) Esta semana, 2) Este mes, 3) Este trimestre. Max 2000 chars.",
-  "resources": "Recursos necesarios: técnicos, humanos, financieros. Max 2000 chars.",
-  "description": "Resumen ejecutivo: modelo de negocio, propuesta de valor, validación de mercado. Max 2000 chars."
 }`;
 
-      if (analysis.images > 0 && parts.length > 0) {
-        const result = await callGeminiMultimodal(
-          "",
-          analysisPrompt,
-          parts,
-          true,       // jsonMode
-          4096,       // maxTokens
-          0.5,        // temperature
-          "gemini-2.5-flash"  // modelOverride — Flash para cumplir timeout
-        );
-        aiResponse = result.content;
-      } else {
+      try {
+        const expertResult = await callLLM({
+          model: "gemini-flash",
+          systemPrompt: expertPrompt,
+          userPrompt: truncatedText,
+          jsonMode: true,
+          temperature: 0.5,
+          maxTokens: 2048,
+        });
+        const parsed = JSON.parse(expertResult.content);
+        patternsExtracted = parsed.patterns || [];
+      } catch (e: any) {
+        console.error("[DRIVE_IMPORT] Error en Expert Mode:", e.message);
+      }
+
+      // PM analysis para Expert Mode
+      try {
+        const pmResult = await callLLM({
+          model: "gemini-flash",
+          systemPrompt: `Eres un PM analizando recursos UX/UI del proyecto "${folderName}". Responde SOLO con JSON válido.`,
+          userPrompt: `Contenido de ${textContents.length} documentos:\n\n${truncatedText.substring(0, 15000)}\n\nJSON requerido:
+{
+  "concept": "Descripción de los recursos UX/UI encontrados",
+  "targetMarket": "Quién usaría estos recursos",
+  "metrics": "Cantidad de patrones y herramientas",
+  "actionPlan": "Cómo aplicar estos recursos",
+  "resources": "Herramientas principales identificadas",
+  "description": "Resumen ejecutivo"
+}`,
+          jsonMode: true,
+          temperature: 0.5,
+          maxTokens: 2048,
+        });
+        parsedResponse = JSON.parse(pmResult.content);
+      } catch {
+        parsedResponse = { concept: `Recursos UX/UI: ${folderName}` };
+      }
+
+    } else {
+      // STANDARD MODE — análisis PM con contenido real de los documentos
+      const analysisPrompt = `Analiza el siguiente contenido del proyecto "${folderName}" y genera un análisis estratégico.
+
+CONTENIDO DE ${textContents.length} DOCUMENTOS DEL PROYECTO:
+
+${truncatedText}
+
+INSTRUCCIONES:
+- Basa tu análisis EXCLUSIVAMENTE en el contenido proporcionado
+- NO inventes información que no esté en los documentos
+- Si no hay suficiente información para un campo, escribe "Información no disponible en los documentos"
+- Responde ÚNICAMENTE con JSON válido (sin markdown, sin backticks)
+
+{
+  "concept": "Qué es este proyecto según los documentos. Problema que resuelve, solución propuesta. Max 2000 chars.",
+  "targetMarket": "Público objetivo según lo descrito en los documentos. Max 2000 chars.",
+  "metrics": "KPIs o métricas mencionadas en los documentos. Max 2000 chars.",
+  "actionPlan": "Próximos pasos o plan descrito en los documentos. Max 2000 chars.",
+  "resources": "Recursos, tecnologías o herramientas mencionadas. Max 2000 chars.",
+  "description": "Resumen ejecutivo basado en los documentos. Max 2000 chars."
+}`;
+
+      try {
         const result = await callLLM({
           model: "gemini-flash",
           systemPrompt: "",
           userPrompt: analysisPrompt,
           jsonMode: true,
-          temperature: 0.5,
+          temperature: 0.3,
           maxTokens: 2048,
         });
-        aiResponse = result.content;
-      }
-
-      try {
-        parsedResponse = JSON.parse(aiResponse);
-      } catch (parseError: any) {
-        console.error("[JSON PARSER] Error parseando JSON:", parseError.message);
+        parsedResponse = JSON.parse(result.content);
+        console.log(`[DRIVE_IMPORT] Análisis AI completado. Campos: ${Object.keys(parsedResponse).join(", ")}`);
+      } catch (e: any) {
+        console.error("[DRIVE_IMPORT] Error parseando análisis:", e.message);
         parsedResponse = {
-          concept: `Proyecto importado desde Google Drive: ${folderName}`,
-          description: aiResponse?.substring(0, 2000) || "Análisis completado",
+          concept: `Proyecto importado: ${folderName}. ${textContents.length} documentos procesados.`,
+          description: `Importación automática de ${allFiles.length} archivos desde Google Drive.`,
         };
       }
     }
 
-    // 5. SAVE OR UPDATE PROJECT
+    // 7. TRUNCAR campos
     const truncate = (str: string | undefined, maxLen: number = 2000): string | null => {
       if (!str) return null;
       return str.length > maxLen ? str.substring(0, maxLen) + "..." : str;
     };
 
-    const concept = truncate(parsedResponse.concept) || `Proyecto importado desde Google Drive: ${folderName}`;
+    const concept = truncate(parsedResponse.concept) || `Proyecto importado: ${folderName}`;
     const targetMarket = truncate(parsedResponse.targetMarket);
     const metrics = truncate(parsedResponse.metrics);
     const actionPlan = truncate(parsedResponse.actionPlan);
-    const resources =
-      truncate(parsedResponse.resources) ||
-      `Archivos: ${analysis.processedFiles} | Imágenes: ${analysis.images} | Documentos: ${analysis.documents}`;
-    const description = truncate(parsedResponse.description) || "Análisis completado";
+    const resources = truncate(parsedResponse.resources) || `${allFiles.length} archivos, ${textContents.length} procesados`;
+    const description = truncate(parsedResponse.description) || `Proyecto importado desde Drive: ${folderName}`;
 
+    // 8. GUARDAR PROYECTO
     let project;
 
     if (existingProjectId) {
-      // UPDATE existing project — enrich with Drive data
       const existing = await prisma.project.findUnique({ where: { id: existingProjectId } });
       project = await prisma.project.update({
         where: { id: existingProjectId },
@@ -824,7 +758,6 @@ RESPONDE ÚNICAMENTE con JSON válido:
           ...(!existing?.description ? { description } : {}),
         },
       });
-      console.log(`[SPRINT_G] Proyecto existente actualizado: ${project.id}`);
     } else {
       project = await prisma.project.create({
         data: {
@@ -845,52 +778,46 @@ RESPONDE ÚNICAMENTE con JSON válido:
           driveFolderId: folderId,
         },
       });
-      console.log(`[SPRINT_G] Nuevo proyecto creado: ${project.id}`);
     }
 
-    // 5B. SAVE PER-DOCUMENT SUMMARIES
-    let docsSaved = 0;
-    for (const doc of docSummaries) {
-      try {
-        await prisma.driveDocSummary.upsert({
-          where: {
-            projectId_driveFileId: {
-              projectId: project.id,
-              driveFileId: doc.file.id,
-            },
-          },
-          update: {
-            summary: doc.summary,
-            keyInsights: doc.keyInsights,
-            category: doc.category,
-            wordCount: doc.wordCount,
-            fileName: doc.file.name,
-          },
-          create: {
-            projectId: project.id,
-            driveFileId: doc.file.id,
-            fileName: doc.file.name,
-            fileType: inferFileType(doc.file.name, doc.file.mimeType),
-            summary: doc.summary,
-            keyInsights: doc.keyInsights,
-            category: doc.category,
-            wordCount: doc.wordCount,
-          },
-        });
-        docsSaved++;
-      } catch (err: any) {
-        console.warn(`[DOC_SAVE] Error saving summary for ${doc.file.name}: ${err.message}`);
-      }
-    }
-    console.log(`[SPRINT_G] ${docsSaved}/${docSummaries.length} resúmenes guardados`);
+    console.log(`[DRIVE_IMPORT] Proyecto ${existingProjectId ? "actualizado" : "creado"}: ${project.id}`);
 
-    // 6. EXPERT MODE: Save patterns to PatternCard table
+    // 9. EXPERT MODE: guardar patrones
     let patternStats = { saved: 0, duplicates: 0, invalid: 0 };
     if (isExpertMode && patternsExtracted.length > 0) {
       patternStats = await processAndSavePatterns(patternsExtracted, project.id);
     }
 
+    // 10. GUARDAR DriveDocSummary — metadata sin AI (resúmenes AI = Sprint H async)
+    let docsSaved = 0;
+    for (const file of textFiles) {
+      try {
+        await prisma.driveDocSummary.upsert({
+          where: {
+            projectId_driveFileId: {
+              projectId: project.id,
+              driveFileId: file.id,
+            },
+          },
+          update: { fileName: file.name },
+          create: {
+            projectId: project.id,
+            driveFileId: file.id,
+            fileName: file.name,
+            fileType: inferFileType(file.name, file.mimeType),
+            summary: `Documento importado: ${file.name}`,
+            keyInsights: [],
+            category: null,
+          },
+        });
+        docsSaved++;
+      } catch (err: any) {
+        console.warn(`[DRIVE_IMPORT] Error guardando doc ${file.name}: ${err.message}`);
+      }
+    }
+
     const duration = ((Date.now() - startTime) / 1000).toFixed(2);
+    console.log(`[DRIVE_IMPORT] Completado en ${duration}s — proyecto: ${project.id}, docs: ${docsSaved}`);
 
     return NextResponse.json({
       success: true,
@@ -899,12 +826,11 @@ RESPONDE ÚNICAMENTE con JSON válido:
       expertMode: isExpertMode,
       stats: {
         totalFiles: allFiles.length,
-        processedFiles: analysis.processedFiles,
-        images: analysis.images,
-        documents: analysis.documents,
+        processedFiles: textContents.length,
+        documents: textContents.length,
+        images: 0,
         docSummaries: docsSaved,
         duration: `${duration}s`,
-        errors: analysis.errors.length > 0 ? analysis.errors.slice(0, 5) : undefined,
         ...(isExpertMode && {
           patterns: {
             extracted: patternsExtracted.length,
@@ -918,7 +844,7 @@ RESPONDE ÚNICAMENTE con JSON válido:
 
   } catch (error: any) {
     const duration = ((Date.now() - startTime) / 1000).toFixed(2);
-    console.error(`❌ Análisis falló después de ${duration}s:`, error);
+    console.error(`[DRIVE_IMPORT] ❌ Error después de ${duration}s:`, error.message);
 
     return NextResponse.json(
       {
