@@ -587,6 +587,9 @@ export async function POST(request: Request) {
       ? `Proyecto existente siendo enriquecido con documentos de Drive.`
       : `Nuevo proyecto: ${folderName}`;
 
+    // Limit per-doc summaries to first 10 files to stay within time budget
+    const textPartsLimited = textParts.slice(0, 10);
+
     const docSummaries: Array<{
       file: (typeof allFiles)[0];
       summary: string;
@@ -595,8 +598,8 @@ export async function POST(request: Request) {
       wordCount: number;
     }> = [];
 
-    for (let i = 0; i < textParts.length; i += 5) {
-      const batch = textParts.slice(i, i + 5);
+    for (let i = 0; i < textPartsLimited.length; i += 5) {
+      const batch = textPartsLimited.slice(i, i + 5);
       const batchResults = await Promise.all(
         batch.map(async (file) => {
           const processed = await processTextFile(file, accessToken);
@@ -614,6 +617,9 @@ export async function POST(request: Request) {
     }
 
     console.log(`[SPRINT_G] ${docSummaries.length} documentos resumidos individualmente`);
+
+    const elapsedBeforeGlobal = ((Date.now() - startTime) / 1000).toFixed(1);
+    console.log(`[SPRINT_G] Phase 1 completada en ${elapsedBeforeGlobal}s — ${docSummaries.length} docs resumidos. Iniciando análisis global con Flash.`);
 
     // Phase 2: Global project analysis using all parts (multimodal if images exist)
     let aiResponse: string;
@@ -669,7 +675,15 @@ REGLAS:
 - sourceUrl DEBE ser único para cada patrón
 - Extrae el máximo de patrones posibles (mínimo 5, máximo 50)`;
 
-      const expertResult = await callGeminiMultimodal("", expertPrompt, parts, true);
+      const expertResult = await callGeminiMultimodal(
+        "",
+        expertPrompt,
+        parts,
+        true,       // jsonMode
+        4096,       // maxTokens
+        0.5,        // temperature
+        "gemini-2.5-flash"  // modelOverride — Flash para cumplir timeout
+      );
       aiResponse = expertResult.content;
 
       try {
@@ -727,7 +741,15 @@ RESPONDE ÚNICAMENTE con JSON válido:
 }`;
 
       if (analysis.images > 0 && parts.length > 0) {
-        const result = await callGeminiMultimodal("", analysisPrompt, parts, true);
+        const result = await callGeminiMultimodal(
+          "",
+          analysisPrompt,
+          parts,
+          true,       // jsonMode
+          4096,       // maxTokens
+          0.5,        // temperature
+          "gemini-2.5-flash"  // modelOverride — Flash para cumplir timeout
+        );
         aiResponse = result.content;
       } else {
         const result = await callLLM({
