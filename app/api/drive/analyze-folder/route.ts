@@ -545,8 +545,14 @@ export async function POST(request: Request) {
 
     // 2. RECURSIVE FOLDER SCAN (subcarpetas)
     
-    const allFiles = await scanFolderRecursively(folderId, accessToken, 0, 10, folderName);
-    
+    const allFiles = await scanFolderRecursively(folderId, accessToken, 0, 3, folderName);
+
+    // HOTFIX: Limit total files to prevent timeout on large folders
+    const MAX_FILES = 15;
+    const allFilesLimited = allFiles.slice(0, MAX_FILES);
+    if (allFiles.length > MAX_FILES) {
+      console.log(`[SPRINT_G] Carpeta tiene ${allFiles.length} archivos, procesando solo los primeros ${MAX_FILES}`);
+    }
 
     // ENHANCED ERROR: If no files found, include folder ID in error message
     if (allFiles.length === 0) {
@@ -555,8 +561,11 @@ export async function POST(request: Request) {
       }, { status: 400 });
     }
 
+    const scanDuration = ((Date.now() - startTime) / 1000).toFixed(1);
+    console.log(`[SPRINT_G] Scan completado en ${scanDuration}s — ${allFiles.length} archivos encontrados, procesando ${allFilesLimited.length}`);
+
     // 3. MULTIMODAL PROCESSING (Images → Base64, Docs → Text)
-    const { parts, analysis } = await processFilesInBatches(allFiles, accessToken);
+    const { parts, analysis } = await processFilesInBatches(allFilesLimited, accessToken);
 
     // ENHANCED ERROR: If no parts processed, include folder ID in error message
     if (parts.length === 0) {
@@ -569,7 +578,7 @@ export async function POST(request: Request) {
     // 4. AI ANALYSIS — Two phases: per-doc summaries + global analysis
 
     // Phase 1: Per-document summaries (only for text files, parallel batches of 5)
-    const textParts = allFiles.filter((f) => {
+    const textParts = allFilesLimited.filter((f) => {
       const isText =
         isTextFileByExtension(f.name) ||
         CONFIG.SUPPORTED_TEXT_TYPES.some(
@@ -587,8 +596,8 @@ export async function POST(request: Request) {
       ? `Proyecto existente siendo enriquecido con documentos de Drive.`
       : `Nuevo proyecto: ${folderName}`;
 
-    // Limit per-doc summaries to first 10 files to stay within time budget
-    const textPartsLimited = textParts.slice(0, 10);
+    // Limit per-doc summaries to first 5 files to stay within time budget
+    const textPartsLimited = textParts.slice(0, 5);
 
     const docSummaries: Array<{
       file: (typeof allFiles)[0];
@@ -880,7 +889,7 @@ RESPONDE ÚNICAMENTE con JSON válido:
       linkedToExisting: !!existingProjectId,
       expertMode: isExpertMode,
       stats: {
-        totalFiles: analysis.totalFiles,
+        totalFiles: allFiles.length,
         processedFiles: analysis.processedFiles,
         images: analysis.images,
         documents: analysis.documents,
