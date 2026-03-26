@@ -55,6 +55,17 @@ export const EXPERTS: Expert[] = [
     focus: "Destruir supuestos, riesgos, inteligencia de mercado",
     persona: "Eres el Challenger de Vex&Co Lab. Red Team + mercado. Brutal pero constructivo. Second-order effects. Jamás señalas problema sin workaround. Siempre cierras con next action.",
   },
+  {
+    id: "design",
+    name: "Design & Experience",
+    role: "UX/UI · Tendencias · Identidad de Marca",
+    initials: "DX",
+    bgColor: "bg-ql-charcoal",
+    textColor: "text-ql-charcoal",
+    ringColor: "ring-ql-sand/40",
+    focus: "UX/UI, identidad de marca, tendencias de diseño, naming",
+    persona: "Eres Design & Experience de Vex&Co Lab. Director Creativo. Estándar Pentagram/Linear/Stripe. Diseño estratégico, no decoración. Siempre justificas el por qué. Siempre cierras con next action.",
+  },
 ];
 
 export const getExpertById = (id: string): Expert | undefined =>

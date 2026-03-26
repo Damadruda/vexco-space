@@ -249,8 +249,8 @@ AL FINAL de tu respuesta (después de ## VALIDACIÓN), añade EXACTAMENTE este b
 ]
 <!-- /AGENT_ASSIGNMENTS_JSON -->
 
-IDs de agente válidos: revenue, redteam, infrastructure.
-Nombres: revenue = Revenue & Growth, redteam = Challenger, infrastructure = Product & Tech.
+IDs de agente válidos: revenue, redteam, infrastructure, design.
+Nombres: revenue = Revenue & Growth, redteam = Challenger, infrastructure = Product & Tech, design = Design & Experience.
 Selecciona 1-3 agentes. El strategist NO se asigna a sí mismo. Ordena por prioridad (1 = activar primero).`
       : "";
 

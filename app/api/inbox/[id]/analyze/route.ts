@@ -27,6 +27,7 @@ Reglas:
 - Cero jerga o palabras como "sumérgete", "tapiz", "crucial", "descubre".
 - "noise" = contenido irrelevante para decisiones de negocio.
 - relevanceScore: 1.0 = altamente relevante para estrategia B2B.
+- Contenido sobre UX/UI, design systems, branding, identidad visual, tendencias de diseño, herramientas de diseño (Figma, Framer, etc.), naming, y experiencia de usuario debe clasificarse como "trend" o "discovery" (NUNCA como "noise"). Incluye el tag "design" en suggestedTags.
 - Devuelve SOLO el JSON, sin markdown ni explicaciones adicionales.
 
 CONTENIDO A ANALIZAR:
