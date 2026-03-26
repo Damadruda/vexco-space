@@ -266,13 +266,15 @@ Selecciona 1-3 agentes. El strategist NO se asigna a sí mismo. Ordena por prior
 
     let historyBlock = "";
     if (conversationHistory && conversationHistory.length > 0) {
-      const recent = conversationHistory.slice(-6);
+      const maxMessages = isStrategist ? 10 : 6;
+      const maxChars = isStrategist ? 2000 : 800;
+      const recent = conversationHistory.slice(-maxMessages);
       historyBlock =
         "HISTORIAL RECIENTE DE ESTA CONVERSACIÓN:\n" +
         recent
           .map((m) => {
             const prefix = m.role === "user" ? "USUARIO" : `AGENTE (${m.agentId ?? "unknown"})`;
-            return `${prefix}: ${m.content.substring(0, 800)}`;
+            return `${prefix}: ${m.content.substring(0, maxChars)}`;
           })
           .join("\n\n") +
         "\n\n---\nNUEVO MENSAJE DEL USUARIO:\n";

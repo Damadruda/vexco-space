@@ -11,7 +11,7 @@ import Anthropic from "@anthropic-ai/sdk";
 // ─── Public Types ─────────────────────────────────────────────────────────────
 
 export interface LLMRequest {
-  model: "gemini-flash" | "claude-sonnet" | "perplexity-sonar";
+  model: "gemini-flash" | "gemini-pro" | "claude-sonnet" | "perplexity-sonar";
   systemPrompt: string;
   userPrompt: string;
   jsonMode: boolean;
@@ -39,7 +39,7 @@ async function callGemini(
   const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
   if (!apiKey) throw new Error("GOOGLE_GENERATIVE_AI_API_KEY no configurada");
 
-  const modelName = modelOverride ?? "gemini-2.5-pro";
+  const modelName = modelOverride ?? "gemini-3.1-pro-preview";
   const timeoutMs = modelName.includes("flash") ? 25_000 : 55_000;
 
   const genAI = new GoogleGenerativeAI(apiKey);
@@ -77,9 +77,9 @@ async function callGemini(
   }
 
   // Fallback Pro → Flash
-  if (!modelOverride && modelName === "gemini-2.5-pro") {
-    console.warn("[GEMINI] Pro failed twice, falling back to gemini-2.5-flash");
-    return callGemini(systemPrompt, userPrompt, jsonMode, maxTokens, temperature, "gemini-2.5-flash");
+  if (!modelOverride && modelName === "gemini-3.1-pro-preview") {
+    console.warn("[GEMINI] Pro failed twice, falling back to gemini-3-flash-preview");
+    return callGemini(systemPrompt, userPrompt, jsonMode, maxTokens, temperature, "gemini-3-flash-preview");
   }
 
   throw new Error(`Gemini ${modelName} failed after all retries`);
@@ -197,7 +197,7 @@ export async function callGeminiMultimodal(
   if (!apiKey) throw new Error("GOOGLE_GENERATIVE_AI_API_KEY no configurada");
 
   const startTime = Date.now();
-  const modelName = modelOverride || "gemini-2.5-pro";
+  const modelName = modelOverride || "gemini-3.1-pro-preview";
   const timeoutMs = modelName.includes("flash") ? 25000 : 55000;
 
   const genAI = new GoogleGenerativeAI(apiKey);
@@ -236,8 +236,8 @@ export async function callGeminiMultimodal(
   }
 
   // Fallback Pro → Flash
-  if (!modelOverride && modelName === "gemini-2.5-pro") {
-    console.warn("[GEMINI_MULTIMODAL] Pro failed, falling back to gemini-2.5-flash");
+  if (!modelOverride && modelName === "gemini-3.1-pro-preview") {
+    console.warn("[GEMINI_MULTIMODAL] Pro failed, falling back to gemini-3-flash-preview");
     return callGeminiMultimodal(
       systemPrompt,
       userPrompt,
@@ -245,7 +245,7 @@ export async function callGeminiMultimodal(
       jsonMode,
       maxTokens,
       temperature,
-      "gemini-2.5-flash"
+      "gemini-3-flash-preview"
     );
   }
 
@@ -267,17 +267,22 @@ export async function callLLM(request: LLMRequest): Promise<LLMResponse> {
     const res = await callClaude(systemPrompt, userPrompt, jsonMode, maxTokens, temperature);
     content = res.content;
     tokensUsed = res.tokensUsed;
-    realModel = apiKey ? "claude-sonnet-4-20250514" : "gemini-2.5-pro (fallback)";
+    realModel = apiKey ? "claude-sonnet-4-20250514" : "gemini-3.1-pro-preview (fallback)";
   } else if (model === "perplexity-sonar") {
     const apiKey = process.env.PERPLEXITY_API_KEY;
     const res = await callPerplexity(systemPrompt, userPrompt, temperature);
     content = res.content;
-    realModel = apiKey ? "sonar-pro" : "gemini-2.5-pro (fallback)";
-  } else {
-    const res = await callGemini(systemPrompt, userPrompt, jsonMode, maxTokens, temperature);
+    realModel = apiKey ? "sonar-pro" : "gemini-3-flash-preview (fallback)";
+  } else if (model === "gemini-pro") {
+    const res = await callGemini(systemPrompt, userPrompt, jsonMode, maxTokens, temperature, "gemini-3.1-pro-preview");
     content = res.content;
     tokensUsed = res.tokensUsed;
-    realModel = "gemini-2.5-pro";
+    realModel = "gemini-3.1-pro-preview";
+  } else {
+    const res = await callGemini(systemPrompt, userPrompt, jsonMode, maxTokens, temperature, "gemini-3-flash-preview");
+    content = res.content;
+    tokensUsed = res.tokensUsed;
+    realModel = "gemini-3-flash-preview";
   }
 
   return {
