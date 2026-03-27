@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth-options";
 import { prisma } from "@/lib/db";
-import { Part } from "@google/generative-ai";
+import type { Part } from "@/lib/clients/llm";
 import { callLLM, callGeminiMultimodal } from "@/lib/clients/llm";
 import mammoth from "mammoth";
 

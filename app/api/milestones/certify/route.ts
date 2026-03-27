@@ -13,9 +13,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { prisma } from '@/lib/prisma';
 import { authOptions } from '@/lib/auth-options';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenAI } from '@google/genai';
 
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || '');
+const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_AI_API_KEY || '' });
 
 // =============================================================================
 // POST HANDLER - Request Certification
@@ -217,8 +217,6 @@ async function performAICertification(milestone: any, projectContext: string, ev
   missingEvidence?: string[];
   suggestions?: string[];
 }> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-pro' });
-  
   const prompt = `Eres un auditor de milestones para startups. Tu trabajo es CERTIFICAR si un milestone ha sido completado basándote en la evidencia disponible.
 
 ## CONTEXTO DEL PROYECTO:
@@ -246,8 +244,8 @@ ${evidence || 'El usuario solicita certificación automática basada en el progr
 }`;
 
   try {
-    const result = await model.generateContent(prompt);
-    const text = result.response.text();
+    const result = await ai.models.generateContent({ model: 'gemini-2.5-pro', contents: prompt });
+    const text = result.text || '';
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     
     if (jsonMatch) {

@@ -15,10 +15,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { prisma } from '@/lib/prisma';
 import { authOptions } from '@/lib/auth-options';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenAI } from '@google/genai';
 
 // Initialize Gemini AI
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || '');
+const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_AI_API_KEY || '' });
 
 // =============================================================================
 // INVEST CRITERIA DEFINITIONS
@@ -248,9 +248,8 @@ Respond in JSON format:
 }`;
 
   try {
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-pro' });
-    const result = await model.generateContent(prompt);
-    const response = result.response.text();
+    const result = await ai.models.generateContent({ model: 'gemini-2.5-pro', contents: prompt });
+    const response = result.text || '';
     
     // Parse JSON response
     const jsonMatch = response.match(/\{[\s\S]*\}/);

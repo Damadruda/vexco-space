@@ -5,8 +5,10 @@
 // Fallback: Claude → Gemini Flash | Perplexity → Gemini Flash (with warning).
 // =============================================================================
 
-import { GoogleGenerativeAI, Part } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 import Anthropic from "@anthropic-ai/sdk";
+
+export type Part = { text: string } | { inlineData: { data: string; mimeType: string } };
 
 // ─── Public Types ─────────────────────────────────────────────────────────────
 
@@ -42,15 +44,7 @@ async function callGemini(
   const modelName = modelOverride ?? "gemini-3.1-pro-preview";
   const timeoutMs = modelName.includes("flash") ? 25_000 : 55_000;
 
-  const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({
-    model: modelName,
-    generationConfig: {
-      ...(jsonMode ? { responseMimeType: "application/json" } : {}),
-      ...(maxTokens ? { maxOutputTokens: maxTokens } : {}),
-      ...(temperature !== undefined ? { temperature } : { temperature: 0.7 }),
-    },
-  });
+  const ai = new GoogleGenAI({ apiKey });
 
   const fullPrompt = systemPrompt
     ? `${systemPrompt}\n\n${userPrompt}`
@@ -62,8 +56,17 @@ async function callGemini(
       const timeoutPromise = new Promise<never>((_, reject) =>
         setTimeout(() => reject(new Error(`Gemini timeout after ${timeoutMs / 1000}s`)), timeoutMs)
       );
-      const result = await Promise.race([model.generateContent(fullPrompt), timeoutPromise]);
-      const text = result.response.text();
+      const generatePromise = ai.models.generateContent({
+        model: modelName,
+        contents: fullPrompt,
+        config: {
+          ...(maxTokens ? { maxOutputTokens: maxTokens } : {}),
+          temperature: temperature !== undefined ? temperature : 0.7,
+          ...(jsonMode ? { responseMimeType: "application/json" } : {}),
+        },
+      });
+      const result = await Promise.race([generatePromise, timeoutPromise]);
+      const text = result.text || "";
       const cleaned = text.replace(/```json\n?|\n?```/g, "").trim();
 
       if (!cleaned) throw new Error("Gemini returned empty response");
@@ -200,15 +203,7 @@ export async function callGeminiMultimodal(
   const modelName = modelOverride || "gemini-3.1-pro-preview";
   const timeoutMs = modelName.includes("flash") ? 25000 : 55000;
 
-  const genAI = new GoogleGenerativeAI(apiKey);
-  const model = genAI.getGenerativeModel({
-    model: modelName,
-    generationConfig: {
-      ...(jsonMode ? { responseMimeType: "application/json" } : {}),
-      ...(maxTokens ? { maxOutputTokens: maxTokens } : {}),
-      temperature: temperature ?? 0.7,
-    },
-  });
+  const ai = new GoogleGenAI({ apiKey });
 
   const fullPrompt = systemPrompt ? `${systemPrompt}\n\n${userPrompt}` : userPrompt;
 
@@ -220,11 +215,18 @@ export async function callGeminiMultimodal(
           timeoutMs
         )
       );
-      const result = await Promise.race([
-        model.generateContent([fullPrompt, ...parts]),
-        timeoutPromise,
-      ]);
-      const text = result.response.text();
+      const generatePromise = ai.models.generateContent({
+        model: modelName,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        contents: [{ text: fullPrompt }, ...parts] as any,
+        config: {
+          ...(jsonMode ? { responseMimeType: "application/json" } : {}),
+          ...(maxTokens ? { maxOutputTokens: maxTokens } : {}),
+          temperature: temperature ?? 0.7,
+        },
+      });
+      const result = await Promise.race([generatePromise, timeoutPromise]);
+      const text = result.text || "";
       const cleaned = text.replace(/```json\n?|\n?```/g, "").trim();
       if (!cleaned) throw new Error("Gemini returned empty response");
       return { content: cleaned, model: modelName, processingTimeMs: Date.now() - startTime };

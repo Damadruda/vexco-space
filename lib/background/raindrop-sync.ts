@@ -4,7 +4,7 @@
 // Used by: sync-raindrop route, session route, debate route.
 // =============================================================================
 
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 import { prisma } from "@/lib/db";
 import { raindropClient } from "@/lib/clients/raindrop";
 import { jinaClient } from "@/lib/clients/jina";
@@ -112,16 +112,18 @@ export async function runRaindropSync(
         }
       }
 
-      const genAI = new GoogleGenerativeAI(apiKey);
-      const model = genAI.getGenerativeModel({ model: "gemini-2.5-pro" });
+      const ai = new GoogleGenAI({ apiKey });
       const prompt = ANALYSIS_PROMPT(
         item.sourceTitle ?? item.rawContent.slice(0, 80),
         item.sourceUrl ?? "",
         content
       );
 
-      const result = await model.generateContent(prompt);
-      const responseText = result.response.text();
+      const result = await ai.models.generateContent({
+        model: "gemini-2.5-pro",
+        contents: prompt,
+      });
+      const responseText = result.text || "";
       const cleaned = responseText.replace(/```json\n?|\n?```/g, "").trim();
       const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
       if (!jsonMatch) throw new Error("No JSON in Gemini response");

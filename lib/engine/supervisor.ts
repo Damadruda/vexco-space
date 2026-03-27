@@ -4,7 +4,7 @@
 // Reads ProjectMemory directly via Prisma (no HTTP round-trip).
 // =============================================================================
 
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenAI } from "@google/genai";
 import { prisma } from "@/lib/db";
 import { buildSupervisorPrompt } from "./prompts";
 import type { SupervisorPlan } from "./types";
@@ -117,11 +117,7 @@ export async function supervisorAnalyze(
   }
 
   try {
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({
-      model: "gemini-2.5-pro",
-      generationConfig: { responseMimeType: "application/json" },
-    });
+    const ai = new GoogleGenAI({ apiKey });
 
     const isNewProject = decisions.length === 0;
     let prompt = buildSupervisorPrompt(memory, decisions, isNewProject);
@@ -129,8 +125,12 @@ export async function supervisorAnalyze(
       prompt += `\n\nCONTEXTO ADICIONAL DEL USUARIO:\n"${additionalContext}"`;
     }
 
-    const result = await model.generateContent(prompt);
-    const responseText = result.response.text();
+    const result = await ai.models.generateContent({
+      model: "gemini-2.5-pro",
+      contents: prompt,
+      config: { responseMimeType: "application/json" },
+    });
+    const responseText = result.text || "";
 
     const cleaned = responseText.replace(/```json\n?|\n?```/g, "").trim();
     const plan = JSON.parse(cleaned) as SupervisorPlan;

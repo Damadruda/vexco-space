@@ -13,9 +13,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { prisma } from '@/lib/prisma';
 import { authOptions } from '@/lib/auth-options';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenAI } from '@google/genai';
 
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || '');
+const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_AI_API_KEY || '' });
 
 // =============================================================================
 // MILESTONE TEMPLATES BY PROJECT TYPE
@@ -171,13 +171,11 @@ export async function GET(request: NextRequest) {
 // =============================================================================
 
 async function detectProjectType(project: any): Promise<string> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-pro' });
-  
   const prompt = `Analiza este proyecto y determina su tipo:\n\nTítulo: ${project.title}\nDescripción: ${project.description}\n\nResponde SOLO con una palabra: SaaS, Product, o Service`;
 
   try {
-    const result = await model.generateContent(prompt);
-    const response = result.response.text().trim().toLowerCase();
+    const result = await ai.models.generateContent({ model: 'gemini-2.5-pro', contents: prompt });
+    const response = (result.text || '').trim().toLowerCase();
     if (['saas', 'product', 'service'].includes(response)) {
       return response;
     }
@@ -189,7 +187,6 @@ async function detectProjectType(project: any): Promise<string> {
 }
 
 async function customizeMilestones(project: any, templates: string[], type: string): Promise<any[]> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-pro' });
   
   const existingInsights = project.conceptInsights
     .filter((i: any) => i.answer)
@@ -218,8 +215,8 @@ Responde en JSON:
 ]`;
 
   try {
-    const result = await model.generateContent(prompt);
-    const text = result.response.text();
+    const result = await ai.models.generateContent({ model: 'gemini-2.5-pro', contents: prompt });
+    const text = result.text || '';
     const jsonMatch = text.match(/\[[\s\S]*\]/);
     if (jsonMatch) {
       return JSON.parse(jsonMatch[0]);

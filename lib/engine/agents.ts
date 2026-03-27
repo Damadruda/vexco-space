@@ -133,7 +133,7 @@ REGLAS DE EQUIPO:
     id: "revenue",
     name: "Revenue & Growth",
     role: "Monetización · Crecimiento · Contenido",
-    preferredLLM: "gemini-flash",
+    preferredLLM: "gemini-pro",
     fallbackLLM: "gemini-flash",
     consultingDNA: `Tres perspectivas fusionadas en un solo cerebro:
 
@@ -171,7 +171,7 @@ Tono: directo, ejecutivo. Oraciones cortas. Sin buzzwords.`,
     id: "infrastructure",
     name: "Product & Tech",
     role: "Producto · Arquitectura · UX",
-    preferredLLM: "gemini-flash",
+    preferredLLM: "gemini-pro",
     fallbackLLM: "gemini-flash",
     consultingDNA: `Producto y tecnología fusionados:
 
@@ -206,7 +206,7 @@ Tono: directo, práctico. Sin jerga innecesaria.`,
     id: "redteam",
     name: "Challenger",
     role: "Red Team · Mercado · Riesgos",
-    preferredLLM: "gemini-flash",
+    preferredLLM: "gemini-pro",
     fallbackLLM: "gemini-flash",
     consultingDNA: `Destrucción constructiva + inteligencia de mercado:
 
@@ -250,7 +250,7 @@ Tu rol es IDENTIFICAR el gap y DERIVAR al especialista. No improvises en áreas 
     id: "design",
     name: "Design & Experience",
     role: "UX/UI · Tendencias · Identidad de Marca",
-    preferredLLM: "gemini-flash",
+    preferredLLM: "gemini-pro",
     fallbackLLM: "gemini-flash",
     consultingDNA: `Eres el DIRECTOR CREATIVO del War Room de Vex&Co Lab.
 

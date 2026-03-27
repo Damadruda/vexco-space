@@ -15,10 +15,10 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { prisma } from '@/lib/prisma';
 import { authOptions } from '@/lib/auth-options';
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenAI } from '@google/genai';
 
 // Initialize Gemini AI
-const genAI = new GoogleGenerativeAI(process.env.GOOGLE_AI_API_KEY || '');
+const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_AI_API_KEY || '' });
 
 // =============================================================================
 // STRATEGIC PROMPTS - McKinsey + Sequoia + Innovation Expert
@@ -141,9 +141,8 @@ export async function POST(request: NextRequest) {
     });
 
     // Call Gemini
-    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-pro' });
-    const result = await model.generateContent(prompt);
-    const responseText = result.response.text();
+    const result = await ai.models.generateContent({ model: 'gemini-2.5-pro', contents: prompt });
+    const responseText = result.text || '';
 
     // Parse JSON response
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
@@ -269,8 +268,6 @@ function buildConsultationPrompt(params: {
 }
 
 async function generateCascadeDrafts(project: any, conceptAnalysis: any): Promise<any> {
-  const model = genAI.getGenerativeModel({ model: 'gemini-2.5-pro' });
-  
   const prompt = `${STRATEGIC_SYSTEM_PROMPT}
 
 Basándote en este CONCEPTO VALIDADO, genera drafts iniciales para MERCADO y NEGOCIO.
@@ -288,8 +285,8 @@ Responde en JSON:
 }`;
 
   try {
-    const result = await model.generateContent(prompt);
-    const text = result.response.text();
+    const result = await ai.models.generateContent({ model: 'gemini-2.5-pro', contents: prompt });
+    const text = result.text || '';
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     return jsonMatch ? JSON.parse(jsonMatch[0]) : null;
   } catch (error) {
