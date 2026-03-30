@@ -42,7 +42,7 @@ async function callGemini(
   if (!apiKey) throw new Error("GOOGLE_GENERATIVE_AI_API_KEY no configurada");
 
   const modelName = modelOverride ?? "gemini-3.1-pro-preview";
-  const timeoutMs = modelName.includes("flash") ? 25_000 : 55_000;
+  const timeoutMs = modelName.includes("flash") ? 30_000 : 120_000;
 
   const ai = new GoogleGenAI({ apiKey });
 
@@ -205,7 +205,7 @@ export async function callGeminiMultimodal(
 
   const startTime = Date.now();
   const modelName = modelOverride || "gemini-3.1-pro-preview";
-  const timeoutMs = modelName.includes("flash") ? 25000 : 55000;
+  const timeoutMs = modelName.includes("flash") ? 30000 : 120000;
 
   const ai = new GoogleGenAI({ apiKey });
 
