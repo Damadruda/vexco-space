@@ -63,6 +63,7 @@ async function callGemini(
           ...(maxTokens ? { maxOutputTokens: maxTokens } : {}),
           temperature: temperature !== undefined ? temperature : 0.7,
           ...(jsonMode ? { responseMimeType: "application/json" } : {}),
+          ...(modelName.includes("pro") ? { thinkingConfig: { thinkingLevel: "low" } } : {}),
         },
       });
       const result = await Promise.race([generatePromise, timeoutPromise]);
@@ -223,6 +224,7 @@ export async function callGeminiMultimodal(
           ...(jsonMode ? { responseMimeType: "application/json" } : {}),
           ...(maxTokens ? { maxOutputTokens: maxTokens } : {}),
           temperature: temperature ?? 0.7,
+          ...(modelName.includes("pro") ? { thinkingConfig: { thinkingLevel: "low" } } : {}),
         },
       });
       const result = await Promise.race([generatePromise, timeoutPromise]);
