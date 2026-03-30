@@ -63,7 +63,8 @@ async function callGemini(
           ...(maxTokens ? { maxOutputTokens: maxTokens } : {}),
           temperature: temperature !== undefined ? temperature : 0.7,
           ...(jsonMode ? { responseMimeType: "application/json" } : {}),
-          ...(modelName.includes("pro") ? { thinkingConfig: { thinkingLevel: "low" } } : {}),
+          // thinkingConfig deshabilitado temporalmente — causa posible del 500
+          // ...(modelName.includes("pro") ? { thinkingConfig: { thinkingLevel: "low" } } : {}),
         },
       });
       const result = await Promise.race([generatePromise, timeoutPromise]);
@@ -76,6 +77,8 @@ async function callGemini(
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       console.warn(`[GEMINI] ${modelName} attempt ${attempt} failed: ${msg}`);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      console.warn(`[GEMINI] Full error:`, JSON.stringify(err, null, 2).substring(0, 500));
       if (attempt < 2) await new Promise((r) => setTimeout(r, 2_000));
     }
   }
@@ -224,7 +227,8 @@ export async function callGeminiMultimodal(
           ...(jsonMode ? { responseMimeType: "application/json" } : {}),
           ...(maxTokens ? { maxOutputTokens: maxTokens } : {}),
           temperature: temperature ?? 0.7,
-          ...(modelName.includes("pro") ? { thinkingConfig: { thinkingLevel: "low" } } : {}),
+          // thinkingConfig deshabilitado temporalmente — causa posible del 500
+          // ...(modelName.includes("pro") ? { thinkingConfig: { thinkingLevel: "low" } } : {}),
         },
       });
       const result = await Promise.race([generatePromise, timeoutPromise]);
@@ -235,6 +239,8 @@ export async function callGeminiMultimodal(
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       console.warn(`[GEMINI_MULTIMODAL] ${modelName} attempt ${attempt} failed: ${msg}`);
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      console.warn(`[GEMINI_MULTIMODAL] Full error:`, JSON.stringify(err, null, 2).substring(0, 500));
       if (attempt < 2) await new Promise((r) => setTimeout(r, 2000));
     }
   }
