@@ -6,7 +6,7 @@ import { loadProjectMemory } from "@/lib/engine/supervisor";
 import { prisma } from "@/lib/db";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
