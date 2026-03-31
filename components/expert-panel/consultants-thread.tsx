@@ -102,13 +102,33 @@ function resolveMention(text: string): Expert | null {
 // ─── Document generation helpers ────────────────────────────────────────────
 
 function hasStructuredContent(content: string): boolean {
-  const headingCount = (content.match(/^## /gm) || []).length;
-  return headingCount >= 3;
+  // ## headings
+  if ((content.match(/^## /gm) || []).length >= 3) return true;
+  // Slide N: pattern
+  const slides = (content.match(/Slide\s*\d+[.:]/gi) || []).length;
+  if (slides >= 3) return true;
+  // Numbered bold sections: 1. **Title**
+  if ((content.match(/^\d+\.\s+\*\*/gm) || []).length >= 3) return true;
+  // Keywords + some slides
+  if (slides >= 2 && /pitch deck|presentación/i.test(content)) return true;
+  return false;
 }
 
 function parseMessageToSections(content: string): DocumentSection[] {
   const sections: DocumentSection[] = [];
-  const parts = content.split(/^## /gm).filter(Boolean);
+
+  // Try splitting by ## first
+  let parts = content.split(/^## /gm).filter(Boolean);
+
+  // If not enough ##, try "Slide N:"
+  if (parts.length < 3) {
+    parts = content.split(/(?=Slide\s*\d+[.:])/gi).filter(Boolean);
+  }
+
+  // If still not enough, try numbered bold sections
+  if (parts.length < 3) {
+    parts = content.split(/(?=\d+\.\s+\*\*)/).filter(Boolean);
+  }
 
   for (let i = 0; i < parts.length; i++) {
     const part = parts[i].trim();
@@ -116,17 +136,24 @@ function parseMessageToSections(content: string): DocumentSection[] {
     if (lines.length === 0) continue;
 
     const title = lines[0]
-      .replace(/^Slide\s*\d+:\s*/i, "")
+      .replace(/^Slide\s*\d+[.:]\s*/i, "")
+      .replace(/^\d+\.\s+/, "")
       .replace(/\*\*/g, "")
+      .replace(/^#+\s*/, "")
       .trim();
+
+    if (!title) continue;
 
     const bodyLines = lines.slice(1);
     const bullets = bodyLines
-      .filter((l) => /^[-•*]\s/.test(l))
-      .map((l) => l.replace(/^[-•*]\s*/, "").replace(/\*\*/g, "").trim());
+      .filter((l) => /^[-•*]\s/.test(l.trim()) || /^\*\*/.test(l.trim()))
+      .map((l) =>
+        l.trim().replace(/^[-•*]\s*/, "").replace(/\*\*/g, "").trim()
+      )
+      .filter((l) => l.length > 0);
 
     const contentText = bodyLines
-      .filter((l) => !/^[-•*]\s/.test(l))
+      .filter((l) => !/^[-•*]\s/.test(l.trim()) && !/^\*\*/.test(l.trim()))
       .map((l) => l.replace(/\*\*/g, "").trim())
       .join(" ")
       .trim();
@@ -135,15 +162,15 @@ function parseMessageToSections(content: string): DocumentSection[] {
     if (i === 0) layout = "title";
     else if (
       i === parts.length - 1 &&
-      /cierre|contacto|siguiente|next/i.test(title)
+      /cierre|contacto|siguiente|next|call to action|cta/i.test(title)
     )
       layout = "closing";
     else if (bullets.length === 0 && !contentText) layout = "section";
 
     sections.push({
       title,
-      content: contentText || undefined,
-      bullets: bullets.length > 0 ? bullets : undefined,
+      content: contentText || (layout === "title" ? bullets[0] : undefined),
+      bullets: layout !== "title" ? bullets : bullets.slice(1),
       layout,
     });
   }
