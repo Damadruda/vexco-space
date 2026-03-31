@@ -1,7 +1,7 @@
 "use client";
 
-import { Calendar, MoreHorizontal, Trash2, Edit, Eye, ArrowRight } from "lucide-react";
-import { useState } from "react";
+import { Calendar, MoreHorizontal, Trash2, Edit, Eye, ArrowRight, Swords } from "lucide-react";
+import { useState, useEffect, useRef } from "react";
 import Link from "next/link";
 import { PROJECT_TYPES, ProjectType } from "@/lib/project-types";
 
@@ -43,6 +43,7 @@ export function ProjectCard({
   taskProgress,
 }: ProjectCardProps) {
   const [showMenu, setShowMenu] = useState(false);
+  const menuRef = useRef<HTMLDivElement>(null);
 
   const formattedDate = dueDate
     ? new Date(dueDate).toLocaleDateString("es-ES", {
@@ -59,9 +60,21 @@ export function ProjectCard({
     ? Math.round((taskProgress.done / taskProgress.total) * 100)
     : progress;
 
+  // Close menu on outside click
+  useEffect(() => {
+    if (!showMenu) return;
+    const handleClick = (e: MouseEvent) => {
+      if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
+        setShowMenu(false);
+      }
+    };
+    document.addEventListener("mousedown", handleClick);
+    return () => document.removeEventListener("mousedown", handleClick);
+  }, [showMenu]);
+
   return (
     <Link
-      href={`/project-builder/${id}`}
+      href={`/project-builder/${id}/war-room`}
       className={`group relative block border border-gray-200 bg-white p-4 transition-all hover:border-gray-300 hover:shadow-sm ${
         isDragging ? "rotate-2 scale-105 shadow-lg border-gray-400" : ""
       }`}
@@ -85,24 +98,34 @@ export function ProjectCard({
             )}
           </div>
         </div>
-        <div className="relative ml-2">
+        <div className="relative ml-2" ref={menuRef}>
           <button
-            onClick={() => setShowMenu(!showMenu)}
+            onClick={(e) => { e.preventDefault(); e.stopPropagation(); setShowMenu(!showMenu); }}
             className="p-1 text-gray-300 opacity-0 transition-opacity hover:text-gray-500 group-hover:opacity-100"
           >
             <MoreHorizontal className="h-4 w-4" />
           </button>
           {showMenu && (
-            <div className="absolute right-0 top-8 z-10 w-36 border border-gray-200 bg-white py-1 shadow-sm">
+            <div className="absolute right-0 top-8 z-10 w-40 border border-gray-200 bg-white py-1 shadow-sm">
+              <Link
+                href={`/project-builder/${id}/war-room`}
+                onClick={(e) => e.stopPropagation()}
+                className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50"
+              >
+                <Swords className="h-4 w-4" />
+                War Room
+              </Link>
               <Link
                 href={`/project-builder/${id}`}
+                onClick={(e) => e.stopPropagation()}
                 className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50"
               >
                 <Eye className="h-4 w-4" />
-                Ver
+                Ver detalle
               </Link>
               <Link
                 href={`/project-builder/${id}/edit`}
+                onClick={(e) => e.stopPropagation()}
                 className="flex items-center gap-2 px-3 py-2 text-sm text-gray-600 hover:bg-gray-50"
               >
                 <Edit className="h-4 w-4" />
@@ -110,7 +133,14 @@ export function ProjectCard({
               </Link>
               {onDelete && (
                 <button
-                  onClick={() => onDelete(id)}
+                  onClick={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    setShowMenu(false);
+                    if (confirm(`¿Eliminar "${title}"? Esta acción no se puede deshacer.`)) {
+                      onDelete(id);
+                    }
+                  }}
                   className="flex w-full items-center gap-2 px-3 py-2 text-sm text-red-600 hover:bg-red-50"
                 >
                   <Trash2 className="h-4 w-4" />

@@ -4,8 +4,9 @@ import { useState, useEffect } from "react";
 import { Header } from "@/components/ui/header";
 import { StatCard } from "@/components/ui/stat-card";
 import { KanbanBoard } from "@/components/ui/kanban-board";
-import { FolderKanban, Lightbulb, FileText, Link as LinkIcon, Image as ImageIcon, TrendingUp, ArrowRight, Swords, CloudDownload, Plus, Inbox, Sparkles } from "lucide-react";
+import { FolderKanban, Lightbulb, FileText, Link as LinkIcon, Image as ImageIcon, TrendingUp, ArrowRight, Swords, CloudDownload, Plus, Inbox, Sparkles, Check, X } from "lucide-react";
 import Link from "next/link";
+import { useRouter } from "next/navigation";
 import { DriveFolderAnalyzer } from "@/components/ui/drive-folder-analyzer";
 import { PROJECT_TYPES, PROJECT_TYPE_ORDER, ProjectType } from "@/lib/project-types";
 
@@ -36,6 +37,8 @@ export default function DashboardPage() {
   const [stats, setStats] = useState<Stats | null>(null);
   const [loading, setLoading] = useState(true);
   const [showDriveAnalyzer, setShowDriveAnalyzer] = useState(false);
+  const [driveImportSuccess, setDriveImportSuccess] = useState<{ projectId: string } | null>(null);
+  const router = useRouter();
 
   useEffect(() => {
     async function fetchStats() {
@@ -60,7 +63,35 @@ export default function DashboardPage() {
       <DriveFolderAnalyzer
         isOpen={showDriveAnalyzer}
         onClose={() => setShowDriveAnalyzer(false)}
+        onProjectCreated={(projectId) => {
+          setDriveImportSuccess({ projectId });
+          setTimeout(() => setDriveImportSuccess(null), 8000);
+        }}
       />
+
+      {/* Drive import success banner */}
+      {driveImportSuccess && (
+        <div className="mx-8 mt-4 flex items-center justify-between gap-3 bg-green-50 border border-green-200 px-4 py-3 rounded-lg">
+          <div className="flex items-center gap-2 text-green-800">
+            <Check className="h-4 w-4 shrink-0" />
+            <span className="text-sm font-medium">Proyecto importado desde Drive</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => router.push(`/project-builder/${driveImportSuccess.projectId}/war-room`)}
+              className="text-xs font-medium text-green-700 underline underline-offset-2 hover:text-green-900"
+            >
+              Ir al War Room
+            </button>
+            <button
+              onClick={() => setDriveImportSuccess(null)}
+              className="text-green-400 hover:text-green-600"
+            >
+              <X className="h-3.5 w-3.5" />
+            </button>
+          </div>
+        </div>
+      )}
 
       <div className="p-8 space-y-10">
         {/* Page heading */}
