@@ -123,6 +123,7 @@ export function ConsultantsThread({
   const [savedType, setSavedType] = useState<SaveType | null>(null);
   const [convertedMsgIds, setConvertedMsgIds] = useState<Set<string>>(new Set());
   const [converting, setConverting] = useState(false);
+  const [copiedPromptId, setCopiedPromptId] = useState<string | null>(null);
 
   const threadEndRef = useRef<HTMLDivElement>(null);
 
@@ -493,34 +494,60 @@ export function ConsultantsThread({
                   </div>
 
                   {/* ── Perplexity prompt block ──────────────────────────── */}
-                  {!dm.loading && dm.content && dm.content.includes("Prompt para Perplexity:") && (() => {
-                    const match = dm.content.match(/Prompt para Perplexity:\s*"?([^"]+)"?/i) ||
-                                  dm.content.match(/Prompt para Perplexity:\n+(.+)/i);
-                    if (!match) return null;
-                    const prompt = match[1].trim().replace(/^"|"$/g, "");
+                  {!dm.loading && dm.content && /prompt para perplexity/i.test(dm.content) && (() => {
+                    // Extract everything after "Prompt para Perplexity:" until next ## heading or end
+                    const blockMatch = dm.content.match(
+                      /Prompt para Perplexity[:\s]*\n+([\s\S]*?)(?=\n##|\n---|\n\n\n|$)/i
+                    );
+                    // Fallback: single-line with quotes
+                    const inlineMatch = dm.content.match(
+                      /Prompt para Perplexity[:\s]*"([^"]+)"/i
+                    );
+                    const rawPrompt = blockMatch?.[1]?.trim() || inlineMatch?.[1]?.trim();
+                    if (!rawPrompt) return null;
+                    // Clean version for clipboard: strip markdown formatting
+                    const clipboardText = rawPrompt
+                      .replace(/^\s*>\s*/gm, "")
+                      .replace(/\*\*/g, "")
+                      .replace(/^[""]|[""]$/g, "")
+                      .trim();
+                    const isCopied = copiedPromptId === dm.id;
                     return (
                       <div className="mt-3 p-3 bg-ql-offwhite border border-ql-sand/30 rounded-md">
                         <div className="flex items-center justify-between mb-2">
                           <span className="text-xs font-medium text-ql-slate">Prompt para Perplexity Pro</span>
                           <button
-                            onClick={() => {
-                              navigator.clipboard.writeText(prompt);
-                              const btn = document.activeElement as HTMLButtonElement;
-                              if (btn) {
-                                const orig = btn.textContent;
-                                btn.textContent = "¡Copiado!";
-                                setTimeout(() => { btn.textContent = orig; }, 1500);
-                              }
+                            type="button"
+                            onClick={(e) => {
+                              e.preventDefault();
+                              e.stopPropagation();
+                              navigator.clipboard.writeText(clipboardText).then(() => {
+                                setCopiedPromptId(dm.id);
+                                setTimeout(() => setCopiedPromptId(null), 2000);
+                              });
                             }}
                             className="inline-flex items-center gap-1 text-xs border border-ql-charcoal/20 px-2 py-1 text-ql-slate hover:bg-ql-charcoal hover:text-white transition-colors"
                           >
-                            <Copy className="h-3 w-3" />
-                            Copiar prompt
+                            {isCopied ? (
+                              <>
+                                <Check className="h-3 w-3" />
+                                Copiado
+                              </>
+                            ) : (
+                              <>
+                                <Copy className="h-3 w-3" />
+                                Copiar prompt
+                              </>
+                            )}
                           </button>
                         </div>
-                        <p className="text-sm text-ql-charcoal font-mono bg-white/50 p-2 rounded border border-ql-sand/20">
-                          {prompt}
-                        </p>
+                        <div className="text-sm text-ql-charcoal bg-white/50 p-2 rounded border border-ql-sand/20
+                          prose prose-sm prose-neutral max-w-none
+                          prose-p:my-1 prose-p:leading-relaxed
+                          prose-blockquote:border-ql-sand/40 prose-blockquote:text-ql-slate prose-blockquote:my-1
+                          prose-strong:text-ql-charcoal">
+                          <ReactMarkdown>{rawPrompt}</ReactMarkdown>
+                        </div>
                       </div>
                     );
                   })()}
