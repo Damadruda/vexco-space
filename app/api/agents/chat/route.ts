@@ -1,9 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDefaultUserId } from "@/lib/get-default-user";
 import { getAgentConfig } from "@/lib/engine/agents";
-import { callLLM } from "@/lib/clients/llm";
 import { loadProjectMemory } from "@/lib/engine/supervisor";
 import { prisma } from "@/lib/db";
+import { GoogleGenAI } from "@google/genai";
+import Anthropic from "@anthropic-ai/sdk";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -305,35 +306,148 @@ Selecciona 1-3 agentes. El strategist NO se asigna a sí mismo. Ordena por prior
       ? `${projectContext}\n\n${historyBlock}${message}`
       : `${historyBlock}${message}`;
 
-    // ── Call LLM ──────────────────────────────────────────────────────────
-    const llmResponse = await callLLM({
-      model: agentConfig.preferredLLM,
-      systemPrompt,
-      userPrompt,
-      jsonMode: false,
-      temperature: 0.7,
-      maxTokens: 8192,
+    // ── Streaming response via SSE ──────────────────────────────────────
+    const encoder = new TextEncoder();
+    const startTime = Date.now();
+
+    const stream = new ReadableStream({
+      async start(controller) {
+        let fullText = "";
+
+        const sendSSE = (data: Record<string, unknown>) => {
+          controller.enqueue(encoder.encode(`data: ${JSON.stringify(data)}\n\n`));
+        };
+
+        try {
+          const preferredLLM = agentConfig.preferredLLM;
+
+          // ── Gemini streaming ────────────────────────────────────────
+          if (preferredLLM === "gemini-pro" || preferredLLM === "gemini-flash") {
+            const geminiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+            if (!geminiKey) throw new Error("GOOGLE_GENERATIVE_AI_API_KEY no configurada");
+
+            const ai = new GoogleGenAI({ apiKey: geminiKey });
+            const modelName = preferredLLM === "gemini-pro"
+              ? "gemini-3.1-pro-preview"
+              : "gemini-3-flash-preview";
+
+            const fullPrompt = systemPrompt
+              ? `${systemPrompt}\n\n${userPrompt}`
+              : userPrompt;
+
+            const streamIter = await ai.models.generateContentStream({
+              model: modelName,
+              contents: fullPrompt,
+              config: {
+                maxOutputTokens: 8192,
+                temperature: 0.7,
+              },
+            });
+
+            for await (const chunk of streamIter) {
+              const text = chunk.text || "";
+              if (text) {
+                fullText += text;
+                sendSSE({ text, agentId: effectiveAgentId });
+              }
+            }
+
+          // ── Claude streaming ────────────────────────────────────────
+          } else if (preferredLLM === "claude-sonnet") {
+            const anthropicKey = process.env.ANTHROPIC_API_KEY;
+
+            if (!anthropicKey) {
+              // Fallback to Gemini Flash streaming
+              const geminiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+              if (!geminiKey) throw new Error("No LLM API key configured");
+
+              console.warn("[AGENT_CHAT] ANTHROPIC_API_KEY missing — fallback to Gemini Flash stream");
+              const ai = new GoogleGenAI({ apiKey: geminiKey });
+              const fullPrompt = systemPrompt
+                ? `${systemPrompt}\n\n${userPrompt}`
+                : userPrompt;
+
+              const streamIter = await ai.models.generateContentStream({
+                model: "gemini-3-flash-preview",
+                contents: fullPrompt,
+                config: { maxOutputTokens: 8192, temperature: 0.7 },
+              });
+
+              for await (const chunk of streamIter) {
+                const text = chunk.text || "";
+                if (text) {
+                  fullText += text;
+                  sendSSE({ text, agentId: effectiveAgentId });
+                }
+              }
+            } else {
+              const client = new Anthropic({ apiKey: anthropicKey });
+
+              const anthropicStream = client.messages.stream({
+                model: "claude-sonnet-4-20250514",
+                max_tokens: 8192,
+                temperature: 0.7,
+                system: systemPrompt,
+                messages: [{ role: "user", content: userPrompt }],
+              });
+
+              for await (const event of anthropicStream) {
+                if (
+                  event.type === "content_block_delta" &&
+                  event.delta.type === "text_delta"
+                ) {
+                  const text = event.delta.text;
+                  if (text) {
+                    fullText += text;
+                    sendSSE({ text, agentId: effectiveAgentId });
+                  }
+                }
+              }
+            }
+          } else {
+            // Unknown model — should not happen, but fallback to non-streaming
+            throw new Error(`Unsupported LLM for streaming: ${preferredLLM}`);
+          }
+
+          // ── Parse assigned agents after full stream (strategist only) ──
+          const { display, assignedAgents } = isStrategist
+            ? parseAssignedAgents(fullText)
+            : { display: fullText, assignedAgents: [] };
+
+          console.log(
+            "[AGENT_CHAT] agentId:", agentId,
+            "effectiveAgentId:", effectiveAgentId,
+            "contentLength:", fullText.length,
+            "model:", agentConfig.preferredLLM,
+            "ms:", Date.now() - startTime
+          );
+
+          // ── Send done event with full response ─────────────────────
+          sendSSE({
+            done: true,
+            agentId: effectiveAgentId,
+            agentName: agentConfig.name,
+            originalAgentId: agentId,
+            fullText: display,
+            assignedAgents,
+          });
+
+          controller.close();
+        } catch (err: unknown) {
+          const errMsg = err instanceof Error ? err.message : String(err);
+          console.error("[AGENT_CHAT_STREAM] Error:", errMsg);
+          sendSSE({ error: errMsg, agentId: effectiveAgentId });
+          controller.close();
+        }
+      },
     });
 
-    console.log(
-      "[AGENT_CHAT] agentId:", agentId,
-      "effectiveAgentId:", effectiveAgentId,
-      "contentLength:", llmResponse.content.length,
-      "model:", llmResponse.model,
-      "ms:", llmResponse.processingTimeMs
-    );
-
-    // ── Parse assigned agents (strategist only) ───────────────────────────
-    const { display, assignedAgents } = isStrategist
-      ? parseAssignedAgents(llmResponse.content)
-      : { display: llmResponse.content, assignedAgents: [] };
-
-    return NextResponse.json({
-      response: display,
-      agentId: effectiveAgentId,
-      agentName: agentConfig.name,
-      originalAgentId: agentId,
-      assignedAgents,
+    return new Response(stream, {
+      headers: {
+        "Content-Type": "text/event-stream",
+        "Cache-Control": "no-cache",
+        Connection: "keep-alive",
+      },
     });
   } catch (error) {
     if (error instanceof Error && error.message === "No autenticado") {

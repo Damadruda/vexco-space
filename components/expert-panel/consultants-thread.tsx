@@ -20,6 +20,7 @@ interface ExpertMessage {
   expertId: string;
   content: string;
   loading: boolean;
+  streaming?: boolean;
   assignedAgents?: AssignedAgent[];
 }
 
@@ -183,7 +184,7 @@ export function ConsultantsThread({
     }
   };
 
-  // ── Core: call individual agent via /api/agents/chat ──────────────────────
+  // ── Core: call individual agent via /api/agents/chat (streaming SSE) ──────
   const callAgent = async (
     expert: Expert,
     prompt: string,
@@ -213,28 +214,106 @@ export function ConsultantsThread({
       });
 
       if (!res.ok) throw new Error(`API error ${res.status}`);
-      const data = await res.json();
-      const content: string = data.response ?? "Sin respuesta.";
-      const assignedAgents: AssignedAgent[] = data.assignedAgents ?? [];
-      // Use the agentId from backend response (may differ from sent expert if @mention)
-      const respondingAgentId: string = data.agentId ?? expert.id;
-      const respondingAgentName: string = data.agentName ?? expert.name;
 
+      const reader = res.body?.getReader();
+      if (!reader) throw new Error("No readable stream");
+
+      const decoder = new TextDecoder();
+      let accumulated = "";
+      let respondingAgentId = expert.id;
+      let respondingAgentName = expert.name;
+      let buffer = "";
+
+      // Switch from loading to streaming state
       setMessages((prev) =>
         prev.map((m) =>
           m.id === msgId && "expertId" in m
-            ? { ...m, expertId: respondingAgentId, content, loading: false, assignedAgents }
+            ? { ...m, loading: false, streaming: true, content: "" }
             : m
         )
       );
 
-      // 4C: Persist agent response with the agent that actually responded
-      persistMessage("assistant", content, respondingAgentId, respondingAgentName);
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        buffer += decoder.decode(value, { stream: true });
+        const lines = buffer.split("\n\n");
+        buffer = lines.pop() || ""; // keep incomplete chunk in buffer
+
+        for (const line of lines) {
+          if (!line.startsWith("data: ")) continue;
+          let data: Record<string, unknown>;
+          try {
+            data = JSON.parse(line.slice(6));
+          } catch {
+            continue;
+          }
+
+          if (data.error) {
+            throw new Error(data.error as string);
+          }
+
+          if (data.agentId) {
+            respondingAgentId = data.agentId as string;
+          }
+
+          if (data.done) {
+            // Stream complete — finalize message
+            const finalText = (data.fullText as string) || accumulated;
+            const assignedAgents = (data.assignedAgents as AssignedAgent[]) || [];
+            respondingAgentName = (data.agentName as string) || expert.name;
+
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === msgId && "expertId" in m
+                  ? {
+                      ...m,
+                      expertId: respondingAgentId,
+                      content: finalText,
+                      loading: false,
+                      streaming: false,
+                      assignedAgents,
+                    }
+                  : m
+              )
+            );
+
+            // 4C: Persist agent response
+            persistMessage("assistant", finalText, respondingAgentId, respondingAgentName);
+            return;
+          }
+
+          if (data.text) {
+            accumulated += data.text as string;
+            const currentText = accumulated;
+            setMessages((prev) =>
+              prev.map((m) =>
+                m.id === msgId && "expertId" in m
+                  ? { ...m, expertId: respondingAgentId, content: currentText }
+                  : m
+              )
+            );
+          }
+        }
+      }
+
+      // If we exited the loop without a done event, finalize with what we have
+      if (accumulated) {
+        setMessages((prev) =>
+          prev.map((m) =>
+            m.id === msgId && "expertId" in m
+              ? { ...m, content: accumulated, loading: false, streaming: false }
+              : m
+          )
+        );
+        persistMessage("assistant", accumulated, respondingAgentId, respondingAgentName);
+      }
     } catch {
       setMessages((prev) =>
         prev.map((m) =>
           m.id === msgId && "expertId" in m
-            ? { ...m, content: "Error al obtener respuesta. Intenta de nuevo.", loading: false }
+            ? { ...m, content: "Error al obtener respuesta. Intenta de nuevo.", loading: false, streaming: false }
             : m
         )
       );
@@ -392,7 +471,7 @@ export function ConsultantsThread({
                 <>
                   <span className="ql-status-thinking" />
                   <span className="ql-caption normal-case tracking-normal italic">
-                    {activeExpert.name} analizando…
+                    {activeExpert.name} respondiendo…
                   </span>
                 </>
               ) : (
@@ -470,7 +549,7 @@ export function ConsultantsThread({
                   <div className="flex items-center gap-2 mb-1.5">
                     <span className="text-sm font-medium text-ql-charcoal">{expert.name}</span>
                     <span className="ql-caption">{expert.role}</span>
-                    {dm.expertId !== activeExpert.id && !dm.loading && (
+                    {dm.expertId !== activeExpert.id && !dm.loading && !dm.streaming && (
                       <span className="text-[10px] text-ql-muted bg-ql-cream px-1.5 py-0.5 border border-ql-sand/30">
                         vía @mention
                       </span>
@@ -480,7 +559,7 @@ export function ConsultantsThread({
                     {dm.loading ? (
                       <div className="flex items-center gap-2">
                         <span className="ql-status-thinking" />
-                        <span className="ql-loading">Analizando…</span>
+                        <span className="ql-loading">Conectando…</span>
                       </div>
                     ) : (
                       <div className="prose prose-sm prose-neutral max-w-none text-ql-slate
@@ -489,12 +568,15 @@ export function ConsultantsThread({
                         prose-li:my-0.5 prose-ul:my-1 prose-strong:text-ql-charcoal
                         prose-hr:border-ql-sand/30">
                         <ReactMarkdown>{dm.content}</ReactMarkdown>
+                        {dm.streaming && (
+                          <span className="inline-block w-1.5 h-4 bg-ql-charcoal/60 animate-pulse ml-0.5 -mb-0.5" />
+                        )}
                       </div>
                     )}
                   </div>
 
                   {/* ── Perplexity prompt block ──────────────────────────── */}
-                  {!dm.loading && dm.content && /prompt para perplexity/i.test(dm.content) && (() => {
+                  {!dm.loading && !dm.streaming && dm.content && /prompt para perplexity/i.test(dm.content) && (() => {
                     // Extract everything after "Prompt para Perplexity:" until next ## heading or end
                     const blockMatch = dm.content.match(
                       /Prompt para Perplexity[:\s]*\n+([\s\S]*?)(?=\n##|\n---|\n\n\n|$)/i
@@ -553,7 +635,7 @@ export function ConsultantsThread({
                   })()}
 
                   {/* ── Assigned agents panel (strategist only) ─────────── */}
-                  {!dm.loading && dm.assignedAgents && dm.assignedAgents.length > 0 && (
+                  {!dm.loading && !dm.streaming && dm.assignedAgents && dm.assignedAgents.length > 0 && (
                     <div className="mt-3 space-y-2">
                       <p className="ql-label text-[10px]">Equipo asignado · activa por orden de prioridad</p>
                       {[...dm.assignedAgents]
@@ -597,7 +679,7 @@ export function ConsultantsThread({
                     </div>
                   )}
 
-                  {!dm.loading && dm.content && dm.expertId === "strategist" &&
+                  {!dm.loading && !dm.streaming && dm.content && dm.expertId === "strategist" &&
                    dm.content.toUpperCase().includes("SPRINT 0") && (
                     <div className="mt-2">
                       {convertedMsgIds.has(dm.id) ? (
@@ -621,7 +703,7 @@ export function ConsultantsThread({
                     </div>
                   )}
 
-                  {!dm.loading && dm.content && hoveredId === dm.id && (
+                  {!dm.loading && !dm.streaming && dm.content && hoveredId === dm.id && (
                     <button
                       onClick={() => {
                         setSaveModal({ content: dm.content });
@@ -650,7 +732,7 @@ export function ConsultantsThread({
               onChange={(e) => setInput(e.target.value)}
               placeholder={
                 isLoading
-                  ? `${activeExpert.name} analizando…`
+                  ? `${activeExpert.name} respondiendo…`
                   : `Pregúntale a ${activeExpert.name}…`
               }
               disabled={isLoading}
