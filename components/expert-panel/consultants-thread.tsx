@@ -1,7 +1,8 @@
 "use client";
 
 import { useState, useRef, useEffect } from "react";
-import { Send, BookmarkPlus, X, Lightbulb, FileText, CheckSquare, Check, Zap, Copy } from "lucide-react";
+import { Send, BookmarkPlus, X, Lightbulb, FileText, CheckSquare, Check, Zap, Copy, FileDown } from "lucide-react";
+import type { DocumentSection } from "@/lib/documents/vexco-style";
 import ReactMarkdown from "react-markdown";
 import { EXPERTS, Expert } from "./experts-data";
 import { ExpertAvatar } from "./expert-avatar";
@@ -98,6 +99,58 @@ function resolveMention(text: string): Expert | null {
   return EXPERTS.find(e => e.id === resolved) || null;
 }
 
+// ─── Document generation helpers ────────────────────────────────────────────
+
+function hasStructuredContent(content: string): boolean {
+  const headingCount = (content.match(/^## /gm) || []).length;
+  return headingCount >= 3;
+}
+
+function parseMessageToSections(content: string): DocumentSection[] {
+  const sections: DocumentSection[] = [];
+  const parts = content.split(/^## /gm).filter(Boolean);
+
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i].trim();
+    const lines = part.split("\n").filter((l) => l.trim());
+    if (lines.length === 0) continue;
+
+    const title = lines[0]
+      .replace(/^Slide\s*\d+:\s*/i, "")
+      .replace(/\*\*/g, "")
+      .trim();
+
+    const bodyLines = lines.slice(1);
+    const bullets = bodyLines
+      .filter((l) => /^[-•*]\s/.test(l))
+      .map((l) => l.replace(/^[-•*]\s*/, "").replace(/\*\*/g, "").trim());
+
+    const contentText = bodyLines
+      .filter((l) => !/^[-•*]\s/.test(l))
+      .map((l) => l.replace(/\*\*/g, "").trim())
+      .join(" ")
+      .trim();
+
+    let layout: DocumentSection["layout"] = "content";
+    if (i === 0) layout = "title";
+    else if (
+      i === parts.length - 1 &&
+      /cierre|contacto|siguiente|next/i.test(title)
+    )
+      layout = "closing";
+    else if (bullets.length === 0 && !contentText) layout = "section";
+
+    sections.push({
+      title,
+      content: contentText || undefined,
+      bullets: bullets.length > 0 ? bullets : undefined,
+      layout,
+    });
+  }
+
+  return sections;
+}
+
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const SAVE_CONFIG: Record<SaveType, { label: string; icon: React.ElementType }> = {
@@ -125,6 +178,8 @@ export function ConsultantsThread({
   const [convertedMsgIds, setConvertedMsgIds] = useState<Set<string>>(new Set());
   const [converting, setConverting] = useState(false);
   const [copiedPromptId, setCopiedPromptId] = useState<string | null>(null);
+  const [showFormatPicker, setShowFormatPicker] = useState<string | null>(null);
+  const [generatingDoc, setGeneratingDoc] = useState(false);
 
   const threadEndRef = useRef<HTMLDivElement>(null);
 
@@ -457,6 +512,40 @@ export function ConsultantsThread({
     finally { setSaving(false); }
   };
 
+  // ── Generate document (PPTX/DOCX/PDF) ──────────────────────────────────
+  const handleGenerateDocument = async (
+    content: string,
+    format: "pptx" | "docx" | "pdf"
+  ) => {
+    setGeneratingDoc(true);
+    setShowFormatPicker(null);
+    try {
+      const sections = parseMessageToSections(content);
+      const res = await fetch("/api/documents/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: projectTitle || "Documento Vex&Co",
+          subtitle: "Preparado por Vex&Co Lab",
+          sections,
+          format,
+        }),
+      });
+      if (!res.ok) throw new Error("Error al generar");
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `${(projectTitle || "documento").replace(/\s+/g, "_")}.${format}`;
+      a.click();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      console.error("Error generating document:", err);
+    } finally {
+      setGeneratingDoc(false);
+    }
+  };
+
   // ─── Render ───────────────────────────────────────────────────────────────
 
   return (
@@ -698,6 +787,48 @@ export function ConsultantsThread({
                         >
                           <CheckSquare className="h-3.5 w-3.5" />
                           {converting ? "Creando tareas..." : "Convertir Sprint 0 en tareas"}
+                        </button>
+                      )}
+                    </div>
+                  )}
+
+                  {/* ── Generate document button ──────────────────────── */}
+                  {!dm.loading && !dm.streaming && dm.content && hasStructuredContent(dm.content) && (
+                    <div className="mt-3">
+                      {showFormatPicker === dm.id ? (
+                        <div className="flex flex-wrap items-center gap-2">
+                          <span className="text-[10px] text-ql-muted mr-1">Formato:</span>
+                          {([
+                            ["pptx", "Presentación"],
+                            ["docx", "Documento"],
+                            ["pdf", "PDF"],
+                          ] as const).map(([fmt, label]) => (
+                            <button
+                              key={fmt}
+                              onClick={() => handleGenerateDocument(dm.content, fmt)}
+                              disabled={generatingDoc}
+                              className="inline-flex items-center gap-1 text-[11px] border border-ql-charcoal/20 px-2.5 py-1 text-ql-slate hover:bg-ql-charcoal hover:text-white transition-colors disabled:opacity-50"
+                            >
+                              {label} (.{fmt})
+                            </button>
+                          ))}
+                          <button
+                            onClick={() => setShowFormatPicker(null)}
+                            className="text-[10px] text-ql-muted hover:text-ql-slate ml-1"
+                          >
+                            Cancelar
+                          </button>
+                          {generatingDoc && (
+                            <span className="text-[10px] text-ql-muted italic ml-1">Generando...</span>
+                          )}
+                        </div>
+                      ) : (
+                        <button
+                          onClick={() => setShowFormatPicker(dm.id)}
+                          className="inline-flex items-center gap-1.5 text-xs border border-ql-charcoal/20 px-3 py-1.5 text-ql-slate hover:bg-ql-charcoal hover:text-white transition-colors"
+                        >
+                          <FileDown className="h-3.5 w-3.5" />
+                          Generar Documento
                         </button>
                       )}
                     </div>
