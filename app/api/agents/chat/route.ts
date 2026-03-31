@@ -191,15 +191,36 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const agentConfig = getAgentConfig(agentId);
+    // ── @mention cross-agent routing ────────────────────────────────────
+    const VALID_AGENT_IDS = ["strategist", "revenue", "infrastructure", "redteam", "design"];
+    const AGENT_ALIASES: Record<string, string> = {
+      challenger: "redteam",
+      "product": "infrastructure",
+      "tech": "infrastructure",
+      "growth": "revenue",
+    };
+    const mentionRegex = /@(\w+)/;
+    const mentionMatch = message.match(mentionRegex);
+
+    let effectiveAgentId = agentId;
+
+    if (mentionMatch) {
+      const mentionedRaw = mentionMatch[1].toLowerCase();
+      const resolved = AGENT_ALIASES[mentionedRaw] ?? mentionedRaw;
+      if (VALID_AGENT_IDS.includes(resolved)) {
+        effectiveAgentId = resolved;
+      }
+    }
+
+    const agentConfig = getAgentConfig(effectiveAgentId);
     if (!agentConfig) {
       return NextResponse.json(
-        { error: `Unknown agentId: ${agentId}` },
+        { error: `Unknown agentId: ${effectiveAgentId}` },
         { status: 400 }
       );
     }
 
-    const isStrategist = agentId === "strategist";
+    const isStrategist = effectiveAgentId === "strategist";
 
     // ── Load project context ───────────────────────────────────────────────
     let projectContext = "";
@@ -296,6 +317,7 @@ Selecciona 1-3 agentes. El strategist NO se asigna a sí mismo. Ordena por prior
 
     console.log(
       "[AGENT_CHAT] agentId:", agentId,
+      "effectiveAgentId:", effectiveAgentId,
       "contentLength:", llmResponse.content.length,
       "model:", llmResponse.model,
       "ms:", llmResponse.processingTimeMs
@@ -308,8 +330,9 @@ Selecciona 1-3 agentes. El strategist NO se asigna a sí mismo. Ordena por prior
 
     return NextResponse.json({
       response: display,
-      agentId: agentConfig.id,
+      agentId: effectiveAgentId,
       agentName: agentConfig.name,
+      originalAgentId: agentId,
       assignedAgents,
     });
   } catch (error) {

@@ -75,6 +75,28 @@ function parseAgentsFromContent(content: string): AssignedAgent[] {
   return agents;
 }
 
+// ─── @mention helpers ───────────────────────────────────────────────────────
+
+const AGENT_ALIASES: Record<string, string> = {
+  strategist: "strategist",
+  revenue: "revenue",
+  infrastructure: "infrastructure",
+  redteam: "redteam",
+  design: "design",
+  challenger: "redteam",
+  product: "infrastructure",
+  tech: "infrastructure",
+  growth: "revenue",
+};
+
+function resolveMention(text: string): Expert | null {
+  const match = text.match(/@(\w+)/);
+  if (!match) return null;
+  const resolved = AGENT_ALIASES[match[1].toLowerCase()];
+  if (!resolved) return null;
+  return EXPERTS.find(e => e.id === resolved) || null;
+}
+
 // ─── Constants ───────────────────────────────────────────────────────────────
 
 const SAVE_CONFIG: Record<SaveType, { label: string; icon: React.ElementType }> = {
@@ -193,17 +215,20 @@ export function ConsultantsThread({
       const data = await res.json();
       const content: string = data.response ?? "Sin respuesta.";
       const assignedAgents: AssignedAgent[] = data.assignedAgents ?? [];
+      // Use the agentId from backend response (may differ from sent expert if @mention)
+      const respondingAgentId: string = data.agentId ?? expert.id;
+      const respondingAgentName: string = data.agentName ?? expert.name;
 
       setMessages((prev) =>
         prev.map((m) =>
           m.id === msgId && "expertId" in m
-            ? { ...m, content, loading: false, assignedAgents }
+            ? { ...m, expertId: respondingAgentId, content, loading: false, assignedAgents }
             : m
         )
       );
 
-      // 4C: Persist agent response
-      persistMessage("assistant", content, expert.id, expert.name);
+      // 4C: Persist agent response with the agent that actually responded
+      persistMessage("assistant", content, respondingAgentId, respondingAgentName);
     } catch {
       setMessages((prev) =>
         prev.map((m) =>
@@ -246,7 +271,7 @@ export function ConsultantsThread({
     setIsLoading(false);
   };
 
-  // ── Send message → active expert ──────────────────────────────────────────
+  // ── Send message → active expert (or @mentioned agent) ─────────────────
   const handleSend = async (e: React.FormEvent) => {
     e.preventDefault();
     const prompt = input.trim();
@@ -262,9 +287,11 @@ export function ConsultantsThread({
     // 4C: Persist user message
     persistMessage("user", prompt);
 
-    const expert = activeExpert ?? EXPERTS[0];
-    const msgId = addExpertPlaceholder(expert);
-    await callAgent(expert, prompt, msgId);
+    // Detect @mention → route to mentioned agent, keep activeExpert unchanged
+    const mentionedExpert = resolveMention(prompt);
+    const targetExpert = mentionedExpert ?? activeExpert ?? EXPERTS[0];
+    const msgId = addExpertPlaceholder(targetExpert);
+    await callAgent(targetExpert, prompt, msgId);
     setIsLoading(false);
   };
 
@@ -442,6 +469,11 @@ export function ConsultantsThread({
                   <div className="flex items-center gap-2 mb-1.5">
                     <span className="text-sm font-medium text-ql-charcoal">{expert.name}</span>
                     <span className="ql-caption">{expert.role}</span>
+                    {dm.expertId !== activeExpert.id && !dm.loading && (
+                      <span className="text-[10px] text-ql-muted bg-ql-cream px-1.5 py-0.5 border border-ql-sand/30">
+                        vía @mention
+                      </span>
+                    )}
                   </div>
                   <div className="bg-white border border-ql-sand/20 rounded-lg rounded-tl-sm px-4 py-3">
                     {dm.loading ? (
@@ -608,9 +640,8 @@ export function ConsultantsThread({
           <p className="mt-2 ql-caption normal-case tracking-normal">
             Consulta directa con{" "}
             <span className="font-medium text-ql-slate">{activeExpert.name}</span>.
-            Análisis con Supervisor →{" "}
-            <span className="font-medium text-ql-slate">Estrategia</span>. Debate completo →{" "}
-            <span className="font-medium text-ql-slate">Debate</span>.
+            Usa <span className="font-medium text-ql-slate">@agente</span> para invocar otro.
+            Estrategia → Supervisor. Debate → multi-agente.
           </p>
         </form>
       </div>
