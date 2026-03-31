@@ -24,13 +24,19 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({}));
     const { collectionId } = body as { collectionId?: number };
 
-    const { imported, skipped, analyzed } = await runRaindropSync(
+    const { imported, skipped, analyzed, errors } = await runRaindropSync(
       userId,
       prefs.raindropToken,
       collectionId
     );
 
-    return NextResponse.json({ imported, skipped, analyzed, total: imported + skipped });
+    return NextResponse.json({
+      imported,
+      skipped,
+      analyzed,
+      errors,
+      total: imported + skipped,
+    });
   } catch (error) {
     if (error instanceof Error && error.message === "No autenticado") {
       return NextResponse.json({ error: "No autenticado" }, { status: 401 });

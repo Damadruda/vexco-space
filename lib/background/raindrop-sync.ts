@@ -45,40 +45,70 @@ export async function runRaindropSync(
   userId: string,
   raindropToken: string,
   collectionId?: number
-): Promise<{ imported: number; skipped: number; analyzed: number }> {
-  const { items } = await raindropClient.getBookmarks(raindropToken, {
-    collectionId,
-    perPage: 50,
+): Promise<{ imported: number; skipped: number; analyzed: number; errors: number }> {
+  // ── Fetch ALL bookmarks with pagination ────────────────────────────────
+  const PER_PAGE = 50;
+  const MAX_PAGES = 10; // safety limit: 500 bookmarks max
+  let allBookmarks: Awaited<ReturnType<typeof raindropClient.getBookmarks>>["items"] = [];
+  let page = 0;
+
+  while (page < MAX_PAGES) {
+    const { items: pageItems } = await raindropClient.getBookmarks(raindropToken, {
+      collectionId,
+      page,
+      perPage: PER_PAGE,
+    });
+    allBookmarks = [...allBookmarks, ...pageItems];
+    if (pageItems.length < PER_PAGE) break; // last page
+    page++;
+  }
+
+  // ── Batch dedup: fetch all existing URLs for this user in one query ────
+  const bookmarkUrls = allBookmarks
+    .map((b) => b.link)
+    .filter(Boolean);
+
+  const existingItems = await prisma.inboxItem.findMany({
+    where: { userId, sourceUrl: { in: bookmarkUrls } },
+    select: { sourceUrl: true },
   });
+  const existingUrlSet = new Set(existingItems.map((i) => i.sourceUrl));
 
   let imported = 0;
   let skipped = 0;
+  let errors = 0;
   const newItemIds: string[] = [];
 
-  for (const bookmark of items) {
-    const existing = await prisma.inboxItem.findFirst({
-      where: { userId, sourceUrl: bookmark.link },
-    });
-
-    if (existing) {
+  for (const bookmark of allBookmarks) {
+    if (!bookmark.link) {
       skipped++;
       continue;
     }
 
-    const item = await prisma.inboxItem.create({
-      data: {
-        type: "url",
-        rawContent: bookmark.excerpt || bookmark.title,
-        sourceUrl: bookmark.link,
-        sourceTitle: bookmark.title,
-        tags: bookmark.tags ?? [],
-        status: "unprocessed",
-        userId,
-      },
-    });
+    if (existingUrlSet.has(bookmark.link)) {
+      skipped++;
+      continue;
+    }
 
-    newItemIds.push(item.id);
-    imported++;
+    try {
+      const item = await prisma.inboxItem.create({
+        data: {
+          type: "url",
+          rawContent: bookmark.excerpt || bookmark.title,
+          sourceUrl: bookmark.link,
+          sourceTitle: bookmark.title,
+          tags: bookmark.tags ?? [],
+          status: "unprocessed",
+          userId,
+        },
+      });
+      newItemIds.push(item.id);
+      imported++;
+      // Add to set to avoid duplicates within the same sync batch
+      existingUrlSet.add(bookmark.link);
+    } catch {
+      errors++;
+    }
   }
 
   await prisma.userPreferences.update({
@@ -89,7 +119,7 @@ export async function runRaindropSync(
   // Auto-analyze up to MAX_ITEMS_PER_SYNC new items
   const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
   if (!apiKey || newItemIds.length === 0) {
-    return { imported, skipped, analyzed: 0 };
+    return { imported, skipped, analyzed: 0, errors };
   }
 
   const toAnalyze = newItemIds.slice(0, MAX_ITEMS_PER_SYNC);
@@ -178,7 +208,7 @@ export async function runRaindropSync(
     console.warn(`[RAINDROP-SYNC] ${failed} items failed analysis`);
   }
 
-  return { imported, skipped, analyzed };
+  return { imported, skipped, analyzed, errors };
 }
 
 // ─── Trigger: only sync if token exists and last sync > 1h ago ───────────────

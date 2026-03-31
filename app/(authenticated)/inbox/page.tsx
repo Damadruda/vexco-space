@@ -459,7 +459,24 @@ export default function InboxPage() {
       if (!res.ok) {
         setSyncResult(`Error: ${data.error}`);
       } else {
-        setSyncResult(`${data.imported} importados, ${data.skipped} omitidos`);
+        const { imported, skipped, errors } = data as {
+          imported: number;
+          skipped: number;
+          errors: number;
+        };
+        if (imported > 0) {
+          setSyncResult(
+            `${imported} nuevo${imported > 1 ? "s" : ""} importado${imported > 1 ? "s" : ""}` +
+            (skipped > 0 ? ` · ${skipped} ya existente${skipped > 1 ? "s" : ""}` : "") +
+            (errors > 0 ? ` · ${errors} error${errors > 1 ? "es" : ""}` : "")
+          );
+        } else {
+          setSyncResult(
+            `Sin items nuevos` +
+            (skipped > 0 ? ` · ${skipped} ya importado${skipped > 1 ? "s" : ""}` : "") +
+            (errors > 0 ? ` · ${errors} error${errors > 1 ? "es" : ""}` : "")
+          );
+        }
         fetchItems();
       }
     } catch {
