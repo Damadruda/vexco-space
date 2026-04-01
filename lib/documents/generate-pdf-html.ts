@@ -15,6 +15,15 @@ function escapeHtml(text: string): string {
     .replace(/\n/g, "<br>");
 }
 
+// FIX 1: Process markdown bold/italic into HTML tags.
+// Escapes HTML first on plain-text segments, then converts markdown.
+function processMarkdown(text: string): string {
+  const escaped = escapeHtml(text);
+  return escaped
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")  // bold first
+    .replace(/\*(.+?)\*/g, "<em>$1</em>");              // then italic
+}
+
 function buildHtmlDocument(
   title: string,
   subtitle: string | undefined,
@@ -41,10 +50,10 @@ function buildHtmlDocument(
       (section, index) => `
     <div class="section ${index > 0 ? "section-break" : "first-section"}">
       <h2>${escapeHtml(section.title)}</h2>
-      ${section.content ? `<p class="content">${escapeHtml(section.content)}</p>` : ""}
+      ${section.content ? `<p class="content">${processMarkdown(section.content)}</p>` : ""}
       ${
         section.bullets && section.bullets.length > 0
-          ? `<ul>${section.bullets.map((b) => `<li>${escapeHtml(b)}</li>`).join("")}</ul>`
+          ? `<ul>${section.bullets.map((b) => `<li>${processMarkdown(b)}</li>`).join("")}</ul>`
           : ""
       }
     </div>
@@ -131,6 +140,8 @@ function buildHtmlDocument(
       font-weight: ${s.fonts.headingWeight};
       color: ${s.colors.text};
       margin-bottom: ${s.spacing.paragraphGapPx}px;
+      padding-bottom: 6px;
+      border-bottom: ${s.layout.separatorWeight} solid ${s.colors.border};
     }
     .section .content {
       font-size: ${s.layout.bodySizePt}pt;
@@ -197,7 +208,7 @@ function buildHtmlDocument(
       font-size: 7pt;
       color: #CCC;
       text-transform: uppercase;
-      letter-spacing: 0.15em;
+      letter-spacing: 0.05em;
     }
 
     /* ONE-PAGER overrides */
