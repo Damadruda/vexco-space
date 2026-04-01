@@ -1,10 +1,16 @@
 import {
   Document, Packer, Paragraph, TextRun,
-  AlignmentType, BorderStyle, Header,
+  AlignmentType, BorderStyle, Header, Footer,
 } from "docx";
-import { VEXCO_STYLE, DocumentRequest } from "./vexco-style";
+import { QUIET_LUXURY, DocumentSection, StyleConfig } from "./vexco-style";
 
-export async function generateDocxBuffer(req: DocumentRequest): Promise<Buffer> {
+export async function generateDocxBuffer(
+  title: string,
+  subtitle: string | undefined,
+  sections: DocumentSection[],
+  style?: StyleConfig
+): Promise<Buffer> {
+  const s = style || QUIET_LUXURY;
   const c = (hex: string) => hex.replace("#", "");
   const children: Paragraph[] = [];
 
@@ -13,10 +19,10 @@ export async function generateDocxBuffer(req: DocumentRequest): Promise<Buffer> 
     new Paragraph({
       children: [
         new TextRun({
-          text: req.title,
-          font: "Garamond",
-          size: 56,
-          color: c(VEXCO_STYLE.colors.primary),
+          text: title,
+          font: s.fonts.heading,
+          size: s.layout.titleSizePt * 2, // docx uses half-points
+          color: c(s.colors.text),
           bold: true,
         }),
       ],
@@ -25,15 +31,15 @@ export async function generateDocxBuffer(req: DocumentRequest): Promise<Buffer> 
   );
 
   // Subtitle
-  if (req.subtitle) {
+  if (subtitle) {
     children.push(
       new Paragraph({
         children: [
           new TextRun({
-            text: req.subtitle,
-            font: "Helvetica Neue",
+            text: subtitle,
+            font: s.fonts.body,
             size: 28,
-            color: c(VEXCO_STYLE.colors.secondary),
+            color: c(s.colors.textSecondary),
           }),
         ],
         spacing: { after: 600 },
@@ -48,7 +54,7 @@ export async function generateDocxBuffer(req: DocumentRequest): Promise<Buffer> 
         bottom: {
           style: BorderStyle.SINGLE,
           size: 1,
-          color: c(VEXCO_STYLE.colors.accent),
+          color: c(s.colors.accent),
         },
       },
       spacing: { after: 400 },
@@ -56,7 +62,7 @@ export async function generateDocxBuffer(req: DocumentRequest): Promise<Buffer> 
   );
 
   // Sections
-  for (const section of req.sections) {
+  for (const section of sections) {
     if (section.layout === "title") continue;
 
     children.push(
@@ -64,9 +70,9 @@ export async function generateDocxBuffer(req: DocumentRequest): Promise<Buffer> 
         children: [
           new TextRun({
             text: section.title,
-            font: "Garamond",
-            size: 40,
-            color: c(VEXCO_STYLE.colors.primary),
+            font: s.fonts.heading,
+            size: s.layout.headingSizePt * 2.5,
+            color: c(s.colors.text),
             bold: true,
           }),
         ],
@@ -80,9 +86,9 @@ export async function generateDocxBuffer(req: DocumentRequest): Promise<Buffer> 
           children: [
             new TextRun({
               text: section.content,
-              font: "Helvetica Neue",
-              size: 22,
-              color: c(VEXCO_STYLE.colors.primary),
+              font: s.fonts.body,
+              size: s.layout.bodySizePt * 2,
+              color: c(s.colors.text),
             }),
           ],
           spacing: { after: 200 },
@@ -97,9 +103,9 @@ export async function generateDocxBuffer(req: DocumentRequest): Promise<Buffer> 
             children: [
               new TextRun({
                 text: bullet,
-                font: "Helvetica Neue",
-                size: 22,
-                color: c(VEXCO_STYLE.colors.primary),
+                font: s.fonts.body,
+                size: s.layout.bodySizePt * 2,
+                color: c(s.colors.text),
               }),
             ],
             bullet: { level: 0 },
@@ -111,9 +117,9 @@ export async function generateDocxBuffer(req: DocumentRequest): Promise<Buffer> 
   }
 
   const doc = new Document({
-    creator: req.author || "Vex&Co Lab",
-    description: req.title,
-    title: req.title,
+    creator: "Vex&Co Lab",
+    description: title,
+    title: title,
     sections: [
       {
         properties: {
@@ -127,13 +133,31 @@ export async function generateDocxBuffer(req: DocumentRequest): Promise<Buffer> 
               new Paragraph({
                 children: [
                   new TextRun({
-                    text: "Vex&Co",
-                    font: "Helvetica Neue",
+                    text: "VEX & CO",
+                    font: s.fonts.heading,
                     size: 16,
-                    color: c(VEXCO_STYLE.colors.accent),
+                    color: c(s.colors.accent),
+                    characterSpacing: 60,
                   }),
                 ],
                 alignment: AlignmentType.RIGHT,
+              }),
+            ],
+          }),
+        },
+        footers: {
+          default: new Footer({
+            children: [
+              new Paragraph({
+                children: [
+                  new TextRun({
+                    text: "Vex & Co · Confidencial",
+                    font: s.fonts.body,
+                    size: 14,
+                    color: c(s.colors.muted),
+                  }),
+                ],
+                alignment: AlignmentType.CENTER,
               }),
             ],
           }),

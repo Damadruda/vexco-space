@@ -7,6 +7,12 @@ const nextConfig = {
     ignoreBuildErrors: true,
   },
   images: { unoptimized: true },
+  webpack: (config, { isServer }) => {
+    if (isServer) {
+      config.externals = [...(config.externals || []), '@sparticuz/chromium'];
+    }
+    return config;
+  },
 };
 
 module.exports = nextConfig;

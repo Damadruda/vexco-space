@@ -9,7 +9,7 @@
     "lint": "next lint"
   },
   "prisma": {
-    "seed": "tsx --require dotenv/config scripts/seed.ts"
+    "seed": "tsx prisma/seed-styles.ts"
   },
   "devDependencies": {
     "@next/swc-wasm-nodejs": "13.5.1",
@@ -68,6 +68,7 @@
     "@radix-ui/react-toggle": "1.1.0",
     "@radix-ui/react-toggle-group": "1.1.0",
     "@radix-ui/react-tooltip": "1.1.2",
+    "@sparticuz/chromium": "^143.0.4",
     "@tailwindcss/typography": "^0.5.19",
     "@tanstack/react-query": "5.0.0",
     "@types/bcryptjs": "2.4.6",
@@ -103,6 +104,7 @@
     "next-themes": "0.3.0",
     "plotly.js": "2.35.3",
     "pptxgenjs": "^4.0.1",
+    "puppeteer-core": "^24.40.0",
     "react": "18.2.0",
     "react-chartjs-2": "5.3.0",
     "react-datepicker": "6.1.0",

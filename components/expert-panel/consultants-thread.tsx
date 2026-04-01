@@ -207,6 +207,11 @@ export function ConsultantsThread({
   const [copiedPromptId, setCopiedPromptId] = useState<string | null>(null);
   const [showFormatPicker, setShowFormatPicker] = useState<string | null>(null);
   const [generatingDoc, setGeneratingDoc] = useState(false);
+  const [availableStyles, setAvailableStyles] = useState<any[]>([]);
+  const [selectedStyle, setSelectedStyle] = useState<string | null>(null);
+  const [styleSuggestion, setStyleSuggestion] = useState<any>(null);
+  const [lastDocumentId, setLastDocumentId] = useState<string | null>(null);
+  const [showFeedback, setShowFeedback] = useState(false);
 
   const threadEndRef = useRef<HTMLDivElement>(null);
 
@@ -539,6 +544,22 @@ export function ConsultantsThread({
     finally { setSaving(false); }
   };
 
+  // ── Load available styles ───────────────────────────────────────────────
+  const loadStyles = async () => {
+    try {
+      const res = await fetch(`/api/documents/styles?projectId=${projectId || ""}`);
+      const data = await res.json();
+      setAvailableStyles(data.styles || []);
+      setStyleSuggestion(data.suggestion || null);
+    } catch {
+      setAvailableStyles([{
+        id: null, name: "Quiet Luxury",
+        description: "Estándar corporativo Vex&Co",
+        isDefault: true,
+      }]);
+    }
+  };
+
   // ── Generate document (PPTX/DOCX/PDF) ──────────────────────────────────
   const handleGenerateDocument = async (
     content: string,
@@ -556,16 +577,26 @@ export function ConsultantsThread({
           subtitle: "Preparado por Vex&Co Lab",
           sections,
           format,
+          projectId,
+          styleVariantId: selectedStyle,
         }),
       });
       if (!res.ok) throw new Error("Error al generar");
+
+      const docId = res.headers.get("X-Document-Id");
+      if (docId) setLastDocumentId(docId);
+
       const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
-      a.download = `${(projectTitle || "documento").replace(/\s+/g, "_")}.${format}`;
+      a.download = `${(projectTitle || "documento").replace(/\s+/g, "_")}_VexCo.${format}`;
       a.click();
       URL.revokeObjectURL(url);
+
+      if (docId) {
+        setTimeout(() => setShowFeedback(true), 2000);
+      }
     } catch (err) {
       console.error("Error generating document:", err);
     } finally {
@@ -823,41 +854,128 @@ export function ConsultantsThread({
                   {!dm.loading && !dm.streaming && dm.content && hasStructuredContent(dm.content) && (
                     <div className="mt-3">
                       {showFormatPicker === dm.id ? (
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="text-[10px] text-ql-muted mr-1">Formato:</span>
-                          {([
-                            ["pptx", "Presentación"],
-                            ["docx", "Documento"],
-                            ["pdf", "PDF"],
-                          ] as const).map(([fmt, label]) => (
+                        <div className="space-y-2">
+                          <div className="flex flex-wrap items-center gap-2">
+                            <span className="text-[10px] text-ql-muted mr-1">Formato:</span>
+                            {([
+                              ["pptx", "Presentación"],
+                              ["docx", "Documento"],
+                              ["pdf", "PDF"],
+                            ] as const).map(([fmt, label]) => (
+                              <button
+                                key={fmt}
+                                onClick={() => handleGenerateDocument(dm.content, fmt)}
+                                disabled={generatingDoc}
+                                className="inline-flex items-center gap-1 text-[11px] border border-ql-charcoal/20 px-2.5 py-1 text-ql-slate hover:bg-ql-charcoal hover:text-white transition-colors disabled:opacity-50"
+                              >
+                                {label} (.{fmt})
+                              </button>
+                            ))}
                             <button
-                              key={fmt}
-                              onClick={() => handleGenerateDocument(dm.content, fmt)}
-                              disabled={generatingDoc}
-                              className="inline-flex items-center gap-1 text-[11px] border border-ql-charcoal/20 px-2.5 py-1 text-ql-slate hover:bg-ql-charcoal hover:text-white transition-colors disabled:opacity-50"
+                              onClick={() => setShowFormatPicker(null)}
+                              className="text-[10px] text-ql-muted hover:text-ql-slate ml-1"
                             >
-                              {label} (.{fmt})
+                              Cancelar
                             </button>
-                          ))}
-                          <button
-                            onClick={() => setShowFormatPicker(null)}
-                            className="text-[10px] text-ql-muted hover:text-ql-slate ml-1"
-                          >
-                            Cancelar
-                          </button>
-                          {generatingDoc && (
-                            <span className="text-[10px] text-ql-muted italic ml-1">Generando...</span>
+                            {generatingDoc && (
+                              <span className="text-[10px] text-ql-muted italic ml-1">Generando...</span>
+                            )}
+                          </div>
+
+                          {/* Style Picker */}
+                          {availableStyles.length > 1 && (
+                            <div className="space-y-2">
+                              <p className="text-xs text-[#6B6B6B] font-medium tracking-wide uppercase">
+                                Estilo visual
+                              </p>
+                              <div className="space-y-1.5">
+                                {availableStyles.map((s: any) => (
+                                  <button
+                                    key={s.id || "default"}
+                                    onClick={() => setSelectedStyle(s.id)}
+                                    className={`w-full text-left px-3 py-2 rounded-md border text-sm
+                                      transition-all duration-200
+                                      ${(selectedStyle === s.id || (selectedStyle === null && s.isDefault))
+                                        ? "border-[#B8860B] bg-[#B8860B]/5"
+                                        : "border-[#E8E4DE] hover:border-[#B8860B]/40"
+                                      }`}
+                                  >
+                                    <span className="font-medium text-[#1A1A1A]">{s.name}</span>
+                                    {s.isDefault && (
+                                      <span className="ml-2 text-[10px] text-[#B8860B] uppercase tracking-wider">
+                                        estándar
+                                      </span>
+                                    )}
+                                    {s.avgRating && (
+                                      <span className="ml-2 text-[10px] text-[#6B6B6B]">
+                                        {s.avgRating.toFixed(1)}/5
+                                      </span>
+                                    )}
+                                    {s.description && (
+                                      <p className="text-xs text-[#6B6B6B] mt-0.5">{s.description}</p>
+                                    )}
+                                  </button>
+                                ))}
+                              </div>
+                              {styleSuggestion?.reason && (
+                                <p className="text-[10px] text-[#999] italic mt-1">
+                                  Recomendación: {styleSuggestion.reason}
+                                </p>
+                              )}
+                            </div>
                           )}
                         </div>
                       ) : (
                         <button
-                          onClick={() => setShowFormatPicker(dm.id)}
+                          onClick={() => { setShowFormatPicker(dm.id); loadStyles(); }}
                           className="inline-flex items-center gap-1.5 text-xs border border-ql-charcoal/20 px-3 py-1.5 text-ql-slate hover:bg-ql-charcoal hover:text-white transition-colors"
                         >
                           <FileDown className="h-3.5 w-3.5" />
                           Generar Documento
                         </button>
                       )}
+                    </div>
+                  )}
+
+                  {/* ── Feedback widget ─────────────────────────────── */}
+                  {showFeedback && lastDocumentId && (
+                    <div className="mt-3 p-3 border border-[#E8E4DE] rounded-md bg-[#FAFAF8]">
+                      <p className="text-xs text-[#6B6B6B] mb-2">
+                        ¿Cómo quedó el documento?
+                      </p>
+                      <div className="flex gap-1.5">
+                        {[1, 2, 3, 4, 5].map((rating) => (
+                          <button
+                            key={rating}
+                            onClick={async () => {
+                              try {
+                                await fetch("/api/documents/feedback", {
+                                  method: "POST",
+                                  headers: { "Content-Type": "application/json" },
+                                  body: JSON.stringify({
+                                    documentId: lastDocumentId,
+                                    rating,
+                                  }),
+                                });
+                                setShowFeedback(false);
+                                setLastDocumentId(null);
+                              } catch {}
+                            }}
+                            className="w-8 h-8 rounded border border-[#E8E4DE]
+                              hover:border-[#B8860B] hover:bg-[#B8860B]/5
+                              text-xs text-[#6B6B6B] hover:text-[#B8860B]
+                              transition-all duration-200"
+                          >
+                            {rating}
+                          </button>
+                        ))}
+                      </div>
+                      <button
+                        onClick={() => { setShowFeedback(false); setLastDocumentId(null); }}
+                        className="text-[10px] text-[#999] mt-1.5 hover:text-[#6B6B6B]"
+                      >
+                        Saltar
+                      </button>
                     </div>
                   )}
 
