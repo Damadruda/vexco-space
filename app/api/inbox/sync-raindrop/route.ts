@@ -24,18 +24,20 @@ export async function POST(request: NextRequest) {
     const body = await request.json().catch(() => ({}));
     const { collectionId } = body as { collectionId?: number };
 
-    const { imported, skipped, analyzed, errors } = await runRaindropSync(
+    const { created, updated, skipped, analyzed, errors } = await runRaindropSync(
       userId,
       prefs.raindropToken,
       collectionId
     );
 
     return NextResponse.json({
-      imported,
+      created,
+      updated,
       skipped,
       analyzed,
       errors,
-      total: imported + skipped,
+      total: created + updated + skipped,
+      message: `${created} nuevo${created !== 1 ? "s" : ""} · ${updated} actualizado${updated !== 1 ? "s" : ""} · ${skipped} sin cambios`,
     });
   } catch (error) {
     if (error instanceof Error && error.message === "No autenticado") {

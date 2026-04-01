@@ -416,6 +416,7 @@ model InboxItem {
   rawContent  String          @db.Text
   sourceUrl   String?
   sourceTitle String?
+  raindropId  String?         // ID único del bookmark en Raindrop
   status      String          @default("unprocessed") // unprocessed, processing, processed, archived
   priority    String          @default("medium")
   tags        String[]        @default([])
@@ -427,6 +428,7 @@ model InboxItem {
   createdAt   DateTime        @default(now())
   updatedAt   DateTime        @updatedAt
 
+  @@unique([userId, raindropId])
   @@index([userId])
   @@index([status])
   @@index([projectId])

@@ -459,24 +459,18 @@ export default function InboxPage() {
       if (!res.ok) {
         setSyncResult(`Error: ${data.error}`);
       } else {
-        const { imported, skipped, errors } = data as {
-          imported: number;
+        const { created, updated, skipped, errors } = data as {
+          created: number;
+          updated: number;
           skipped: number;
           errors: number;
         };
-        if (imported > 0) {
-          setSyncResult(
-            `${imported} nuevo${imported > 1 ? "s" : ""} importado${imported > 1 ? "s" : ""}` +
-            (skipped > 0 ? ` · ${skipped} ya existente${skipped > 1 ? "s" : ""}` : "") +
-            (errors > 0 ? ` · ${errors} error${errors > 1 ? "es" : ""}` : "")
-          );
-        } else {
-          setSyncResult(
-            `Sin items nuevos` +
-            (skipped > 0 ? ` · ${skipped} ya importado${skipped > 1 ? "s" : ""}` : "") +
-            (errors > 0 ? ` · ${errors} error${errors > 1 ? "es" : ""}` : "")
-          );
-        }
+        const parts: string[] = [];
+        if (created > 0) parts.push(`${created} nuevo${created !== 1 ? "s" : ""}`);
+        if (updated > 0) parts.push(`${updated} actualizado${updated !== 1 ? "s" : ""}`);
+        if (skipped > 0) parts.push(`${skipped} sin cambios`);
+        if (errors > 0) parts.push(`${errors} error${errors !== 1 ? "es" : ""}`);
+        setSyncResult(parts.length > 0 ? parts.join(" · ") : "Sin bookmarks en Raindrop");
         fetchItems();
       }
     } catch {

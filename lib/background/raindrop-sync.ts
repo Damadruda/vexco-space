@@ -45,7 +45,7 @@ export async function runRaindropSync(
   userId: string,
   raindropToken: string,
   collectionId?: number
-): Promise<{ imported: number; skipped: number; analyzed: number; errors: number }> {
+): Promise<{ created: number; updated: number; skipped: number; analyzed: number; errors: number }> {
   // ── Fetch ALL bookmarks with pagination ────────────────────────────────
   const PER_PAGE = 50;
   const MAX_PAGES = 10; // safety limit: 500 bookmarks max
@@ -63,18 +63,21 @@ export async function runRaindropSync(
     page++;
   }
 
-  // ── Batch dedup: fetch all existing URLs for this user in one query ────
-  const bookmarkUrls = allBookmarks
-    .map((b) => b.link)
+  // ── Batch dedup: fetch all existing items by raindropId in one query ────
+  const raindropIds = allBookmarks
+    .map((b) => String(b.id))
     .filter(Boolean);
 
   const existingItems = await prisma.inboxItem.findMany({
-    where: { userId, sourceUrl: { in: bookmarkUrls } },
-    select: { sourceUrl: true },
+    where: { userId, raindropId: { in: raindropIds } },
+    select: { id: true, raindropId: true, sourceTitle: true, tags: true },
   });
-  const existingUrlSet = new Set(existingItems.map((i) => i.sourceUrl));
+  const existingByRaindropId = new Map(
+    existingItems.map((i) => [i.raindropId, i])
+  );
 
-  let imported = 0;
+  let created = 0;
+  let updated = 0;
   let skipped = 0;
   let errors = 0;
   const newItemIds: string[] = [];
@@ -85,11 +88,38 @@ export async function runRaindropSync(
       continue;
     }
 
-    if (existingUrlSet.has(bookmark.link)) {
-      skipped++;
+    const rdId = String(bookmark.id);
+    const existing = existingByRaindropId.get(rdId);
+
+    if (existing) {
+      // Already exists — update ONLY metadata (tags, title, URL, rawContent)
+      // NEVER touch: status, category, relevance, projectId, analysis
+      const tagsChanged = JSON.stringify(existing.tags) !== JSON.stringify(bookmark.tags ?? []);
+      const titleChanged = existing.sourceTitle !== bookmark.title;
+
+      if (tagsChanged || titleChanged) {
+        try {
+          await prisma.inboxItem.update({
+            where: { id: existing.id },
+            data: {
+              tags: bookmark.tags ?? [],
+              sourceUrl: bookmark.link,
+              sourceTitle: bookmark.title,
+              rawContent: bookmark.excerpt || bookmark.title,
+            },
+          });
+          updated++;
+        } catch (err) {
+          console.error(`[RAINDROP SYNC] Error updating bookmark ${bookmark.id}:`, err);
+          errors++;
+        }
+      } else {
+        skipped++;
+      }
       continue;
     }
 
+    // New item — create
     try {
       const item = await prisma.inboxItem.create({
         data: {
@@ -97,16 +127,16 @@ export async function runRaindropSync(
           rawContent: bookmark.excerpt || bookmark.title,
           sourceUrl: bookmark.link,
           sourceTitle: bookmark.title,
+          raindropId: rdId,
           tags: bookmark.tags ?? [],
           status: "unprocessed",
           userId,
         },
       });
       newItemIds.push(item.id);
-      imported++;
-      // Add to set to avoid duplicates within the same sync batch
-      existingUrlSet.add(bookmark.link);
-    } catch {
+      created++;
+    } catch (err) {
+      console.error(`[RAINDROP SYNC] Error creating bookmark ${bookmark.id}:`, err);
       errors++;
     }
   }
@@ -119,7 +149,7 @@ export async function runRaindropSync(
   // Auto-analyze up to MAX_ITEMS_PER_SYNC new items
   const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
   if (!apiKey || newItemIds.length === 0) {
-    return { imported, skipped, analyzed: 0, errors };
+    return { created, updated, skipped, analyzed: 0, errors };
   }
 
   const toAnalyze = newItemIds.slice(0, MAX_ITEMS_PER_SYNC);
@@ -208,7 +238,7 @@ export async function runRaindropSync(
     console.warn(`[RAINDROP-SYNC] ${failed} items failed analysis`);
   }
 
-  return { imported, skipped, analyzed, errors };
+  return { created, updated, skipped, analyzed, errors };
 }
 
 // ─── Trigger: only sync if token exists and last sync > 1h ago ───────────────
