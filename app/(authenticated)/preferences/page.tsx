@@ -24,6 +24,7 @@ function TokenField({
   onSave,
   saving,
   saved,
+  helpText,
 }: {
   label: string;
   description: string;
@@ -32,6 +33,7 @@ function TokenField({
   onSave: (key: string, value: string) => void;
   saving: boolean;
   saved: boolean;
+  helpText?: string;
 }) {
   const [value, setValue] = useState("");
   const [show, setShow] = useState(false);
@@ -40,7 +42,18 @@ function TokenField({
 
   return (
     <div className="space-y-2">
-      <label className="ql-label block">{label}</label>
+      <div className="flex items-center gap-2">
+        <label className="ql-label block">{label}</label>
+        {isConfigured ? (
+          <span className="bg-green-50 text-green-700 border border-green-200 text-[10px] px-2 py-0.5 rounded">
+            Conectado ({currentValue})
+          </span>
+        ) : (
+          <span className="bg-gray-50 text-[#999] border border-[#E8E4DE] text-[10px] px-2 py-0.5 rounded">
+            No configurado
+          </span>
+        )}
+      </div>
       <p className="ql-caption">{description}</p>
       <div className="flex gap-2">
         <div className="relative flex-1">
@@ -48,7 +61,7 @@ function TokenField({
             type={show ? "text" : "password"}
             value={value}
             onChange={(e) => setValue(e.target.value)}
-            placeholder={isConfigured ? `Configurado` : "Pega tu token aquí"}
+            placeholder={isConfigured ? "Pegar nuevo token para reemplazar" : "Pega tu token aquí"}
             className="ql-input pr-10"
           />
           <button
@@ -60,7 +73,7 @@ function TokenField({
           </button>
         </div>
         <button
-          onClick={() => { if (value.trim()) onSave(fieldKey, value.trim()); }}
+          onClick={() => { if (value.trim()) { onSave(fieldKey, value.trim()); setValue(""); } }}
           disabled={saving || !value.trim()}
           className="ql-btn-primary disabled:opacity-50"
         >
@@ -74,6 +87,9 @@ function TokenField({
           {saved ? "Guardado" : "Guardar"}
         </button>
       </div>
+      {helpText && (
+        <p className="text-xs text-[#999] mt-1">{helpText}</p>
+      )}
     </div>
   );
 }
@@ -201,6 +217,7 @@ export default function PreferencesPage() {
             onSave={saveToken}
             saving={savingField === "raindropToken"}
             saved={savedField === "raindropToken"}
+            helpText="Obtén tu token en raindrop.io → Settings → Integrations → Create test token"
           />
 
           <div className="ql-divider-subtle" />
@@ -213,6 +230,7 @@ export default function PreferencesPage() {
             onSave={saveToken}
             saving={savingField === "jinaApiKey"}
             saved={savedField === "jinaApiKey"}
+            helpText="Opcional — funciona sin key en tier free. Consigue una en jina.ai"
           />
         </section>
 
