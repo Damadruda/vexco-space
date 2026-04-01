@@ -124,7 +124,10 @@ REGLAS DE EQUIPO:
 - NEXT ACTION: exactamente UNA acción concreta para avanzar ahora mismo.
 - IDs válidos: revenue, redteam, infrastructure, design.
 - Nombres: revenue = Revenue & Growth, redteam = Challenger, infrastructure = Product & Tech, design = Design & Experience.
-- El strategist NO se asigna a sí mismo.`,
+- El strategist NO se asigna a sí mismo.
+
+FORMATO DE SALIDA PARA DOCUMENTOS:
+Cuando generes reportes, briefs o contenido estructurado, usa SIEMPRE formato markdown con ## para cada sección. Ejemplo: ## Análisis de Mercado. Esto permite que el Lab ofrezca exportar el contenido como documento descargable.`,
     outputType: "analysis",
     skills: ["research"],
     usesRaindrop: false,
@@ -162,7 +165,10 @@ Toda respuesta termina con EXACTAMENTE UNA acción:
 - Tipo B: "Necesitas validar pricing con 5 clientes. ¿Genero el guión de entrevista?"
 - Tipo C: "Necesitamos datos de mercado. Prompt para Perplexity:" + prompt completo.
 
-Tono: directo, ejecutivo. Oraciones cortas. Sin buzzwords.`,
+Tono: directo, ejecutivo. Oraciones cortas. Sin buzzwords.
+
+FORMATO DE SALIDA PARA DOCUMENTOS:
+Cuando generes reportes, briefs o contenido estructurado, usa SIEMPRE formato markdown con ## para cada sección. Ejemplo: ## Análisis de Mercado. Esto permite que el Lab ofrezca exportar el contenido como documento descargable.`,
     outputType: "recommendation",
     skills: ["research", "inspiration"],
     usesRaindrop: true,
@@ -197,7 +203,10 @@ Patrones UX probados, flujos de usuario, wireframes conceptuales (descripción t
 - Tipo B: "El siguiente paso es un wireframe del flujo principal. ¿Lo detallo?"
 - Tipo C: "Necesitamos evaluar alternativas técnicas. Prompt para Perplexity:" + prompt.
 
-Tono: directo, práctico. Sin jerga innecesaria.`,
+Tono: directo, práctico. Sin jerga innecesaria.
+
+FORMATO DE SALIDA PARA DOCUMENTOS:
+Cuando generes reportes, briefs o contenido estructurado, usa SIEMPRE formato markdown con ## para cada sección. Ejemplo: ## Análisis de Mercado. Esto permite que el Lab ofrezca exportar el contenido como documento descargable.`,
     outputType: "recommendation",
     skills: ["research", "inspiration"],
     usesRaindrop: true,
@@ -241,7 +250,10 @@ Recomienda activar al agente especialista:
 - Gap en PRICING, MODELO DE NEGOCIO, GO-TO-MARKET → recomienda activar 'revenue' (Revenue & Growth).
 - Gap en ARQUITECTURA TÉCNICA, STACK, INFRAESTRUCTURA → recomienda activar 'infrastructure' (Product & Tech).
 
-Tu rol es IDENTIFICAR el gap y DERIVAR al especialista. No improvises en áreas que no son tu expertise.`,
+Tu rol es IDENTIFICAR el gap y DERIVAR al especialista. No improvises en áreas que no son tu expertise.
+
+FORMATO DE SALIDA PARA DOCUMENTOS:
+Cuando generes reportes, briefs o contenido estructurado, usa SIEMPRE formato markdown con ## para cada sección. Ejemplo: ## Análisis de Mercado. Esto permite que el Lab ofrezca exportar el contenido como documento descargable.`,
     outputType: "risk_assessment",
     skills: ["research"],
     usesRaindrop: false,
@@ -344,7 +356,10 @@ REGLAS COMUNES:
 - Si el usuario pide algo que degrada la UX, dilo con respeto pero con claridad.
 - NEXT ACTION: siempre cierra con una acción concreta y quién debería ejecutarla.
 
-IDs de agente válidos para colaboración: strategist, revenue, redteam, infrastructure.`,
+IDs de agente válidos para colaboración: strategist, revenue, redteam, infrastructure.
+
+FORMATO DE SALIDA PARA DOCUMENTOS:
+Cuando generes reportes, briefs o contenido estructurado, usa SIEMPRE formato markdown con ## para cada sección. Ejemplo: ## Análisis de Mercado. Esto permite que el Lab ofrezca exportar el contenido como documento descargable.`,
     outputType: "recommendation",
     skills: ["research"],
     usesRaindrop: true,

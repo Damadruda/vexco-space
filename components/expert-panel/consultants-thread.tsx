@@ -111,6 +111,16 @@ function hasStructuredContent(content: string): boolean {
   if ((content.match(/^\d+\.\s+\*\*/gm) || []).length >= 3) return true;
   // Keywords + some slides
   if (slides >= 2 && /pitch deck|presentación/i.test(content)) return true;
+  // ### headings (level 3)
+  if ((content.match(/^### /gm) || []).length >= 3) return true;
+  // **1. or **1) at start of line
+  if ((content.match(/^\*\*\d+[\.\)]/gm) || []).length >= 3) return true;
+  // Any markdown heading (any level)
+  if ((content.match(/^#+\s+/gm) || []).length >= 3) return true;
+  // Bold bullets (more exigent: 5+ matches)
+  if ((content.match(/^[-•]\s+\*\*/gm) || []).length >= 5) return true;
+  // Sección N: / Section N:
+  if ((content.match(/^(?:Sección|Section)\s*\d+/gim) || []).length >= 3) return true;
   return false;
 }
 
@@ -120,14 +130,29 @@ function parseMessageToSections(content: string): DocumentSection[] {
   // Try splitting by ## first
   let parts = content.split(/^## /gm).filter(Boolean);
 
-  // If not enough ##, try "Slide N:"
+  // If not enough ##, try ### headings
+  if (parts.length < 3) {
+    parts = content.split(/^### /gm).filter(Boolean);
+  }
+
+  // If not enough ###, try "Slide N:"
   if (parts.length < 3) {
     parts = content.split(/(?=Slide\s*\d+[.:])/gi).filter(Boolean);
   }
 
-  // If still not enough, try numbered bold sections
+  // Try **N. Title** or **N) Title**
+  if (parts.length < 3) {
+    parts = content.split(/(?=\*\*\d+[\.\)]\s*)/).filter(Boolean);
+  }
+
+  // Try numbered bold sections: 1. **Title**
   if (parts.length < 3) {
     parts = content.split(/(?=\d+\.\s+\*\*)/).filter(Boolean);
+  }
+
+  // Try Sección N: / Section N:
+  if (parts.length < 3) {
+    parts = content.split(/(?=(?:Sección|Section)\s*\d+[.:])/gi).filter(Boolean);
   }
 
   for (let i = 0; i < parts.length; i++) {
@@ -137,6 +162,8 @@ function parseMessageToSections(content: string): DocumentSection[] {
 
     const title = lines[0]
       .replace(/^Slide\s*\d+[.:]\s*/i, "")
+      .replace(/^(?:Sección|Section)\s*\d+[.:]\s*/i, "")
+      .replace(/^\*\*\d+[\.\)]\s*/, "")
       .replace(/^\d+\.\s+/, "")
       .replace(/\*\*/g, "")
       .replace(/^#+\s*/, "")
