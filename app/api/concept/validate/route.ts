@@ -248,7 +248,7 @@ Respond in JSON format:
 }`;
 
   try {
-    const result = await ai.models.generateContent({ model: 'gemini-2.5-pro', contents: prompt });
+    const result = await ai.models.generateContent({ model: 'gemini-3.1-pro-preview', contents: prompt });
     const response = result.text || '';
     
     // Parse JSON response

@@ -109,7 +109,7 @@ export async function POST(request: NextRequest) {
     const prompt = buildValidationPrompt(project, fieldKey, content, criteria);
 
     // Call Gemini
-    const result = await ai.models.generateContent({ model: 'gemini-2.5-pro', contents: prompt });
+    const result = await ai.models.generateContent({ model: 'gemini-3.1-pro-preview', contents: prompt });
     const responseText = result.text || '';
 
     // Parse response

@@ -180,7 +180,7 @@ export async function runRaindropSync(
       );
 
       const result = await ai.models.generateContent({
-        model: "gemini-2.5-pro",
+        model: "gemini-3.1-pro-preview",
         contents: prompt,
       });
       const responseText = result.text || "";
@@ -208,7 +208,7 @@ export async function runRaindropSync(
           sentiment: aiData.sentiment ?? "neutral",
           relevanceScore: aiData.relevanceScore ?? 0,
           rawAiResponse: responseText,
-          modelUsed: "gemini-2.5-pro",
+          modelUsed: "gemini-3.1-pro-preview",
           processingTimeMs: 0,
         },
         update: {
@@ -219,7 +219,7 @@ export async function runRaindropSync(
           sentiment: aiData.sentiment ?? "neutral",
           relevanceScore: aiData.relevanceScore ?? 0,
           rawAiResponse: responseText,
-          modelUsed: "gemini-2.5-pro",
+          modelUsed: "gemini-3.1-pro-preview",
           processingTimeMs: 0,
           updatedAt: new Date(),
         },

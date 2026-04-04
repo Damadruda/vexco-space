@@ -14,6 +14,7 @@ import {
   Settings,
   Menu,
   X,
+  CheckSquare,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -21,7 +22,7 @@ const WORKSPACE = [
   { href: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
   { href: "/project-builder", icon: FolderKanban, label: "Proyectos" },
   { href: "/idea-vault", icon: Lightbulb, label: "Idea Vault" },
-  { href: "/war-room", icon: Swords, label: "War Room" },
+  { href: "/agile-board", icon: CheckSquare, label: "Agile Board" },
   { href: "/inbox", icon: Inbox, label: "Inbox" },
   { href: "/knowledge", icon: BookOpen, label: "Knowledge Base" },
 ];

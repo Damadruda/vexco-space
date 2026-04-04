@@ -4,10 +4,10 @@ export default function AssistantPage() {
       <h1 className="ql-h1 mb-3">Asistente</h1>
       <p className="ql-body">
         El asistente ha sido reemplazado por el{" "}
-        <a href="/war-room" className="text-ql-accent hover:underline">
-          War Room
+        <a href="/agile-board" className="text-ql-accent hover:underline">
+          Agile Board
         </a>{" "}
-        y los agentes especializados. Usa el War Room para consultas directas con cualquiera de los 8 expertos.
+        y los agentes especializados. Abre un proyecto y usa el War Room para consultas directas con los expertos.
       </p>
     </div>
   );

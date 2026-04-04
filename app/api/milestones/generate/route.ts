@@ -174,7 +174,7 @@ async function detectProjectType(project: any): Promise<string> {
   const prompt = `Analiza este proyecto y determina su tipo:\n\nTítulo: ${project.title}\nDescripción: ${project.description}\n\nResponde SOLO con una palabra: SaaS, Product, o Service`;
 
   try {
-    const result = await ai.models.generateContent({ model: 'gemini-2.5-pro', contents: prompt });
+    const result = await ai.models.generateContent({ model: 'gemini-3.1-pro-preview', contents: prompt });
     const response = (result.text || '').trim().toLowerCase();
     if (['saas', 'product', 'service'].includes(response)) {
       return response;
@@ -215,7 +215,7 @@ Responde en JSON:
 ]`;
 
   try {
-    const result = await ai.models.generateContent({ model: 'gemini-2.5-pro', contents: prompt });
+    const result = await ai.models.generateContent({ model: 'gemini-3.1-pro-preview', contents: prompt });
     const text = result.text || '';
     const jsonMatch = text.match(/\[[\s\S]*\]/);
     if (jsonMatch) {

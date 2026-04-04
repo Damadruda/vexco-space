@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { Header } from "@/components/ui/header";
 import { StatCard } from "@/components/ui/stat-card";
 import { KanbanBoard } from "@/components/ui/kanban-board";
-import { FolderKanban, Lightbulb, FileText, Link as LinkIcon, Image as ImageIcon, TrendingUp, ArrowRight, Swords, CloudDownload, Plus, Inbox, Sparkles, Check, X, AlertTriangle, Flame, Clock, CircleDot } from "lucide-react";
+import { FolderKanban, Lightbulb, FileText, Link as LinkIcon, Image as ImageIcon, TrendingUp, ArrowRight, Swords, CloudDownload, Plus, Inbox, Sparkles, Check, X, AlertTriangle, Flame, Clock, CircleDot, CheckSquare } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { DriveFolderAnalyzer } from "@/components/ui/drive-folder-analyzer";
@@ -340,9 +340,9 @@ export default function DashboardPage() {
               <Lightbulb className="h-4 w-4" />
               Capturar Idea
             </Link>
-            <Link href="/war-room" className="ql-btn-ghost">
-              <Swords className="h-4 w-4" />
-              War Room
+            <Link href="/agile-board" className="ql-btn-ghost">
+              <CheckSquare className="h-4 w-4" />
+              Agile Board
             </Link>
           </div>
         </div>
@@ -378,11 +378,11 @@ export default function DashboardPage() {
                   </div>
                 </div>
               </Link>
-              <Link href="/war-room" className="ql-card group hover:border-ql-charcoal/30 transition-colors">
+              <Link href="/agile-board" className="ql-card group hover:border-ql-charcoal/30 transition-colors">
                 <div className="flex items-center gap-4">
-                  <Swords className="h-4 w-4 text-ql-muted" strokeWidth={1.5} />
+                  <CheckSquare className="h-4 w-4 text-ql-muted" strokeWidth={1.5} />
                   <div>
-                    <p className="ql-h2">4</p>
+                    <p className="ql-h2">5</p>
                     <p className="ql-body">Agentes activos</p>
                   </div>
                 </div>
