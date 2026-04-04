@@ -10,7 +10,7 @@ import {
   Search,
   Swords,
   Inbox,
-  BookOpen,
+  Brain,
   Settings,
   Menu,
   X,
@@ -24,7 +24,7 @@ const WORKSPACE = [
   { href: "/idea-vault", icon: Lightbulb, label: "Idea Vault" },
   { href: "/agile-board", icon: CheckSquare, label: "Agile Board" },
   { href: "/inbox", icon: Inbox, label: "Inbox" },
-  { href: "/knowledge", icon: BookOpen, label: "Knowledge Base" },
+  { href: "/knowledge", icon: Brain, label: "Conocimiento" },
 ];
 
 const CONFIG = [

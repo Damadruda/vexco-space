@@ -13,7 +13,10 @@ export async function GET(request: NextRequest) {
     const domain = searchParams.get("domain");
     const tagsParam = searchParams.get("tags");
 
+    const includeInactive = searchParams.get("includeInactive") === "true";
+
     const where: Record<string, unknown> = { ownerId: userId };
+    if (!includeInactive) where.isActive = true;
     if (type) where.insightType = type;
     if (domain) where.domain = domain;
     if (tagsParam) {
@@ -25,7 +28,7 @@ export async function GET(request: NextRequest) {
       where,
       include: { sourceProject: { select: { id: true, title: true } } },
       orderBy: { updatedAt: "desc" },
-      take: 50,
+      take: 100,
     });
 
     return NextResponse.json({ insights });
@@ -98,12 +101,13 @@ export async function PATCH(request: NextRequest) {
   try {
     const userId = await getDefaultUserId();
     const body = await request.json();
-    const { id, validatedByUser, confidence, isActive, content } = body as {
+    const { id, validatedByUser, confidence, isActive, content, title } = body as {
       id: string;
       validatedByUser?: boolean;
       confidence?: number;
       isActive?: boolean;
       content?: string;
+      title?: string;
     };
 
     if (!id) {
@@ -122,6 +126,7 @@ export async function PATCH(request: NextRequest) {
     if (confidence !== undefined) data.confidence = Math.min(100, Math.max(0, confidence));
     if (isActive !== undefined) data.isActive = isActive;
     if (content !== undefined) data.content = content;
+    if (title !== undefined) data.title = title;
 
     const updated = await prisma.firmInsight.update({
       where: { id },
