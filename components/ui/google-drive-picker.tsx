@@ -142,7 +142,7 @@ export function GoogleDrivePicker({ isOpen, onClose, onSelect, projectId, multip
   };
   
   const handleGoogleSignIn = () => {
-    signIn("google", { callbackUrl: "/idea-vault" });
+    signIn("google", { callbackUrl: "/inbox" });
   };
   
   if (!isOpen) return null;

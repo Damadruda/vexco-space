@@ -189,7 +189,7 @@ export default function SearchPage() {
                       href={
                         result.type === "project"
                           ? `/project-builder/${result.id}`
-                          : "/idea-vault"
+                          : "/inbox"
                       }
                       className="ql-card group flex items-start gap-4"
                     >

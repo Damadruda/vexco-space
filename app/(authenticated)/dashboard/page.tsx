@@ -336,9 +336,9 @@ export default function DashboardPage() {
               Nuevo Proyecto
               <ArrowRight className="h-4 w-4 transition-transform group-hover:translate-x-1" />
             </Link>
-            <Link href="/idea-vault" className="ql-btn-secondary">
-              <Lightbulb className="h-4 w-4" />
-              Capturar Idea
+            <Link href="/inbox" className="ql-btn-secondary">
+              <Inbox className="h-4 w-4" />
+              Capturar en Inbox
             </Link>
             <Link href="/agile-board" className="ql-btn-ghost">
               <CheckSquare className="h-4 w-4" />

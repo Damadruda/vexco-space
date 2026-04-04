@@ -5,7 +5,6 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard,
-  Lightbulb,
   FolderKanban,
   Search,
   Swords,
@@ -21,7 +20,6 @@ import { cn } from "@/lib/utils";
 const WORKSPACE = [
   { href: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
   { href: "/project-builder", icon: FolderKanban, label: "Proyectos" },
-  { href: "/idea-vault", icon: Lightbulb, label: "Idea Vault" },
   { href: "/agile-board", icon: CheckSquare, label: "Agile Board" },
   { href: "/inbox", icon: Inbox, label: "Inbox" },
   { href: "/knowledge", icon: Brain, label: "Conocimiento" },

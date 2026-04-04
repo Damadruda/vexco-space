@@ -1,9 +1,10 @@
 "use client";
 
-import { useState, useEffect, useRef } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { useParams } from "next/navigation";
 import { Header } from "@/components/ui/header";
-import { Plus, Trash2, GripVertical } from "lucide-react";
+import Link from "next/link";
+import { Plus, Trash2, GripVertical, ArrowLeft, Swords, Flame, TrendingUp, Clock } from "lucide-react";
 
 interface AgileTask {
   id: string;
@@ -13,6 +14,15 @@ interface AgileTask {
   priority: string;
   type: string;
   labels: string[];
+}
+
+interface ProjectData {
+  id: string;
+  title: string;
+  revenueProximityScore?: number | null;
+  revenueProximityReason?: string | null;
+  stepsToRevenue?: number | null;
+  stepsToRevenueDetail?: string | null;
 }
 
 const COLUMNS = [
@@ -34,7 +44,7 @@ export default function ProjectAgilePage() {
 
   const [tasks, setTasks] = useState<AgileTask[]>([]);
   const [loading, setLoading] = useState(true);
-  const [projectTitle, setProjectTitle] = useState("");
+  const [project, setProject] = useState<ProjectData | null>(null);
   const [addingTo, setAddingTo] = useState<string | null>(null);
   const [newTitle, setNewTitle] = useState("");
   const [draggedId, setDraggedId] = useState<string | null>(null);
@@ -47,7 +57,7 @@ export default function ProjectAgilePage() {
       fetch(`/api/agile?projectId=${projectId}`).then((r) => r.json()),
     ])
       .then(([projData, agileData]) => {
-        setProjectTitle(projData?.project?.title ?? "Proyecto");
+        setProject(projData?.project ?? projData);
         setTasks(agileData?.tasks ?? []);
       })
       .catch(console.error)
@@ -57,6 +67,15 @@ export default function ProjectAgilePage() {
   useEffect(() => {
     if (addingTo) inputRef.current?.focus();
   }, [addingTo]);
+
+  // Task summary stats
+  const stats = useMemo(() => {
+    const total = tasks.length;
+    const backlog = tasks.filter((t) => t.status === "backlog").length;
+    const inProgress = tasks.filter((t) => t.status === "in-progress").length;
+    const done = tasks.filter((t) => t.status === "done").length;
+    return { total, backlog, inProgress, done };
+  }, [tasks]);
 
   const handleAddTask = async (status: string) => {
     const title = newTitle.trim();
@@ -109,11 +128,67 @@ export default function ProjectAgilePage() {
     );
   }
 
+  const score = project?.revenueProximityScore;
+  let ScoreIcon = Clock;
+  let scoreColor = "text-[#5E5E5E]";
+  if (score != null && score >= 8) { ScoreIcon = Flame; scoreColor = "text-[#8B7355]"; }
+  else if (score != null && score >= 5) { ScoreIcon = TrendingUp; scoreColor = "text-amber-600"; }
+
   return (
     <div className="ql-page">
-      <Header title="Agile" subtitle={projectTitle} />
+      <Header title="Agile" subtitle={project?.title ?? "Proyecto"} />
 
-      <div className="p-6">
+      <div className="p-6 space-y-5">
+        {/* Project context header */}
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+          <div>
+            <h1 className="text-lg font-medium text-[#1A1A1A]">
+              Agile Board — {project?.title ?? "Proyecto"}
+            </h1>
+            {score != null && (
+              <div className="flex items-center gap-2 mt-1">
+                <ScoreIcon className={`h-3.5 w-3.5 ${scoreColor}`} strokeWidth={1.5} />
+                <span className={`text-xs ${scoreColor}`}>
+                  Revenue Priority: {score}/10
+                </span>
+                {project?.stepsToRevenue != null && (
+                  <span className="text-xs text-[#5E5E5E]">
+                    · {project.stepsToRevenue} paso{project.stepsToRevenue !== 1 ? "s" : ""} para facturar
+                  </span>
+                )}
+              </div>
+            )}
+          </div>
+          <div className="flex gap-2">
+            <Link
+              href={`/project-builder/${projectId}`}
+              className="ql-btn-ghost text-xs py-1.5 px-3"
+            >
+              <ArrowLeft className="h-3.5 w-3.5" />
+              Volver al proyecto
+            </Link>
+            <Link
+              href={`/project-builder/${projectId}/war-room`}
+              className="ql-btn-secondary text-xs py-1.5 px-3"
+            >
+              <Swords className="h-3.5 w-3.5" />
+              War Room
+            </Link>
+          </div>
+        </div>
+
+        {/* Task summary */}
+        <div className="flex flex-wrap gap-3 text-xs text-[#5E5E5E]">
+          <span className="font-medium text-[#1A1A1A]">{stats.total} tareas</span>
+          <span>·</span>
+          <span>{stats.backlog} backlog</span>
+          <span>·</span>
+          <span>{stats.inProgress} en progreso</span>
+          <span>·</span>
+          <span>{stats.done} completadas</span>
+        </div>
+
+        {/* Kanban columns */}
         <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-4">
           {COLUMNS.map((col) => {
             const colTasks = tasks.filter((t) => t.status === col.id);
