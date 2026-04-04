@@ -11,6 +11,10 @@ import {
   Sparkles,
   Tag,
   ExternalLink,
+  RotateCcw,
+  X,
+  Check,
+  Loader2,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -74,6 +78,23 @@ const TYPE_ICONS: Record<string, string> = {
   text: "📝",
   document: "📄",
   image: "🖼️",
+};
+
+// ─── Re-evaluation Types ──────────────────────────────────────────────────
+
+interface ReEvalResult {
+  itemId: string;
+  title: string;
+  currentSummary: string;
+  suggestedCategory: string;
+  reason: string;
+  selected: boolean;
+}
+
+const CATEGORY_LABELS: Record<string, string> = {
+  project: "🎯 project",
+  trend: "📈 trend",
+  discovery: "💡 discovery",
 };
 
 // ─── Add Form ─────────────────────────────────────────────────────────────────
@@ -425,10 +446,29 @@ export default function InboxPage() {
   const [syncResult, setSyncResult] = useState<string>("");
   const [projects, setProjects] = useState<ProjectOption[]>([]);
 
+  // Re-evaluation state
+  const [recentProject, setRecentProject] = useState<{ id: string; title: string } | null>(null);
+  const [noiseCount, setNoiseCount] = useState(0);
+  const [reEvalDismissed, setReEvalDismissed] = useState(false);
+  const [reEvalLoading, setReEvalLoading] = useState(false);
+  const [reEvalResults, setReEvalResults] = useState<ReEvalResult[] | null>(null);
+  const [reEvalApplying, setReEvalApplying] = useState(false);
+
   useEffect(() => {
     fetch("/api/projects")
       .then(r => r.json())
-      .then(data => setProjects(data.projects ?? []))
+      .then(data => {
+        const list = data.projects ?? [];
+        setProjects(list);
+        // Find most recent project (created in last 7 days)
+        const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+        const recent = list
+          .filter((p: { createdAt: string }) => new Date(p.createdAt) > weekAgo)
+          .sort((a: { createdAt: string }, b: { createdAt: string }) =>
+            new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()
+          )[0];
+        if (recent) setRecentProject({ id: recent.id, title: recent.title });
+      })
       .catch(() => {});
   }, []);
 
@@ -438,7 +478,9 @@ export default function InboxPage() {
       const params = filter !== "all" ? `?status=${filter}` : "";
       const res = await fetch(`/api/inbox${params}`);
       const data = await res.json();
-      setItems(data.items ?? []);
+      const list = data.items ?? [];
+      setItems(list);
+      setNoiseCount(list.filter((i: InboxItem) => i.analysis?.category === "noise").length);
     } catch (err) {
       console.error("Error fetching inbox:", err);
     } finally {
@@ -486,6 +528,56 @@ export default function InboxPage() {
         item.id === id ? { ...item, status: "processed", analysis } : item
       )
     );
+  };
+
+  // Re-evaluation handlers
+  const handleReEvaluate = async () => {
+    if (!recentProject) return;
+    setReEvalLoading(true);
+    try {
+      const res = await fetch("/api/inbox/re-evaluate-noise", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ projectId: recentProject.id }),
+      });
+      const data = await res.json();
+      const results: ReEvalResult[] = (data.results ?? []).map(
+        (r: Omit<ReEvalResult, "selected">) => ({ ...r, selected: true })
+      );
+      setReEvalResults(results);
+    } catch (err) {
+      console.error("Re-evaluation failed:", err);
+    } finally {
+      setReEvalLoading(false);
+    }
+  };
+
+  const handleApplyReEval = async () => {
+    if (!reEvalResults || !recentProject) return;
+    const selected = reEvalResults.filter((r) => r.selected);
+    if (selected.length === 0) return;
+    setReEvalApplying(true);
+    try {
+      await fetch("/api/inbox/re-evaluate-noise/apply", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          projectId: recentProject.id,
+          items: selected.map((r) => ({
+            itemId: r.itemId,
+            newCategory: r.suggestedCategory,
+            linkToProject: r.suggestedCategory === "project",
+          })),
+        }),
+      });
+      setReEvalResults(null);
+      setReEvalDismissed(true);
+      fetchItems();
+    } catch (err) {
+      console.error("Apply re-eval failed:", err);
+    } finally {
+      setReEvalApplying(false);
+    }
   };
 
   const filters: StatusFilter[] = ["all", "unprocessed", "processed", "archived"];
@@ -540,6 +632,121 @@ export default function InboxPage() {
             onSuccess={fetchItems}
             onClose={() => setShowAddForm(false)}
           />
+        )}
+
+        {/* Re-evaluation banner */}
+        {recentProject && noiseCount > 0 && !reEvalDismissed && !reEvalResults && (
+          <div className="rounded-lg border border-[#C5A572]/40 bg-[#FBF8F3] p-4">
+            <div className="flex items-start gap-3">
+              <RotateCcw className="h-4 w-4 shrink-0 text-[#8B7355] mt-0.5" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-[#1A1A1A]">
+                  Nuevo proyecto: &ldquo;{recentProject.title}&rdquo;
+                </p>
+                <p className="text-xs text-[#8B7355] mt-1">
+                  Tienes {noiseCount} item{noiseCount !== 1 ? "s" : ""} clasificado{noiseCount !== 1 ? "s" : ""} como
+                  noise que podrían ser relevantes para este proyecto.
+                </p>
+              </div>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={handleReEvaluate}
+                  disabled={reEvalLoading}
+                  className="inline-flex items-center gap-1.5 rounded-md border border-[#C5A572]/40 bg-white px-3 py-1.5 text-xs font-medium text-[#8B7355] hover:bg-[#FBF8F3] transition-colors disabled:opacity-50"
+                >
+                  {reEvalLoading ? (
+                    <Loader2 className="h-3 w-3 animate-spin" />
+                  ) : (
+                    <RotateCcw className="h-3 w-3" />
+                  )}
+                  {reEvalLoading ? "Evaluando..." : "Re-evaluar noise"}
+                </button>
+                <button
+                  onClick={() => setReEvalDismissed(true)}
+                  className="p-1 text-[#C5A572] hover:text-[#8B7355] transition-colors"
+                >
+                  <X className="h-3.5 w-3.5" />
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Re-evaluation results panel */}
+        {reEvalResults && (
+          <div className="rounded-lg border border-[#C5A572]/40 bg-white p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="text-sm font-medium text-[#1A1A1A]">Re-evaluación completada</p>
+                <p className="text-xs text-[#5E5E5E] mt-0.5">
+                  {reEvalResults.length > 0
+                    ? `${reEvalResults.length} item${reEvalResults.length !== 1 ? "s" : ""} ahora ${reEvalResults.length !== 1 ? "son" : "es"} relevante${reEvalResults.length !== 1 ? "s" : ""} para "${recentProject?.title}"`
+                    : "Ningún item resultó relevante para este proyecto"}
+                </p>
+              </div>
+              <button
+                onClick={() => { setReEvalResults(null); setReEvalDismissed(true); }}
+                className="p-1 text-[#5E5E5E] hover:text-[#1A1A1A]"
+              >
+                <X className="h-4 w-4" />
+              </button>
+            </div>
+
+            {reEvalResults.length > 0 && (
+              <>
+                <div className="space-y-2">
+                  {reEvalResults.map((result, i) => (
+                    <label
+                      key={result.itemId}
+                      className="flex items-start gap-3 rounded-md p-3 hover:bg-[#F9F8F6] transition-colors cursor-pointer"
+                    >
+                      <input
+                        type="checkbox"
+                        checked={result.selected}
+                        onChange={() => {
+                          setReEvalResults((prev) =>
+                            prev!.map((r, idx) =>
+                              idx === i ? { ...r, selected: !r.selected } : r
+                            )
+                          );
+                        }}
+                        className="mt-0.5 accent-[#C5A572]"
+                      />
+                      <div className="flex-1 min-w-0">
+                        <p className="text-sm font-medium text-[#1A1A1A] truncate">
+                          {result.title}
+                        </p>
+                        <p className="text-xs text-[#5E5E5E] mt-0.5">
+                          → {CATEGORY_LABELS[result.suggestedCategory] ?? result.suggestedCategory} · {result.reason}
+                        </p>
+                      </div>
+                    </label>
+                  ))}
+                </div>
+
+                <div className="flex items-center justify-end gap-2 pt-2 border-t border-ql-sand/20">
+                  <button
+                    onClick={() => { setReEvalResults(null); setReEvalDismissed(true); }}
+                    className="ql-btn-ghost text-xs py-1.5 px-3"
+                  >
+                    Cancelar
+                  </button>
+                  <button
+                    onClick={handleApplyReEval}
+                    disabled={reEvalApplying || reEvalResults.filter((r) => r.selected).length === 0}
+                    className="inline-flex items-center gap-1.5 rounded-md bg-[#1A1A1A] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#333] transition-colors disabled:opacity-50"
+                  >
+                    {reEvalApplying ? (
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                    ) : (
+                      <Check className="h-3 w-3" />
+                    )}
+                    Aplicar seleccionados ({reEvalResults.filter((r) => r.selected).length})
+                  </button>
+                </div>
+              </>
+            )}
+          </div>
         )}
 
         {/* Filters */}
