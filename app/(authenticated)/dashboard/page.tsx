@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { Header } from "@/components/ui/header";
 import { StatCard } from "@/components/ui/stat-card";
 import { KanbanBoard } from "@/components/ui/kanban-board";
-import { FolderKanban, Lightbulb, FileText, Link as LinkIcon, Image as ImageIcon, TrendingUp, ArrowRight, Swords, CloudDownload, Plus, Inbox, Sparkles, Check, X } from "lucide-react";
+import { FolderKanban, Lightbulb, FileText, Link as LinkIcon, Image as ImageIcon, TrendingUp, ArrowRight, Swords, CloudDownload, Plus, Inbox, Sparkles, Check, X, AlertTriangle, Flame, Clock, CircleDot } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { DriveFolderAnalyzer } from "@/components/ui/drive-folder-analyzer";
@@ -38,6 +38,25 @@ export default function DashboardPage() {
   const [loading, setLoading] = useState(true);
   const [showDriveAnalyzer, setShowDriveAnalyzer] = useState(false);
   const [driveImportSuccess, setDriveImportSuccess] = useState<{ projectId: string } | null>(null);
+  const [revenueData, setRevenueData] = useState<{
+    projects: Array<{
+      id: string;
+      title: string;
+      status: string;
+      revenueProximityScore: number | null;
+      revenueProximityReason: string | null;
+      stepsToRevenue: number | null;
+      stepsToRevenueDetail: string | null;
+      estimatedRevenueDate: string | null;
+      revenueLastAssessedAt: string | null;
+    }>;
+    alerts: Array<{
+      projectId: string;
+      projectTitle: string;
+      message: string;
+      severity: "high" | "medium" | "low";
+    }>;
+  } | null>(null);
   const router = useRouter();
 
   useEffect(() => {
@@ -53,6 +72,17 @@ export default function DashboardPage() {
       }
     }
     fetchStats();
+
+    async function fetchRevenue() {
+      try {
+        const res = await fetch("/api/projects/revenue-ranking");
+        const data = await res.json();
+        if (data?.projects) setRevenueData(data);
+      } catch (error) {
+        console.error("Error fetching revenue ranking:", error);
+      }
+    }
+    fetchRevenue();
   }, []);
 
   return (
@@ -155,6 +185,105 @@ export default function DashboardPage() {
                 number="04"
               />
             </div>
+          </div>
+        )}
+
+        {/* Revenue Priority — Focus Section */}
+        {revenueData && (revenueData.alerts.length > 0 || revenueData.projects.some(p => p.revenueProximityScore != null)) && (
+          <div>
+            <p className="ql-label mb-2">Proximidad a facturación</p>
+            <h3 className="ql-h3 mb-4">Foco de facturación</h3>
+
+            {/* Alerts */}
+            {revenueData.alerts.filter(a => a.severity === "high").length > 0 && (
+              <div className="mb-4 space-y-2">
+                {revenueData.alerts
+                  .filter(a => a.severity === "high")
+                  .map((alert, i) => (
+                    <Link
+                      key={i}
+                      href={`/project-builder/${alert.projectId}/war-room`}
+                      className="flex items-center gap-3 rounded-lg border border-[#C5A572]/40 bg-[#FBF8F3] px-4 py-3 transition-colors hover:border-[#C5A572]"
+                    >
+                      <AlertTriangle className="h-4 w-4 shrink-0 text-[#8B7355]" />
+                      <span className="text-sm text-[#8B7355]">{alert.message}</span>
+                      <ArrowRight className="ml-auto h-3.5 w-3.5 text-[#C5A572]" />
+                    </Link>
+                  ))}
+              </div>
+            )}
+
+            {/* Ranking cards */}
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+              {revenueData.projects
+                .filter(p => p.revenueProximityScore != null || true)
+                .slice(0, 6)
+                .map(project => {
+                  const score = project.revenueProximityScore;
+                  let badgeLabel = "Sin evaluar";
+                  let badgeClass = "bg-[#F9F8F6] text-[#5E5E5E] border border-[#5E5E5E]/20";
+                  let IconComponent = CircleDot;
+
+                  if (score != null && score >= 8) {
+                    badgeLabel = "Próximo a facturar";
+                    badgeClass = "bg-[#FBF8F3] text-[#8B7355] border border-[#C5A572]/40";
+                    IconComponent = Flame;
+                  } else if (score != null && score >= 5) {
+                    badgeLabel = "En progreso";
+                    badgeClass = "bg-amber-50 text-amber-700 border border-amber-200";
+                    IconComponent = TrendingUp;
+                  } else if (score != null && score >= 1) {
+                    badgeLabel = "Fase temprana";
+                    badgeClass = "bg-[#F9F8F6] text-[#5E5E5E] border border-[#5E5E5E]/10";
+                    IconComponent = Clock;
+                  }
+
+                  return (
+                    <Link
+                      key={project.id}
+                      href={`/project-builder/${project.id}/war-room`}
+                      className="group ql-card hover:border-[#C5A572]/40 transition-colors"
+                    >
+                      <div className="flex items-start justify-between gap-2 mb-2">
+                        <h4 className="text-sm font-medium text-[#1A1A1A] line-clamp-1">{project.title}</h4>
+                        {score != null && (
+                          <span className="shrink-0 text-lg font-light text-[#1A1A1A]">{score}/10</span>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-2 mb-2">
+                        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ${badgeClass}`}>
+                          <IconComponent className="h-3 w-3" />
+                          {badgeLabel}
+                        </span>
+                      </div>
+                      {project.stepsToRevenue != null && (
+                        <p className="text-xs text-[#5E5E5E]">
+                          {project.stepsToRevenue} paso{project.stepsToRevenue !== 1 ? "s" : ""} para facturar
+                        </p>
+                      )}
+                      {project.revenueLastAssessedAt && (
+                        <p className="mt-1 text-xs text-[#5E5E5E]/60">
+                          Evaluado: {new Date(project.revenueLastAssessedAt).toLocaleDateString("es-ES")}
+                        </p>
+                      )}
+                    </Link>
+                  );
+                })}
+            </div>
+
+            {/* Low-severity alerts */}
+            {revenueData.alerts.filter(a => a.severity === "low").length > 0 && (
+              <div className="mt-3 space-y-1">
+                {revenueData.alerts
+                  .filter(a => a.severity === "low")
+                  .slice(0, 3)
+                  .map((alert, i) => (
+                    <p key={i} className="text-xs text-[#5E5E5E]/70">
+                      · {alert.message}
+                    </p>
+                  ))}
+              </div>
+            )}
           </div>
         )}
 

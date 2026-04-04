@@ -149,6 +149,69 @@ async function buildProjectContext(memory: Record<string, unknown>, projectId?: 
     }
   }
 
+  // FirmInsight: cross-project institutional knowledge
+  let firmInsightContext = "";
+  if (projectId) {
+    try {
+      const userId = await getDefaultUserId();
+      const projectKeywords: string[] = [];
+      const projectTitle = (project.title as string) ?? "";
+      const projectDesc = (project.description as string) ?? "";
+      const projectConcept = (project as Record<string, unknown>).concept as string ?? "";
+      const projectMarket = (project as Record<string, unknown>).targetMarket as string ?? "";
+
+      [projectTitle, projectDesc, projectConcept, projectMarket]
+        .filter(Boolean)
+        .forEach(text => {
+          text.toLowerCase()
+            .split(/[\s,.\-_\/]+/)
+            .filter((w: string) => w.length > 3)
+            .forEach((w: string) => {
+              if (!projectKeywords.includes(w)) projectKeywords.push(w);
+            });
+        });
+
+      const relevantInsights = await prisma.firmInsight.findMany({
+        where: {
+          isActive: true,
+          ownerId: userId,
+          sourceProjectId: { not: projectId },
+        },
+        include: { sourceProject: { select: { title: true } } },
+        orderBy: [{ confidence: "desc" }, { updatedAt: "desc" }],
+        take: 20,
+      });
+
+      const matched = relevantInsights
+        .filter(insight => {
+          const insightText = `${insight.title} ${insight.content} ${insight.domain ?? ""} ${(insight.tags ?? []).join(" ")}`.toLowerCase();
+          return projectKeywords.some(kw => insightText.includes(kw));
+        })
+        .slice(0, 5);
+
+      if (matched.length > 0) {
+        const insightLines = matched.map(i =>
+          `  - [${i.insightType.toUpperCase()}${i.validatedByUser ? " ✓" : ""}] ${i.title}: ${i.content.slice(0, 300)}${i.sourceProject ? ` (de: ${i.sourceProject.title})` : ""}`
+        ).join("\n");
+
+        firmInsightContext = `\n- Conocimiento institucional de Vex&Co (${matched.length} insights relevantes):\n${insightLines}`;
+      }
+    } catch {
+      // continue without firm insights
+    }
+  }
+
+  // Revenue Priority context
+  let revenuePriorityContext = "";
+  const rpScore = (project as Record<string, unknown>).revenueProximityScore as number | null;
+  if (rpScore) {
+    revenuePriorityContext = `\n- Revenue Priority: ${rpScore}/10 — ${(project as Record<string, unknown>).revenueProximityReason ?? "sin detalle"}`;
+    const stepsToRev = (project as Record<string, unknown>).stepsToRevenue as number | null;
+    if (stepsToRev) {
+      revenuePriorityContext += `\n  Pasos para facturar: ${stepsToRev} — ${(project as Record<string, unknown>).stepsToRevenueDetail ?? ""}`;
+    }
+  }
+
   return [
     "CONTEXTO DEL PROYECTO:",
     `- Nombre: ${project.title ?? "Sin título"}`,
@@ -162,9 +225,96 @@ async function buildProjectContext(memory: Record<string, unknown>, projectId?: 
     tasks.length > 0 ? `- Tareas activas (${tasks.length}):\n${taskLines}` : "",
     inboxLines || "",
     driveLines || "",
+    firmInsightContext || "",
+    revenuePriorityContext || "",
   ]
     .filter(Boolean)
     .join("\n");
+}
+
+// ─── FirmInsight & Revenue Priority Parsers ──────────────────────────────────
+
+async function extractAndSaveFirmInsights(
+  responseText: string,
+  projectId: string | undefined,
+  agentId: string,
+  userId: string
+): Promise<void> {
+  const insightRegex = /\[FIRM INSIGHT:\s*tipo=(\w+)\]\s*(.+?)(?=\n\n|\[FIRM INSIGHT|\n##|$)/gs;
+  let match;
+
+  while ((match = insightRegex.exec(responseText)) !== null) {
+    const insightType = match[1];
+    const content = match[2].trim();
+
+    if (content.length < 10) continue;
+
+    try {
+      const title = content.split(/\s+/).slice(0, 8).join(" ");
+      const tags = content
+        .toLowerCase()
+        .split(/[\s,.\-_\/()]+/)
+        .filter(w => w.length > 4)
+        .slice(0, 10);
+
+      await prisma.firmInsight.create({
+        data: {
+          title,
+          content,
+          insightType,
+          tags,
+          sourceProjectId: projectId ?? null,
+          sourceAgentId: agentId,
+          confidence: 30,
+          validatedByUser: false,
+          isActive: true,
+          ownerId: userId,
+        },
+      });
+    } catch (err) {
+      console.error("Failed to save FirmInsight:", err);
+    }
+  }
+}
+
+async function extractAndSaveRevenuePriority(
+  responseText: string,
+  projectId: string | undefined,
+  agentId: string
+): Promise<void> {
+  if (!projectId || agentId !== "strategist") return;
+
+  const rpMatch = responseText.match(
+    /##\s*REVENUE PRIORITY[\s\S]*?Score:\s*(\d+)\/10[\s\S]*?Pasos para facturar:\s*(\d+)[\s\S]*?Detalle:\s*([\s\S]*?)(?=\n-\s*Fecha|\n##)/i
+  );
+
+  if (!rpMatch) return;
+
+  const score = parseInt(rpMatch[1]);
+  const steps = parseInt(rpMatch[2]);
+  const detail = rpMatch[3].trim();
+
+  const dateMatch = responseText.match(/Fecha estimada.*?:\s*(.+?)(?:\n|$)/i);
+  const reasonMatch = responseText.match(/Razonamiento:\s*(.+?)(?:\n\n|\n##|$)/is);
+
+  try {
+    await prisma.project.update({
+      where: { id: projectId },
+      data: {
+        revenueProximityScore: Math.min(10, Math.max(1, score)),
+        stepsToRevenue: steps,
+        stepsToRevenueDetail: detail,
+        revenueProximityReason: reasonMatch?.[1]?.trim() ?? null,
+        estimatedRevenueDate: dateMatch?.[1]?.includes("indefinida")
+          ? null
+          : (() => { try { return new Date(dateMatch![1].trim()); } catch { return null; } })(),
+        revenueLastAssessedAt: new Date(),
+        revenueLastAssessedBy: agentId,
+      },
+    });
+  } catch (err) {
+    console.error("Failed to save revenue priority:", err);
+  }
 }
 
 // ─── Route ────────────────────────────────────────────────────────────────────
@@ -421,6 +571,12 @@ Selecciona 1-3 agentes. El strategist NO se asigna a sí mismo. Ordena por prior
             "model:", agentConfig.preferredLLM,
             "ms:", Date.now() - startTime
           );
+
+          // ── Extract FirmInsights & Revenue Priority (fire-and-forget) ──
+          extractAndSaveFirmInsights(fullText, projectId, effectiveAgentId, userId)
+            .catch(err => console.error("FirmInsight extraction failed:", err));
+          extractAndSaveRevenuePriority(fullText, projectId, effectiveAgentId)
+            .catch(err => console.error("Revenue priority extraction failed:", err));
 
           // ── Send done event with full response ─────────────────────
           sendSSE({

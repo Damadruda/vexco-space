@@ -48,6 +48,7 @@ model User {
   userPreferences  UserPreferences?
   decisionLogs     DecisionLog[]
   warRoomSessions  WarRoomSession[]
+  firmInsights     FirmInsight[]
 }
 
 model Account {
@@ -187,6 +188,15 @@ model Project {
   isArchived    Boolean   @default(false)
   driveFolderId String?   // Google Drive folder ID linked to this project
 
+  // Revenue Priority System
+  revenueProximityScore   Int?      // 1-10, evaluated by Strategist (10 = ready to invoice)
+  revenueProximityReason  String?   @db.Text // Why this score — Strategist's judgment
+  stepsToRevenue          Int?      // Estimated steps to first invoice
+  stepsToRevenueDetail    String?   @db.Text // Description of each step
+  estimatedRevenueDate    DateTime? // When could first revenue happen
+  revenueLastAssessedAt   DateTime? // Last time Strategist evaluated this
+  revenueLastAssessedBy   String?   // Agent ID that last assessed
+
   // Relations
   ideas            Idea[]
   notes            Note[]
@@ -203,6 +213,7 @@ model Project {
   chatMessages      ChatMessage[]
   driveDocSummaries DriveDocSummary[]
   documents         DocumentGeneration[]
+  firmInsights      FirmInsight[] @relation("InsightSource")
 
   @@index([userId])
   @@index([status])
@@ -640,4 +651,36 @@ model DocumentGeneration {
 
   @@index([projectId])
   @@index([styleVariantId])
+}
+
+// =============================================================================
+// FIRM INSIGHT — Cross-project institutional knowledge
+// Vex&Co learns from itself: findings, validated segments,
+// decisions, errors, contrarian patterns
+// =============================================================================
+
+model FirmInsight {
+  id              String    @id @default(cuid())
+  title           String
+  content         String    @db.Text
+  insightType     String    // "finding" | "segment" | "decision" | "error" | "pattern" | "contrarian_moat"
+  domain          String?   // e.g. "senior_professionals", "fractional", "b2b_saas", "content_led"
+  tags            String[]  @default([])
+  confidence      Int       @default(50) // 0-100, grows with validation
+  sourceProjectId String?
+  sourceProject   Project?  @relation("InsightSource", fields: [sourceProjectId], references: [id], onDelete: SetNull)
+  sourceAgentId   String?   // Which agent generated this insight
+  validatedByUser Boolean   @default(false)
+  isActive        Boolean   @default(true)
+  metadata        Json?     // Flexible: can store analogVariable details, revenue data, etc.
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+  ownerId         String
+  owner           User      @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+
+  @@index([insightType])
+  @@index([tags])
+  @@index([sourceProjectId])
+  @@index([ownerId])
+  @@index([domain])
 }
