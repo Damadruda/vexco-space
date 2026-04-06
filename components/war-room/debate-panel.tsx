@@ -187,6 +187,23 @@ export function DebatePanel({ projectId, onClose }: DebatePanelProps) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
+  useEffect(() => {
+    const loadExistingDebate = async () => {
+      try {
+        const res = await fetch(`/api/projects/${projectId}/debate`);
+        if (!res.ok) return;
+        const data = await res.json();
+        if (data.session) {
+          setSession(data.session);
+          setSelectedAgents(data.session.selectedAgents);
+        }
+      } catch {
+        // No existing debate — start fresh
+      }
+    };
+    loadExistingDebate();
+  }, [projectId]);
+
   const startDebate = async () => {
     if (!topic.trim()) return;
     setLoading(true);
