@@ -350,7 +350,7 @@ export default function ProjectWarRoomPage() {
             <div className="px-6 py-6 max-w-4xl mx-auto">
               <DebatePanel
                 projectId={projectId}
-                onClose={() => setActiveTab("estrategia")}
+                onClose={() => {}}
               />
             </div>
           )}
