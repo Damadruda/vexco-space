@@ -51,7 +51,7 @@ export async function GET(
 ) {
   try {
     await getDefaultUserId();
-    const session = getDebateByProject(params.id);
+    const session = await getDebateByProject(params.id);
     return NextResponse.json({ session });
   } catch (error) {
     if (error instanceof Error && error.message === "No autenticado") {

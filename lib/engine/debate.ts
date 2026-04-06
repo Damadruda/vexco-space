@@ -338,17 +338,59 @@ export async function executePhase3(
   return session;
 }
 
-// ─── Getters ──────────────────────────────────────────────────────────────────
+// ─── Getters (with DB fallback for serverless) ────────────────────────────────
 
-export function getDebateSession(sessionId: string): DebateSession | null {
-  return debateSessions.get(sessionId) ?? null;
+export async function getDebateSession(sessionId: string): Promise<DebateSession | null> {
+  // 1. Check in-memory first
+  const inMemory = debateSessions.get(sessionId);
+  if (inMemory) return inMemory;
+
+  // 2. Fallback to DB
+  try {
+    const dbSession = await prisma.warRoomSession.findUnique({
+      where: { id: sessionId },
+    });
+    if (!dbSession || !dbSession.phase?.startsWith("debate_")) return null;
+
+    // Reconstruct DebateSession from DB
+    const stored = dbSession.agentResult as unknown as DebateSession;
+    if (!stored || !stored.id) return null;
+
+    // Re-hydrate into memory for subsequent calls in this invocation
+    debateSessions.set(stored.id, stored);
+    return stored;
+  } catch (err) {
+    console.error("[DEBATE] DB fallback failed:", err);
+    return null;
+  }
 }
 
-export function getDebateByProject(projectId: string): DebateSession | null {
+export async function getDebateByProject(projectId: string): Promise<DebateSession | null> {
+  // 1. Check in-memory first
   for (const session of debateSessions.values()) {
     if (session.projectId === projectId && session.phase !== "completed") {
       return session;
     }
   }
-  return null;
+
+  // 2. Fallback to DB
+  try {
+    const dbSession = await prisma.warRoomSession.findFirst({
+      where: {
+        projectId,
+        phase: { startsWith: "debate_", not: "debate_completed" },
+      },
+      orderBy: { createdAt: "desc" },
+    });
+    if (!dbSession) return null;
+
+    const stored = dbSession.agentResult as unknown as DebateSession;
+    if (!stored || !stored.id) return null;
+
+    debateSessions.set(stored.id, stored);
+    return stored;
+  } catch (err) {
+    console.error("[DEBATE] DB fallback (by project) failed:", err);
+    return null;
+  }
 }

@@ -28,7 +28,7 @@ export async function POST(
     };
 
     const { sessionId, action, input, selectedAgents } = body;
-    const session = getDebateSession(sessionId);
+    const session = await getDebateSession(sessionId);
 
     if (!session || session.projectId !== projectId || session.userId !== userId) {
       return NextResponse.json({ error: "Sesión no encontrada" }, { status: 404 });
