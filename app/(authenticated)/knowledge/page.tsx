@@ -578,14 +578,7 @@ export default function KnowledgePage() {
       <Header title="Conocimiento" subtitle="Inteligencia institucional" />
 
       <div className="p-8 space-y-8">
-        {/* Page heading */}
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="ql-h1">Conocimiento Institucional</h1>
-            <p className="ql-body mt-1">
-              La inteligencia acumulada de Vex&Co a través de proyectos.
-            </p>
-          </div>
+        <div className="flex justify-end">
           <button
             onClick={() => setShowForm(!showForm)}
             className="ql-btn-primary"

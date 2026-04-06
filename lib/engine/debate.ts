@@ -200,16 +200,25 @@ export async function executePhase2(session: DebateSession): Promise<DebateSessi
     )
     .join("\n\n---\n\n");
 
+  const humanDirective = session.humanFeedback.length > 0
+    ? `\n\nDIRECTRIZ DEL USUARIO: "${session.humanFeedback.join(". ")}"\nTu confrontación DEBE centrarse en responder a esta directriz específica.`
+    : "";
+
   const confrontationSettled = await Promise.allSettled(
     session.selectedAgents.map(async (agentId) => {
       const myResult = session.phase1Results.find((r) => r.agentId === agentId);
       const agentConfig = getAgentConfig(agentId);
 
       const supervisorPlan = {
-        analysis: `Fase 2 del debate: "${session.topic}"`,
-        proposedAction: `Revisa los análisis de tus colegas. Señala puntos de acuerdo, desacuerdo y añade perspectivas que faltan.`,
+        analysis: `Fase 2 del debate: "${session.topic}"${humanDirective}`,
+        proposedAction: `CONFRONTACIÓN: Ya hiciste tu análisis independiente. Ahora revisa lo que dijeron tus colegas (en CONTEXTO DEL DEBATE) y:
+1. Señala dónde coincides y por qué
+2. Señala dónde discrepas con argumentos concretos
+3. Identifica puntos ciegos que nadie mencionó
+${session.humanFeedback.length > 0 ? `4. Responde directamente a la directriz del usuario: "${session.humanFeedback.join(". ")}"` : ""}
+NO repitas tu análisis general. Esto es una confrontación de ideas, no un análisis nuevo.`,
         targetAgentId: agentId,
-        reasoning: "Full Debate — confrontación fase 2",
+        reasoning: "Full Debate — confrontación fase 2. Debes REFERENCIAR los análisis de tus colegas por nombre.",
         priority: "high" as const,
         estimatedScope: `Revisión crítica desde perspectiva de ${agentConfig?.name ?? agentId}`,
       };
@@ -244,12 +253,17 @@ export async function executePhase2(session: DebateSession): Promise<DebateSessi
   });
 
   const redTeamPlan = {
-    analysis: `Stress test del debate completo sobre: "${session.topic}"`,
-    proposedAction: `Haz un stress test integral de todos los análisis anteriores. Identifica supuestos incorrectos, puntos ciegos colectivos y riesgos no mencionados.`,
+    analysis: `Stress test del debate completo sobre: "${session.topic}"${humanDirective}`,
+    proposedAction: `STRESS TEST: Lee TODOS los análisis de tus colegas (en CONTEXTO DEL DEBATE) y:
+1. Identifica los 3 supuestos más peligrosos que todos asumen sin cuestionar
+2. Señala datos faltantes que invalidan las conclusiones
+3. Describe el peor escenario realista si se ejecuta el plan propuesto
+${session.humanFeedback.length > 0 ? `4. Evalúa críticamente la directriz del usuario: "${session.humanFeedback.join(". ")}"` : ""}
+Sé brutal. Tu trabajo es destruir los supuestos débiles antes de que el mercado lo haga.`,
     targetAgentId: "redteam",
-    reasoning: "Full Debate — Red Team stress test fase 2",
+    reasoning: "Full Debate — Red Team. Debes cuestionar TODO, incluyendo los puntos de consenso.",
     priority: "high" as const,
-    estimatedScope: "Análisis de riesgos y validación del conjunto",
+    estimatedScope: "Stress test integral del debate",
   };
 
   const redTeamMemory = {
@@ -304,10 +318,16 @@ export async function executePhase3(
   const redTeamResult = session.phase2Results.find((r) => r.agentId === "redteam");
 
   const synthesisPlan = {
-    analysis: `Debate completo sobre "${session.topic}" — listo para síntesis`,
-    proposedAction: `Sintetiza el debate completo en recomendaciones accionables con prioridades MoSCoW. Incluye consensos, riesgos del Red Team y decisiones pendientes para el usuario.`,
+    analysis: `Debate completo sobre "${session.topic}" — síntesis final`,
+    proposedAction: `SÍNTESIS ESTRATÉGICA: Tienes acceso a todo el debate (análisis + confrontación + Red Team) en CONTEXTO DEL DEBATE. Genera:
+1. Los 3 consensos principales con nivel de confianza
+2. Los 2-3 desacuerdos irresueltos y cuál es más probable correcto
+3. Recomendaciones MoSCoW (Must/Should/Could/Won't) accionables
+4. Decisiones que el usuario debe tomar AHORA vs las que puede postergar
+${session.humanFeedback.length > 0 ? `5. Respuesta directa a la directriz del usuario: "${session.humanFeedback.join(". ")}"` : ""}
+Prioriza lo accionable sobre lo teórico.`,
     targetAgentId: "strategist",
-    reasoning: "Full Debate — síntesis final fase 3",
+    reasoning: "Full Debate — síntesis final. Integra TODOS los puntos de vista del debate.",
     priority: "high" as const,
     estimatedScope: "Síntesis estratégica consolidada con MoSCoW",
   };

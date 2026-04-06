@@ -144,14 +144,6 @@ export default function AgileBoardPage() {
       <Header title="Agile Board" subtitle="Vista cross-proyecto" />
 
       <div className="p-8 space-y-8">
-        {/* Page heading */}
-        <div>
-          <h1 className="ql-h1">Agile Board</h1>
-          <p className="ql-body mt-1">
-            Todas las tareas de tus proyectos activos, priorizadas por proximidad a facturación.
-          </p>
-        </div>
-
         {/* Summary stats */}
         <div className="grid gap-3 grid-cols-2 sm:grid-cols-4">
           <div className="ql-card px-4 py-3">

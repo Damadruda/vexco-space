@@ -136,6 +136,17 @@ export function buildAgentPrompt(
   const agileTasks = (projectMemory.agileTasks as unknown[]) ?? [];
   const recentNotes = (projectMemory.recentNotes as unknown[]) ?? [];
 
+  const debateContext = projectMemory.debateContext as {
+    topic?: string;
+    myPreviousAnalysis?: string;
+    otherAgentsAnalyses?: string;
+    allAnalyses?: string;
+    phase1Summary?: string;
+    phase2Summary?: string;
+    redTeamFindings?: string;
+    humanFeedback?: string;
+  } | undefined;
+
   const rejectedByThisAgent = decisionHistory
     .filter((d) => d.outcome === "REJECTED" && d.agentSource === agentName.toLowerCase())
     .map((d) => `- ${d.decision}`)
@@ -160,6 +171,51 @@ ${agentConfig.domainInstructions}`
 
   const outputType = agentConfig?.outputType ?? "analysis";
 
+  let debateSection = "";
+  if (debateContext) {
+    const parts: string[] = [];
+
+    if (debateContext.topic) {
+      parts.push(`TEMA DEL DEBATE: "${debateContext.topic}"`);
+    }
+
+    if (debateContext.humanFeedback) {
+      parts.push(`DIRECTRIZ DEL USUARIO (PRIORIDAD MÁXIMA):\n${debateContext.humanFeedback}`);
+    }
+
+    if (debateContext.myPreviousAnalysis) {
+      parts.push(`TU ANÁLISIS PREVIO (Fase 1):\n${debateContext.myPreviousAnalysis}`);
+    }
+
+    if (debateContext.otherAgentsAnalyses) {
+      const truncated = debateContext.otherAgentsAnalyses.length > 3000
+        ? debateContext.otherAgentsAnalyses.slice(0, 3000) + "\n[...truncado por longitud]"
+        : debateContext.otherAgentsAnalyses;
+      parts.push(`ANÁLISIS DE TUS COLEGAS:\n${truncated}`);
+    }
+
+    if (debateContext.allAnalyses) {
+      const truncated = debateContext.allAnalyses.length > 3000
+        ? debateContext.allAnalyses.slice(0, 3000) + "\n[...truncado por longitud]"
+        : debateContext.allAnalyses;
+      parts.push(`TODOS LOS ANÁLISIS PREVIOS:\n${truncated}`);
+    }
+
+    if (debateContext.phase1Summary) {
+      parts.push(`RESUMEN FASE 1 (Análisis):\n${debateContext.phase1Summary}`);
+    }
+
+    if (debateContext.phase2Summary) {
+      parts.push(`RESUMEN FASE 2 (Confrontación):\n${debateContext.phase2Summary}`);
+    }
+
+    if (debateContext.redTeamFindings) {
+      parts.push(`HALLAZGOS RED TEAM:\n${debateContext.redTeamFindings}`);
+    }
+
+    debateSection = `\n\nCONTEXTO DEL DEBATE:\n${parts.join("\n\n")}`;
+  }
+
   return `${identity}
 
 ${ANTI_IA_RULE}
@@ -171,6 +227,7 @@ CONTEXTO DEL PROYECTO:
 - Progreso: ${project?.progress ?? 0}%
 - Tareas activas: ${agileTasks.length}
 - Notas disponibles: ${recentNotes.length}
+${debateSection}
 
 EL SUPERVISOR TE HA ASIGNADO ESTA TAREA:
 "${supervisorPlan.proposedAction}"

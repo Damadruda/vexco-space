@@ -124,12 +124,7 @@ export default function DashboardPage() {
       )}
 
       <div className="p-8 space-y-10">
-        {/* Page heading */}
-        <div className="flex flex-wrap items-center justify-between gap-4">
-          <div>
-            <h1 className="ql-h1">Dashboard</h1>
-            <p className="ql-body mt-1">Vista general de tus proyectos.</p>
-          </div>
+        <div className="flex flex-wrap items-center justify-end gap-3">
           <div className="flex flex-wrap gap-3">
             <Link href="/project-builder/new" className="ql-btn-primary">
               <Plus className="h-4 w-4" />

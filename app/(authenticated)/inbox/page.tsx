@@ -589,17 +589,12 @@ export default function InboxPage() {
       <Header title="Inbox" />
 
       <div className="p-6 space-y-6">
-        {/* Page header */}
-        <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="ql-h1">Inbox</h1>
-            <p className="ql-body mt-1">
-              {unprocessedCount > 0
-                ? `${unprocessedCount} item${unprocessedCount > 1 ? "s" : ""} sin procesar`
-                : "Todo procesado"}
-            </p>
-          </div>
-
+        <div className="flex flex-wrap items-center justify-end gap-2">
+          {unprocessedCount > 0 && (
+            <span className="ql-caption mr-auto">
+              {unprocessedCount} item{unprocessedCount > 1 ? "s" : ""} sin procesar
+            </span>
+          )}
           <div className="flex flex-wrap items-center gap-2">
             {syncResult && (
               <span className="ql-caption">{syncResult}</span>

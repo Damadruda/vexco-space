@@ -139,26 +139,20 @@ export default function ProjectAgilePage() {
       <Header title="Agile" subtitle={project?.title ?? "Proyecto"} />
 
       <div className="p-6 space-y-5">
-        {/* Project context header */}
         <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
-          <div>
-            <h1 className="text-lg font-medium text-[#1A1A1A]">
-              Agile Board — {project?.title ?? "Proyecto"}
-            </h1>
-            {score != null && (
-              <div className="flex items-center gap-2 mt-1">
-                <ScoreIcon className={`h-3.5 w-3.5 ${scoreColor}`} strokeWidth={1.5} />
-                <span className={`text-xs ${scoreColor}`}>
-                  Revenue Priority: {score}/10
+          {score != null && (
+            <div className="flex items-center gap-2">
+              <ScoreIcon className={`h-3.5 w-3.5 ${scoreColor}`} strokeWidth={1.5} />
+              <span className={`text-xs ${scoreColor}`}>
+                Revenue Priority: {score}/10
+              </span>
+              {project?.stepsToRevenue != null && (
+                <span className="text-xs text-[#5E5E5E]">
+                  · {project.stepsToRevenue} paso{project.stepsToRevenue !== 1 ? "s" : ""} para facturar
                 </span>
-                {project?.stepsToRevenue != null && (
-                  <span className="text-xs text-[#5E5E5E]">
-                    · {project.stepsToRevenue} paso{project.stepsToRevenue !== 1 ? "s" : ""} para facturar
-                  </span>
-                )}
-              </div>
-            )}
-          </div>
+              )}
+            </div>
+          )}
           <div className="flex gap-2">
             <Link
               href={`/project-builder/${projectId}`}
