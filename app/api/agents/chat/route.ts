@@ -354,9 +354,13 @@ async function extractAndSaveRevenuePriority(
         stepsToRevenue: steps,
         stepsToRevenueDetail: detail,
         revenueProximityReason: reasonMatch?.[1]?.trim() ?? null,
-        estimatedRevenueDate: dateMatch?.[1]?.toLowerCase().includes("indefini")
-          ? null
-          : (() => { try { return new Date(dateMatch![1].trim()); } catch { return null; } })(),
+        estimatedRevenueDate: (() => {
+          const raw = dateMatch?.[1]?.trim();
+          if (!raw) return null;
+          if (/indefini|no\s+definid|sin\s+fecha|n\/a/i.test(raw)) return null;
+          const parsed = new Date(raw);
+          return isNaN(parsed.getTime()) ? null : parsed;
+        })(),
         revenueLastAssessedAt: new Date(),
         revenueLastAssessedBy: agentId,
       },
