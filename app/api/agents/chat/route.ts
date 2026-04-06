@@ -323,7 +323,7 @@ async function extractAndSaveRevenuePriority(
   const rpBlock = rpMatch[1];
 
   // Extract score — handles "Score: 2/10" with bullets (-, *, •) or without
-  const scoreMatch = rpBlock.match(/Score:\s*(\d+)\s*\/\s*10/i);
+  const scoreMatch = rpBlock.match(/Score:\s*(\d+)(?:\s*\/\s*10)?/i);
   if (!scoreMatch) {
     console.log("[REVENUE_PRIORITY] Score not found in block:", rpBlock.slice(0, 100));
     return;
