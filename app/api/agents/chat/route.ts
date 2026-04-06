@@ -240,21 +240,41 @@ async function extractAndSaveFirmInsights(
   agentId: string,
   userId: string
 ): Promise<void> {
-  const insightRegex = /\[FIRM INSIGHT:\s*tipo=(\w+)\]\s*(.+?)(?=\n\n|\[FIRM INSIGHT|\n##|$)/gs;
+  // Match [FIRM INSIGHT: tipo=X] followed by content until next section break
+  // Section breaks: blank line, next [FIRM INSIGHT, bold header, markdown heading, or end of string
+  const insightRegex = /\[FIRM INSIGHT:\s*tipo=(\w+)\]\s*(.+?)(?=\n\n|\n\[FIRM INSIGHT|\n\*\*[A-ZÁÉÍÓÚ]|\n#{1,3}\s|\n[A-ZÁÉÍÓÚ][A-ZÁÉÍÓÚ\s]{3,}(?:\n|:)|$)/gs;
   let match;
+  let savedCount = 0;
 
   while ((match = insightRegex.exec(responseText)) !== null) {
     const insightType = match[1];
-    const content = match[2].trim();
+    let content = match[2].trim();
+
+    // Truncate if too long (regex might have captured too much)
+    if (content.length > 1000) {
+      // Find first sentence boundary after 100 chars
+      const sentenceEnd = content.indexOf(".", 100);
+      if (sentenceEnd > 0) content = content.slice(0, sentenceEnd + 1);
+    }
 
     if (content.length < 10) continue;
 
     try {
-      const title = content.split(/\s+/).slice(0, 8).join(" ");
+      // Generate a clean title from first ~8 words
+      const title = content
+        .replace(/\*\*/g, "")
+        .split(/\s+/)
+        .slice(0, 8)
+        .join(" ");
+
+      // Extract meaningful tags (words > 4 chars, no common words)
+      const stopWords = new Set(["sobre", "entre", "desde", "hasta", "cuando", "donde", "porque", "tiene", "están", "puede", "como", "para", "este", "esta", "estos", "estas", "todos"]);
       const tags = content
         .toLowerCase()
-        .split(/[\s,.\-_\/()]+/)
-        .filter(w => w.length > 4)
+        .replace(/[^a-záéíóúñü\s]/g, " ")
+        .split(/\s+/)
+        .filter(w => w.length > 4 && !stopWords.has(w))
+        .filter((v, i, a) => a.indexOf(v) === i) // unique
         .slice(0, 10);
 
       await prisma.firmInsight.create({
@@ -271,9 +291,14 @@ async function extractAndSaveFirmInsights(
           ownerId: userId,
         },
       });
+      savedCount++;
     } catch (err) {
-      console.error("Failed to save FirmInsight:", err);
+      console.error("[FIRM_INSIGHT] Failed to save:", err);
     }
+  }
+
+  if (savedCount > 0) {
+    console.log(`[FIRM_INSIGHT] Saved ${savedCount} insights from ${agentId} for project ${projectId}`);
   }
 }
 
@@ -284,18 +309,42 @@ async function extractAndSaveRevenuePriority(
 ): Promise<void> {
   if (!projectId || agentId !== "strategist") return;
 
+  // Match REVENUE PRIORITY section with flexible header format:
+  // Handles: "## REVENUE PRIORITY", "**REVENUE PRIORITY**", "REVENUE PRIORITY"
   const rpMatch = responseText.match(
-    /##\s*REVENUE PRIORITY[\s\S]*?Score:\s*(\d+)\/10[\s\S]*?Pasos para facturar:\s*(\d+)[\s\S]*?Detalle:\s*([\s\S]*?)(?=\n-\s*Fecha|\n##)/i
+    /(?:#{1,3}\s*|\*\*)?REVENUE\s+PRIORITY\*?\*?\s*\n([\s\S]*?)(?=\n(?:#{1,3}\s|\*\*[A-ZÁÉÍÓÚ]|VALIDACI[OÓ]N|NEXT\s+ACTION)|$)/i
   );
 
-  if (!rpMatch) return;
+  if (!rpMatch) {
+    console.log("[REVENUE_PRIORITY] No REVENUE PRIORITY section found in response");
+    return;
+  }
 
-  const score = parseInt(rpMatch[1]);
-  const steps = parseInt(rpMatch[2]);
-  const detail = rpMatch[3].trim();
+  const rpBlock = rpMatch[1];
 
-  const dateMatch = responseText.match(/Fecha estimada.*?:\s*(.+?)(?:\n|$)/i);
-  const reasonMatch = responseText.match(/Razonamiento:\s*(.+?)(?:\n\n|\n##|$)/is);
+  // Extract score — handles "Score: 2/10" with bullets (-, *, •) or without
+  const scoreMatch = rpBlock.match(/Score:\s*(\d+)\s*\/\s*10/i);
+  if (!scoreMatch) {
+    console.log("[REVENUE_PRIORITY] Score not found in block:", rpBlock.slice(0, 100));
+    return;
+  }
+  const score = parseInt(scoreMatch[1]);
+
+  // Extract steps — handles "Pasos para facturar: 6"
+  const stepsMatch = rpBlock.match(/Pasos\s+para\s+facturar:\s*(\d+)/i);
+  const steps = stepsMatch ? parseInt(stepsMatch[1]) : null;
+
+  // Extract detail — handles "Detalle: 1. ..."
+  const detailMatch = rpBlock.match(/Detalle:\s*([\s\S]*?)(?=\n\s*[-•*]\s*Fecha|\n\s*[-•*]\s*Razonamiento|$)/i);
+  const detail = detailMatch?.[1]?.trim() ?? null;
+
+  // Extract date
+  const dateMatch = rpBlock.match(/Fecha\s+estimada[^:]*:\s*(.+?)(?:\n|$)/i);
+
+  // Extract reasoning
+  const reasonMatch = rpBlock.match(/Razonamiento:\s*([\s\S]*?)(?=\n\s*[-•*]\s*[A-Z]|\n\n|$)/i);
+
+  console.log(`[REVENUE_PRIORITY] Extracted — score: ${score}, steps: ${steps}, detail: ${detail?.slice(0, 60)}...`);
 
   try {
     await prisma.project.update({
@@ -305,15 +354,16 @@ async function extractAndSaveRevenuePriority(
         stepsToRevenue: steps,
         stepsToRevenueDetail: detail,
         revenueProximityReason: reasonMatch?.[1]?.trim() ?? null,
-        estimatedRevenueDate: dateMatch?.[1]?.includes("indefinida")
+        estimatedRevenueDate: dateMatch?.[1]?.toLowerCase().includes("indefini")
           ? null
           : (() => { try { return new Date(dateMatch![1].trim()); } catch { return null; } })(),
         revenueLastAssessedAt: new Date(),
         revenueLastAssessedBy: agentId,
       },
     });
+    console.log(`[REVENUE_PRIORITY] Saved to project ${projectId}: ${score}/10, ${steps} steps`);
   } catch (err) {
-    console.error("Failed to save revenue priority:", err);
+    console.error("[REVENUE_PRIORITY] Failed to save:", err);
   }
 }
 
@@ -573,10 +623,14 @@ Selecciona 1-3 agentes. El strategist NO se asigna a sí mismo. Ordena por prior
           );
 
           // ── Extract FirmInsights & Revenue Priority (fire-and-forget) ──
+          console.log(`[AGENT_CHAT] Post-stream extraction — agentId: ${effectiveAgentId}, projectId: ${projectId}, responseLength: ${fullText.length}`);
+          console.log(`[AGENT_CHAT] Response contains REVENUE PRIORITY: ${fullText.includes("REVENUE PRIORITY")}`);
+          console.log(`[AGENT_CHAT] Response contains [FIRM INSIGHT: ${fullText.includes("[FIRM INSIGHT:")}`);
+
           extractAndSaveFirmInsights(fullText, projectId, effectiveAgentId, userId)
-            .catch(err => console.error("FirmInsight extraction failed:", err));
+            .catch(err => console.error("[FIRM_INSIGHT] Extraction failed:", err));
           extractAndSaveRevenuePriority(fullText, projectId, effectiveAgentId)
-            .catch(err => console.error("Revenue priority extraction failed:", err));
+            .catch(err => console.error("[REVENUE_PRIORITY] Extraction failed:", err));
 
           // ── Send done event with full response ─────────────────────
           sendSSE({
