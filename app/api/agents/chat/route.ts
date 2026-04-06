@@ -627,10 +627,14 @@ Selecciona 1-3 agentes. El strategist NO se asigna a sí mismo. Ordena por prior
           console.log(`[AGENT_CHAT] Response contains REVENUE PRIORITY: ${fullText.includes("REVENUE PRIORITY")}`);
           console.log(`[AGENT_CHAT] Response contains [FIRM INSIGHT: ${fullText.includes("[FIRM INSIGHT:")}`);
 
-          extractAndSaveFirmInsights(fullText, projectId, effectiveAgentId, userId)
-            .catch(err => console.error("[FIRM_INSIGHT] Extraction failed:", err));
-          extractAndSaveRevenuePriority(fullText, projectId, effectiveAgentId)
-            .catch(err => console.error("[REVENUE_PRIORITY] Extraction failed:", err));
+          try {
+            await Promise.all([
+              extractAndSaveFirmInsights(fullText, projectId, effectiveAgentId, userId),
+              extractAndSaveRevenuePriority(fullText, projectId, effectiveAgentId),
+            ]);
+          } catch (err) {
+            console.error("[EXTRACTION] FirmInsight/RevenuePriority save error:", err);
+          }
 
           // ── Send done event with full response ─────────────────────
           sendSSE({
