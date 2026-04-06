@@ -10,7 +10,7 @@ import {
 import { EXPERTS } from "@/components/expert-panel/experts-data";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 export async function POST(
   request: NextRequest,
