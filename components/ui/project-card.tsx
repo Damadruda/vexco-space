@@ -74,7 +74,7 @@ export function ProjectCard({
 
   return (
     <Link
-      href={`/project-builder/${id}/war-room`}
+      href={`/project-builder/${id}`}
       className={`group relative block border border-gray-200 bg-white p-4 transition-all hover:border-gray-300 hover:shadow-sm ${
         isDragging ? "rotate-2 scale-105 shadow-lg border-gray-400" : ""
       }`}

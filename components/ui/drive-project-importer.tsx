@@ -1,8 +1,9 @@
 "use client";
 
-import { useState } from "react";
-import { X, Folder, FileText, Loader2, CheckCircle, AlertCircle, Sparkles, Eye } from "lucide-react";
+import { useState, useEffect } from "react";
+import { X, Folder, FileText, Loader2, CheckCircle, AlertCircle, Sparkles, Eye, Search, ChevronRight, Home } from "lucide-react";
 import { useRouter } from "next/navigation";
+import { signIn, useSession } from "next-auth/react";
 
 interface DriveFile {
   id: string;
@@ -70,7 +71,13 @@ interface DriveProjectImporterProps {
   onClose: () => void;
 }
 
+const DEFAULT_ROOT_FOLDER = {
+  id: "1vSvQRth1ka9rSJ3S6e1a60_kD9G0Deir",
+  name: "Proyectos"
+};
+
 export function DriveProjectImporter({ isOpen, onClose }: DriveProjectImporterProps) {
+  const { data: session } = useSession();
   const router = useRouter();
   const [step, setStep] = useState<"select" | "analyze" | "preview">("select");
   const [selectedFolder, setSelectedFolder] = useState<DriveFile | null>(null);
@@ -81,59 +88,151 @@ export function DriveProjectImporter({ isOpen, onClose }: DriveProjectImporterPr
   const [error, setError] = useState<string | null>(null);
   const [projectStructure, setProjectStructure] = useState<ProjectStructure | null>(null);
   const [files, setFiles] = useState<DriveFile[]>([]);
-  
-  const handleSelectFolder = async (folderId: string) => {
+  const [needsGoogleAuth, setNeedsGoogleAuth] = useState(false);
+
+  // Folder browser state
+  const [driveFolders, setDriveFolders] = useState<DriveFile[]>([]);
+  const [browseLoading, setBrowseLoading] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [currentFolder, setCurrentFolder] = useState<{ id: string; name: string } | null>(null);
+  const [breadcrumbs, setBreadcrumbs] = useState<{ id: string; name: string }[]>([]);
+
+  // Initialize folder browser
+  useEffect(() => {
+    if (isOpen) {
+      setStep("select");
+      setSelectedFolder(null);
+      setFolderStats(null);
+      setProjectStructure(null);
+      setFiles([]);
+      setError(null);
+      setSearchQuery("");
+
+      const saved = localStorage.getItem("driveRootFolder");
+      let root = DEFAULT_ROOT_FOLDER;
+      if (saved) {
+        try { root = JSON.parse(saved); } catch (e) { /* use default */ }
+      }
+      setCurrentFolder(root);
+      setBreadcrumbs([root]);
+    }
+  }, [isOpen]);
+
+  // Fetch folders when current folder or search changes
+  useEffect(() => {
+    if (!isOpen || step !== "select") return;
+
+    const timer = setTimeout(() => {
+      fetchFolders(currentFolder?.id, searchQuery);
+    }, 500);
+
+    return () => clearTimeout(timer);
+  }, [currentFolder?.id, searchQuery, isOpen, step]);
+
+  const fetchFolders = async (parentId?: string, query?: string) => {
+    setBrowseLoading(true);
+    setError(null);
+
+    try {
+      const params = new URLSearchParams({
+        mimeType: "application/vnd.google-apps.folder"
+      });
+      if (parentId) params.append("parentId", parentId);
+      if (query && query.trim()) params.append("query", query.trim());
+
+      const response = await fetch(`/api/drive?${params.toString()}`);
+      const data = await response.json();
+
+      if (!response.ok) {
+        if (response.status === 401 || data.needsGoogleAuth) {
+          setNeedsGoogleAuth(true);
+          setError(data.error || "Conecta tu cuenta de Google para acceder a Drive");
+        } else {
+          setError(data.error || "Error al cargar carpetas");
+        }
+        setDriveFolders([]);
+        return;
+      }
+
+      setNeedsGoogleAuth(false);
+      setDriveFolders(data.files || []);
+    } catch (err) {
+      setError("Error de conexión");
+    } finally {
+      setBrowseLoading(false);
+    }
+  };
+
+  const navigateToFolder = (folder: DriveFile) => {
+    const newFolder = { id: folder.id, name: folder.name };
+    setCurrentFolder(newFolder);
+    setBreadcrumbs(prev => [...prev, newFolder]);
+    setSelectedFolder(null);
+    setSearchQuery("");
+  };
+
+  const navigateToBreadcrumb = (index: number) => {
+    if (index === -1) {
+      setCurrentFolder(null);
+      setBreadcrumbs([]);
+    } else {
+      const newBreadcrumbs = breadcrumbs.slice(0, index + 1);
+      setBreadcrumbs(newBreadcrumbs);
+      setCurrentFolder(newBreadcrumbs[newBreadcrumbs.length - 1]);
+    }
+    setSelectedFolder(null);
+    setSearchQuery("");
+  };
+
+  const handleSelectFolder = async (folderId: string, folderName?: string) => {
     setLoading(true);
     setError(null);
-    
+
     try {
       const response = await fetch(`/api/drive/folder?folderId=${folderId}`);
       const data = await response.json();
-      
+
       if (!response.ok) {
         throw new Error(data.error || "Error al cargar carpeta");
       }
-      
-      // Encontrar la carpeta raíz
+
       const rootFolder: DriveFile = {
         id: folderId,
-        name: "Carpeta seleccionada",
+        name: folderName || "Carpeta seleccionada",
         mimeType: "application/vnd.google-apps.folder",
         path: "",
         children: data.files
       };
-      
+
       setSelectedFolder(rootFolder);
       setFolderStats(data.stats);
       setFiles(flattenFiles(data.files));
       setStep("analyze");
-      
+
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al cargar carpeta");
     } finally {
       setLoading(false);
     }
   };
-  
+
   const flattenFiles = (files: DriveFile[]): DriveFile[] => {
     const result: DriveFile[] = [];
-    
     for (const file of files) {
       result.push(file);
       if (file.children) {
         result.push(...flattenFiles(file.children));
       }
     }
-    
     return result;
   };
-  
+
   const handleAnalyze = async () => {
     if (!files || files.length === 0) return;
-    
+
     setAnalyzing(true);
     setError(null);
-    
+
     try {
       const response = await fetch("/api/projects/import-from-drive", {
         method: "POST",
@@ -143,65 +242,54 @@ export function DriveProjectImporter({ isOpen, onClose }: DriveProjectImporterPr
           folderName: selectedFolder?.name
         })
       });
-      
+
       const data = await response.json();
-      
+
       if (!response.ok) {
         throw new Error(data.error || "Error al analizar carpeta");
       }
-      
+
       setProjectStructure(data.projectStructure);
       setStep("preview");
-      
+
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al analizar carpeta");
     } finally {
       setAnalyzing(false);
     }
   };
-  
+
   const handleCreateProject = async () => {
     if (!projectStructure) return;
-    
+
     setCreating(true);
     setError(null);
-    
+
     try {
       const response = await fetch("/api/projects/import-from-drive", {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ projectStructure })
       });
-      
+
       const data = await response.json();
-      
+
       if (!response.ok) {
         throw new Error(data.error || "Error al crear proyecto");
       }
-      
-      // Redirigir al proyecto creado
+
       router.push(`/project-builder/${data.project.id}`);
       onClose();
-      
+
     } catch (err) {
       setError(err instanceof Error ? err.message : "Error al crear proyecto");
     } finally {
       setCreating(false);
     }
   };
-  
-  const handleSelectFolderFromDrive = async () => {
-    // Aquí puedes implementar un selector de carpetas más visual
-    // Por ahora, voy a usar un input simple para el folderId
-    const folderId = prompt("Introduce el ID de la carpeta de Drive (o 'root' para la raíz):");
-    
-    if (folderId) {
-      await handleSelectFolder(folderId);
-    }
-  };
-  
+
   if (!isOpen) return null;
-  
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50 p-4">
       <div className="bg-white rounded-lg shadow-xl w-full max-w-4xl max-h-[90vh] flex flex-col">
@@ -215,7 +303,7 @@ export function DriveProjectImporter({ isOpen, onClose }: DriveProjectImporterPr
             <X className="h-5 w-5" />
           </button>
         </div>
-        
+
         {/* Progress Steps */}
         <div className="flex items-center justify-center gap-4 p-4 border-b bg-gray-50">
           <div className={`flex items-center gap-2 ${
@@ -228,9 +316,9 @@ export function DriveProjectImporter({ isOpen, onClose }: DriveProjectImporterPr
             </div>
             <span className="text-sm font-medium">Seleccionar</span>
           </div>
-          
+
           <div className="w-12 h-px bg-gray-300" />
-          
+
           <div className={`flex items-center gap-2 ${
             step === "analyze" ? "text-gray-900" : "text-gray-400"
           }`}>
@@ -241,9 +329,9 @@ export function DriveProjectImporter({ isOpen, onClose }: DriveProjectImporterPr
             </div>
             <span className="text-sm font-medium">Analizar</span>
           </div>
-          
+
           <div className="w-12 h-px bg-gray-300" />
-          
+
           <div className={`flex items-center gap-2 ${
             step === "preview" ? "text-gray-900" : "text-gray-400"
           }`}>
@@ -255,7 +343,7 @@ export function DriveProjectImporter({ isOpen, onClose }: DriveProjectImporterPr
             <span className="text-sm font-medium">Confirmar</span>
           </div>
         </div>
-        
+
         {/* Content */}
         <div className="flex-1 overflow-y-auto p-6">
           {error && (
@@ -264,37 +352,118 @@ export function DriveProjectImporter({ isOpen, onClose }: DriveProjectImporterPr
               {error}
             </div>
           )}
-          
-          {/* Step 1: Select Folder */}
+
+          {/* Step 1: Select Folder — Visual Browser */}
           {step === "select" && (
-            <div className="text-center py-12">
-              <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Folder className="h-8 w-8 text-gray-400" />
+            needsGoogleAuth ? (
+              <div className="text-center py-12">
+                <div className="w-16 h-16 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                  <Folder className="h-8 w-8 text-gray-400" />
+                </div>
+                <h3 className="font-serif text-lg font-medium text-gray-900 mb-2">Conectar Google Drive</h3>
+                <p className="text-gray-500 mb-6 max-w-md mx-auto">
+                  Para importar carpetas de proyectos, necesitas conectar tu cuenta de Google
+                </p>
+                <button
+                  onClick={() => signIn("google", { callbackUrl: window.location.pathname })}
+                  className="px-6 py-3 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors"
+                >
+                  Conectar con Google
+                </button>
               </div>
-              <h3 className="font-serif text-lg font-medium text-gray-900 mb-2">Selecciona una carpeta de Drive</h3>
-              <p className="text-gray-500 mb-6 max-w-md mx-auto">
-                Elige la carpeta que contiene todos los documentos, presentaciones y archivos de tu proyecto
-              </p>
-              <button
-                onClick={handleSelectFolderFromDrive}
-                disabled={loading}
-                className="px-6 py-3 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50 flex items-center gap-2 mx-auto"
-              >
-                {loading ? (
-                  <>
-                    <Loader2 className="w-5 h-5 animate-spin" />
-                    Cargando...
-                  </>
-                ) : (
-                  <>
-                    <Folder className="w-5 h-5" />
-                    Seleccionar Carpeta
-                  </>
-                )}
-              </button>
-            </div>
+            ) : (
+              <div>
+                {/* Breadcrumbs */}
+                <div className="flex items-center gap-1 text-sm mb-3 overflow-x-auto">
+                  <button
+                    onClick={() => navigateToBreadcrumb(-1)}
+                    className="flex items-center gap-1 text-gray-500 hover:text-gray-900 shrink-0"
+                  >
+                    <Home className="h-4 w-4" />
+                    <span>Mi Drive</span>
+                  </button>
+                  {breadcrumbs.map((crumb, index) => (
+                    <div key={crumb.id} className="flex items-center gap-1 shrink-0">
+                      <ChevronRight className="h-4 w-4 text-gray-400" />
+                      <button
+                        onClick={() => navigateToBreadcrumb(index)}
+                        className={`hover:text-gray-900 ${
+                          index === breadcrumbs.length - 1 ? "text-gray-900 font-medium" : "text-gray-500"
+                        }`}
+                      >
+                        {crumb.name}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+
+                {/* Search */}
+                <div className="relative mb-3">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                  <input
+                    type="text"
+                    placeholder="Buscar carpetas..."
+                    value={searchQuery}
+                    onChange={(e) => setSearchQuery(e.target.value)}
+                    className="w-full pl-10 pr-4 py-2 text-sm border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-900/20"
+                  />
+                </div>
+
+                {/* Folder list */}
+                <div className="border border-gray-200 rounded-lg overflow-hidden min-h-[300px] max-h-[400px] overflow-y-auto">
+                  {browseLoading ? (
+                    <div className="flex items-center justify-center py-12">
+                      <Loader2 className="h-8 w-8 animate-spin text-gray-400" />
+                    </div>
+                  ) : driveFolders.length === 0 ? (
+                    <div className="text-center py-12 text-gray-500">
+                      {currentFolder ? "Esta carpeta está vacía" : "No se encontraron carpetas"}
+                    </div>
+                  ) : (
+                    <div className="divide-y divide-gray-100">
+                      {driveFolders
+                        .filter(f => f.mimeType === "application/vnd.google-apps.folder")
+                        .map(folder => (
+                          <div
+                            key={folder.id}
+                            className="group flex items-center gap-3 px-4 py-3 hover:bg-gray-50 cursor-pointer transition-colors"
+                          >
+                            <Folder className="h-5 w-5 text-yellow-500 shrink-0" />
+                            <span
+                              className="flex-1 text-sm truncate"
+                              onClick={() => navigateToFolder(folder)}
+                            >
+                              {folder.name}
+                            </span>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                handleSelectFolder(folder.id, folder.name);
+                              }}
+                              disabled={loading}
+                              className="shrink-0 px-3 py-1 text-xs font-medium text-gray-600 border border-gray-200 rounded-md hover:bg-gray-900 hover:text-white hover:border-gray-900 transition-colors opacity-0 group-hover:opacity-100"
+                            >
+                              {loading ? "..." : "Seleccionar"}
+                            </button>
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                navigateToFolder(folder);
+                              }}
+                              className="p-1 rounded hover:bg-gray-200 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                              title="Abrir carpeta"
+                            >
+                              <ChevronRight className="h-4 w-4" />
+                            </button>
+                          </div>
+                        ))}
+                    </div>
+                  )}
+                </div>
+              </div>
+            )
           )}
-          
+
           {/* Step 2: Analyze */}
           {step === "analyze" && folderStats && (
             <div>
@@ -319,36 +488,43 @@ export function DriveProjectImporter({ isOpen, onClose }: DriveProjectImporterPr
                   </div>
                 </div>
               </div>
-              
+
               <div className="text-center">
                 <p className="text-gray-600 mb-6">
                   Analizaremos hasta 50 documentos relevantes (ignorando código y configuración) para estructurar tu proyecto automáticamente
                 </p>
-                <button
-                  onClick={handleAnalyze}
-                  disabled={analyzing}
-                  className="px-6 py-3 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50 flex items-center gap-2 mx-auto"
-                >
-                  {analyzing ? (
-                    <>
-                      <Loader2 className="w-5 h-5 animate-spin" />
-                      Analizando con IA...
-                    </>
-                  ) : (
-                    <>
-                      <Sparkles className="w-5 h-5" />
-                      Analizar y Generar Proyecto
-                    </>
-                  )}
-                </button>
+                <div className="flex items-center justify-center gap-3">
+                  <button
+                    onClick={() => setStep("select")}
+                    className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
+                  >
+                    Cambiar carpeta
+                  </button>
+                  <button
+                    onClick={handleAnalyze}
+                    disabled={analyzing}
+                    className="px-6 py-3 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50 flex items-center gap-2"
+                  >
+                    {analyzing ? (
+                      <>
+                        <Loader2 className="w-5 h-5 animate-spin" />
+                        Analizando con IA...
+                      </>
+                    ) : (
+                      <>
+                        <Sparkles className="w-5 h-5" />
+                        Analizar y Generar Proyecto
+                      </>
+                    )}
+                  </button>
+                </div>
               </div>
             </div>
           )}
-          
+
           {/* Step 3: Preview */}
           {step === "preview" && projectStructure && (
             <div className="space-y-6">
-              {/* Project Overview */}
               <div>
                 <h3 className="font-serif text-lg font-medium text-gray-900 mb-3">Información del Proyecto</h3>
                 <div className="bg-gray-50 rounded-lg p-4 space-y-3">
@@ -379,8 +555,7 @@ export function DriveProjectImporter({ isOpen, onClose }: DriveProjectImporterPr
                   </div>
                 </div>
               </div>
-              
-              {/* Stats */}
+
               <div className="flex items-center gap-4 text-sm text-gray-500 bg-blue-50 p-3 rounded-lg">
                 <FileText className="w-4 h-4" />
                 <span>{projectStructure.totalFilesProcessed || 0} archivos procesados de {projectStructure.totalFilesInFolder || 0} totales</span>
@@ -391,8 +566,7 @@ export function DriveProjectImporter({ isOpen, onClose }: DriveProjectImporterPr
                   <span>• {projectStructure.extractedLinks.length} links encontrados</span>
                 )}
               </div>
-              
-              {/* Framework Preview */}
+
               <div className="grid md:grid-cols-2 gap-4">
                 <div className="border border-gray-200 rounded-lg p-4">
                   <h4 className="font-medium text-gray-900 mb-2">01 • Concept</h4>
@@ -414,7 +588,7 @@ export function DriveProjectImporter({ isOpen, onClose }: DriveProjectImporterPr
             </div>
           )}
         </div>
-        
+
         {/* Footer */}
         {step === "preview" && (
           <div className="flex items-center justify-between p-6 border-t bg-gray-50">

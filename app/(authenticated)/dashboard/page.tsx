@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { Header } from "@/components/ui/header";
 import { StatCard } from "@/components/ui/stat-card";
 import { KanbanBoard } from "@/components/ui/kanban-board";
-import { FolderKanban, Lightbulb, FileText, Link as LinkIcon, Image as ImageIcon, TrendingUp, ArrowRight, Swords, CloudDownload, Plus, Inbox, Sparkles, Check, X, AlertTriangle, Flame, Clock, CircleDot, CheckSquare } from "lucide-react";
+import { FolderKanban, Lightbulb, FileText, Link as LinkIcon, Image as ImageIcon, TrendingUp, ArrowRight, Swords, CloudDownload, Plus, Inbox, Sparkles, Check, X, AlertTriangle, Flame, Clock, CircleDot, CheckSquare, ChevronRight } from "lucide-react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { DriveFolderAnalyzer } from "@/components/ui/drive-folder-analyzer";
@@ -208,63 +208,113 @@ export default function DashboardPage() {
               </div>
             )}
 
-            {/* Ranking cards */}
-            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-              {revenueData.projects
-                .filter(p => p.revenueProximityScore != null || true)
-                .slice(0, 6)
-                .map(project => {
-                  const score = project.revenueProximityScore;
-                  let badgeLabel = "Sin evaluar";
-                  let badgeClass = "bg-[#F9F8F6] text-[#5E5E5E] border border-[#5E5E5E]/20";
-                  let IconComponent = CircleDot;
+            {/* Compact ranked list */}
+            {(() => {
+              const evaluated = revenueData.projects
+                .filter(p => p.revenueProximityScore != null)
+                .sort((a, b) => (b.revenueProximityScore ?? 0) - (a.revenueProximityScore ?? 0));
+              const unevaluated = revenueData.projects.filter(p => p.revenueProximityScore == null);
 
-                  if (score != null && score >= 8) {
-                    badgeLabel = "Próximo a facturar";
-                    badgeClass = "bg-[#FBF8F3] text-[#8B7355] border border-[#C5A572]/40";
-                    IconComponent = Flame;
-                  } else if (score != null && score >= 5) {
-                    badgeLabel = "En progreso";
-                    badgeClass = "bg-amber-50 text-amber-700 border border-amber-200";
-                    IconComponent = TrendingUp;
-                  } else if (score != null && score >= 1) {
-                    badgeLabel = "Fase temprana";
-                    badgeClass = "bg-[#F9F8F6] text-[#5E5E5E] border border-[#5E5E5E]/10";
-                    IconComponent = Clock;
-                  }
+              return (
+                <>
+                  <div className="rounded-lg border border-[#E8E4DE] bg-white overflow-hidden">
+                    {evaluated.length === 0 ? (
+                      <div className="px-6 py-8 text-center">
+                        <p className="text-sm text-[#5E5E5E]">Aún no hay proyectos evaluados.</p>
+                        <p className="text-xs text-[#5E5E5E]/70 mt-1">Pide al Strategist un diagnóstico desde el War Room.</p>
+                      </div>
+                    ) : (
+                      <ul className="divide-y divide-[#E8E4DE]">
+                        {evaluated.map((project, idx) => {
+                          const score = project.revenueProximityScore!;
+                          let stateLabel = "";
+                          let stateClass = "";
+                          if (score >= 8) { stateLabel = "Próximo a facturar"; stateClass = "text-[#8B7355] bg-[#FBF8F3] border-[#C5A572]/40"; }
+                          else if (score >= 5) { stateLabel = "En progreso"; stateClass = "text-amber-700 bg-amber-50 border-amber-200"; }
+                          else { stateLabel = "Fase temprana"; stateClass = "text-[#5E5E5E] bg-[#F9F8F6] border-[#5E5E5E]/15"; }
 
-                  return (
-                    <Link
-                      key={project.id}
-                      href={`/project-builder/${project.id}/war-room`}
-                      className="group ql-card hover:border-[#C5A572]/40 transition-colors"
-                    >
-                      <div className="flex items-start justify-between gap-2 mb-2">
-                        <h4 className="text-sm font-medium text-[#1A1A1A] line-clamp-1">{project.title}</h4>
-                        {score != null && (
-                          <span className="shrink-0 text-lg font-light text-[#1A1A1A]">{score}/10</span>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-2 mb-2">
-                        <span className={`inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-xs ${badgeClass}`}>
-                          <IconComponent className="h-3 w-3" />
-                          {badgeLabel}
-                        </span>
-                      </div>
-                      {project.stepsToRevenue != null && (
-                        <p className="text-xs text-[#5E5E5E]">
-                          {project.stepsToRevenue} paso{project.stepsToRevenue !== 1 ? "s" : ""} para facturar
-                        </p>
-                      )}
-                      {project.revenueLastAssessedAt && (
-                        <p className="mt-1 text-xs text-[#5E5E5E]/60">
-                          Evaluado: {new Date(project.revenueLastAssessedAt).toLocaleDateString("es-ES")}
-                        </p>
-                      )}
-                    </Link>
-                  );
-                })}
-            </div>
+                          return (
+                            <Link
+                              key={project.id}
+                              href={`/project-builder/${project.id}`}
+                              className="group flex items-center gap-4 px-5 py-4 hover:bg-[#FBF8F3]/50 transition-colors border-l-2 border-transparent hover:border-[#C5A572]"
+                            >
+                              {/* Rank number */}
+                              <div className="shrink-0 text-xs text-[#5E5E5E]/50 font-mono w-6">
+                                {String(idx + 1).padStart(2, "0")}
+                              </div>
+
+                              {/* Score with bar */}
+                              <div className="shrink-0 flex items-center gap-3">
+                                <div className="text-2xl font-light text-[#1A1A1A] tabular-nums leading-none">
+                                  {score}<span className="text-xs text-[#5E5E5E]/60">/10</span>
+                                </div>
+                                <div className="flex gap-0.5">
+                                  {Array.from({ length: 10 }).map((_, i) => (
+                                    <div
+                                      key={i}
+                                      className={`h-3 w-1 rounded-sm ${
+                                        i < score ? "bg-[#C5A572]" : "bg-[#E8E4DE]"
+                                      }`}
+                                    />
+                                  ))}
+                                </div>
+                              </div>
+
+                              {/* Title + state */}
+                              <div className="flex-1 min-w-0">
+                                <div className="flex items-center gap-2">
+                                  <h4 className="text-sm font-medium text-[#1A1A1A] truncate">
+                                    {project.title}
+                                  </h4>
+                                  <span className={`shrink-0 inline-block rounded-full border px-2 py-0.5 text-[10px] uppercase tracking-wide ${stateClass}`}>
+                                    {stateLabel}
+                                  </span>
+                                </div>
+                                {project.stepsToRevenue != null && (
+                                  <p className="text-xs text-[#5E5E5E] mt-0.5">
+                                    {project.stepsToRevenue} paso{project.stepsToRevenue !== 1 ? "s" : ""} para facturar
+                                    {project.revenueLastAssessedAt && (
+                                      <span className="text-[#5E5E5E]/50"> · evaluado {new Date(project.revenueLastAssessedAt).toLocaleDateString("es-ES", { day: "numeric", month: "short" })}</span>
+                                    )}
+                                  </p>
+                                )}
+                              </div>
+
+                              {/* Arrow */}
+                              <ArrowRight className="shrink-0 h-4 w-4 text-[#C5A572]/40 group-hover:text-[#C5A572] transition-colors" />
+                            </Link>
+                          );
+                        })}
+                      </ul>
+                    )}
+                  </div>
+
+                  {/* Unevaluated section (collapsible) */}
+                  {unevaluated.length > 0 && (
+                    <details className="mt-4 group">
+                      <summary className="cursor-pointer text-xs text-[#5E5E5E] hover:text-[#1A1A1A] transition-colors flex items-center gap-2 select-none">
+                        <ChevronRight className="h-3 w-3 transition-transform group-open:rotate-90" />
+                        {unevaluated.length} proyecto{unevaluated.length !== 1 ? "s" : ""} sin evaluar
+                      </summary>
+                      <ul className="mt-2 ml-5 space-y-1.5">
+                        {unevaluated.map(project => (
+                          <li key={project.id}>
+                            <Link
+                              href={`/project-builder/${project.id}`}
+                              className="text-xs text-[#5E5E5E] hover:text-[#1A1A1A] transition-colors flex items-center gap-2"
+                            >
+                              <CircleDot className="h-3 w-3 text-[#5E5E5E]/40" />
+                              {project.title}
+                            </Link>
+                          </li>
+                        ))}
+                      </ul>
+                    </details>
+                  )}
+                </>
+              );
+            })()}
 
             {/* Low-severity alerts */}
             {revenueData.alerts.filter(a => a.severity === "low").length > 0 && (
