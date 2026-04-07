@@ -128,6 +128,7 @@ export default function ProjectOverviewPage() {
   const [deleteModal, setDeleteModal] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
+  const [selectedDocIds, setSelectedDocIds] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     if (!params?.id) return;
@@ -139,13 +140,17 @@ export default function ProjectOverviewPage() {
   }, [params?.id]);
 
   const handleUnlinkDriveDocs = async () => {
+    if (selectedDocIds.size === 0) return;
     setActionLoading(true);
     try {
       const res = await fetch(`/api/projects/${params.id}/drive-docs`, {
         method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ docIds: Array.from(selectedDocIds) }),
       });
       if (!res.ok) throw new Error("Failed");
       setUnlinkModal(false);
+      setSelectedDocIds(new Set());
       window.location.reload();
     } catch {
       alert("Error al desvincular archivos. Inténtalo de nuevo.");
@@ -498,7 +503,10 @@ export default function ProjectOverviewPage() {
                 </p>
               </div>
               <button
-                onClick={() => setUnlinkModal(true)}
+                onClick={() => {
+                  setSelectedDocIds(new Set(driveDocs.map((d) => d.id)));
+                  setUnlinkModal(true);
+                }}
                 disabled={driveDocs.length === 0}
                 className="shrink-0 text-xs font-medium px-4 py-2 border border-[#C5A572] text-[#8B7355] hover:bg-[#FBF8F3] disabled:opacity-30 disabled:cursor-not-allowed transition-colors rounded"
               >
@@ -526,32 +534,107 @@ export default function ProjectOverviewPage() {
         </section>
       </div>
 
-      {/* Modal: Desvincular archivos */}
+      {/* Modal: Desvincular archivos (selector granular) */}
       {unlinkModal && (
         <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-[#1A1A1A]/40">
-          <div className="w-full max-w-md bg-white border border-[#E8E4DE] rounded-lg shadow-xl">
+          <div className="w-full max-w-2xl bg-white border border-[#E8E4DE] rounded-lg shadow-xl flex flex-col max-h-[85vh]">
+            {/* Header */}
             <div className="px-5 py-4 border-b border-[#E8E4DE]">
               <h3 className="text-base font-medium text-[#1A1A1A]">Desvincular archivos de Drive</h3>
-            </div>
-            <div className="px-5 py-4 space-y-3">
-              <p className="text-sm text-[#5E5E5E]">
-                Esto eliminará <strong>{driveDocs.length} resúmenes de archivos</strong> de Google Drive
-                vinculados a <strong>{project.title}</strong>.
+              <p className="text-xs text-[#5E5E5E] mt-1">
+                Selecciona los archivos que quieres eliminar del contexto del proyecto. Los que dejes desmarcados se mantendrán.
               </p>
-              <div className="bg-[#FBF8F3] border border-[#C5A572]/30 rounded p-3 text-xs space-y-1">
-                <p className="text-[#8B7355] font-medium">Se preservarán:</p>
-                <p className="text-[#5E5E5E]">· Historia completa del War Room</p>
-                <p className="text-[#5E5E5E]">· Revenue Priority y diagnósticos</p>
-                <p className="text-[#5E5E5E]">· FirmInsights generados</p>
-                <p className="text-[#5E5E5E]">· Tareas del Agile Board</p>
+            </div>
+
+            {/* Selection controls */}
+            <div className="px-5 py-3 border-b border-[#E8E4DE] bg-[#FBF8F3]/40 flex items-center justify-between">
+              <div className="flex items-center gap-3 text-xs">
+                <button
+                  onClick={() => setSelectedDocIds(new Set(driveDocs.map((d) => d.id)))}
+                  className="text-[#8B7355] hover:text-[#1A1A1A] transition-colors font-medium"
+                >
+                  Marcar todo
+                </button>
+                <span className="text-[#5E5E5E]/30">·</span>
+                <button
+                  onClick={() => setSelectedDocIds(new Set())}
+                  className="text-[#8B7355] hover:text-[#1A1A1A] transition-colors font-medium"
+                >
+                  Desmarcar todo
+                </button>
               </div>
-              <p className="text-xs text-[#5E5E5E]/70">
-                Después podrás vincular una carpeta diferente desde &ldquo;Importar desde Drive&rdquo;.
+              <p className="text-xs text-[#5E5E5E]">
+                <span className="font-medium text-[#1A1A1A]">{selectedDocIds.size}</span> de {driveDocs.length} seleccionados
               </p>
             </div>
+
+            {/* File list (scrollable) */}
+            <div className="flex-1 overflow-y-auto px-5 py-3">
+              {driveDocs.length > 0 ? (
+                <ul className="space-y-1.5">
+                  {driveDocs.map((doc) => {
+                    const isSelected = selectedDocIds.has(doc.id);
+                    return (
+                      <li key={doc.id}>
+                        <label
+                          className={`flex items-start gap-3 px-3 py-2.5 rounded cursor-pointer transition-colors ${
+                            isSelected
+                              ? "bg-[#FBF8F3] border border-[#C5A572]/30"
+                              : "hover:bg-[#FBF8F3]/40 border border-transparent"
+                          }`}
+                        >
+                          <input
+                            type="checkbox"
+                            checked={isSelected}
+                            onChange={(e) => {
+                              const next = new Set(selectedDocIds);
+                              if (e.target.checked) next.add(doc.id);
+                              else next.delete(doc.id);
+                              setSelectedDocIds(next);
+                            }}
+                            className="mt-0.5 h-4 w-4 accent-[#8B7355] cursor-pointer"
+                          />
+                          <div className="flex-1 min-w-0">
+                            <p className="text-sm text-[#1A1A1A] font-medium truncate">{doc.fileName}</p>
+                            <div className="flex items-center gap-2 mt-0.5">
+                              <span className="text-[10px] uppercase tracking-wide text-[#5E5E5E] bg-[#F9F8F6] border border-[#E8E4DE] rounded-full px-2 py-0.5">
+                                {doc.fileType}
+                              </span>
+                              {doc.category && (
+                                <span className="text-[10px] uppercase tracking-wide text-[#8B7355] bg-[#FBF8F3] border border-[#C5A572]/30 rounded-full px-2 py-0.5">
+                                  {doc.category}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </label>
+                      </li>
+                    );
+                  })}
+                </ul>
+              ) : (
+                <p className="text-sm text-[#5E5E5E] text-center py-8">No hay archivos vinculados.</p>
+              )}
+            </div>
+
+            {/* Footer info */}
+            <div className="px-5 py-3 border-t border-[#E8E4DE] bg-[#FBF8F3]/30">
+              <div className="flex items-start gap-2 text-xs text-[#5E5E5E]">
+                <span className="text-[#C5A572] shrink-0">i</span>
+                <p>
+                  Los archivos desvinculados dejan de aparecer en el contexto que reciben los agentes.
+                  La historia del War Room, el Revenue Priority y los FirmInsights se preservan.
+                </p>
+              </div>
+            </div>
+
+            {/* Actions */}
             <div className="px-5 py-3 border-t border-[#E8E4DE] flex justify-end gap-2">
               <button
-                onClick={() => setUnlinkModal(false)}
+                onClick={() => {
+                  setUnlinkModal(false);
+                  setSelectedDocIds(new Set());
+                }}
                 disabled={actionLoading}
                 className="text-xs px-3 py-2 text-[#5E5E5E] hover:text-[#1A1A1A] transition-colors"
               >
@@ -559,10 +642,12 @@ export default function ProjectOverviewPage() {
               </button>
               <button
                 onClick={handleUnlinkDriveDocs}
-                disabled={actionLoading}
-                className="text-xs px-4 py-2 bg-[#8B7355] text-white hover:bg-[#5E5E5E] disabled:opacity-50 transition-colors rounded"
+                disabled={actionLoading || selectedDocIds.size === 0}
+                className="text-xs px-4 py-2 bg-[#8B7355] text-white hover:bg-[#5E5E5E] disabled:opacity-30 disabled:cursor-not-allowed transition-colors rounded"
               >
-                {actionLoading ? "Desvinculando…" : "Desvincular"}
+                {actionLoading
+                  ? "Desvinculando…"
+                  : `Desvincular ${selectedDocIds.size} ${selectedDocIds.size === 1 ? "archivo" : "archivos"}`}
               </button>
             </div>
           </div>
