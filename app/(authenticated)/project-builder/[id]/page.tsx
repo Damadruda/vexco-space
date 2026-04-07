@@ -124,6 +124,10 @@ export default function ProjectOverviewPage() {
   const router = useRouter();
   const [data, setData] = useState<ProjectSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [unlinkModal, setUnlinkModal] = useState(false);
+  const [deleteModal, setDeleteModal] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState("");
+  const [actionLoading, setActionLoading] = useState(false);
 
   useEffect(() => {
     if (!params?.id) return;
@@ -133,6 +137,40 @@ export default function ProjectOverviewPage() {
       .catch(() => {})
       .finally(() => setLoading(false));
   }, [params?.id]);
+
+  const handleUnlinkDriveDocs = async () => {
+    setActionLoading(true);
+    try {
+      const res = await fetch(`/api/projects/${params.id}/drive-docs`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("Failed");
+      setUnlinkModal(false);
+      window.location.reload();
+    } catch {
+      alert("Error al desvincular archivos. Inténtalo de nuevo.");
+    } finally {
+      setActionLoading(false);
+    }
+  };
+
+  const handleDeleteProject = async () => {
+    if (deleteConfirmText !== data?.project.title) {
+      alert("El nombre del proyecto no coincide");
+      return;
+    }
+    setActionLoading(true);
+    try {
+      const res = await fetch(`/api/projects/${params.id}`, {
+        method: "DELETE",
+      });
+      if (!res.ok) throw new Error("Failed");
+      router.push("/dashboard");
+    } catch {
+      alert("Error al eliminar el proyecto. Inténtalo de nuevo.");
+      setActionLoading(false);
+    }
+  };
 
   if (loading) return <Skeleton />;
   if (!data) {
@@ -439,7 +477,156 @@ export default function ProjectOverviewPage() {
             </div>
           </div>
         )}
+
+        {/* ── SECTION 7: Acciones del proyecto (Zona peligrosa) ───── */}
+        <section className="mt-12 pt-8 border-t border-[#E8E4DE]">
+          <p className="text-[10px] uppercase tracking-wider text-red-600/70 mb-2">Zona peligrosa</p>
+          <h3
+            className="text-lg font-semibold text-[#1A1A1A] mb-4"
+            style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+          >
+            Acciones del proyecto
+          </h3>
+          <div className="space-y-3">
+            {/* Acción 1: Desvincular archivos */}
+            <div className="flex items-start justify-between gap-4 rounded-lg border border-[#E8E4DE] bg-white px-5 py-4">
+              <div className="flex-1">
+                <p className="text-sm font-medium text-[#1A1A1A]">Desvincular archivos de Drive</p>
+                <p className="text-xs text-[#5E5E5E] mt-1">
+                  Elimina los {driveDocs.length} resúmenes de archivos importados.
+                  Mantiene la historia del War Room, los insights y el Revenue Priority.
+                </p>
+              </div>
+              <button
+                onClick={() => setUnlinkModal(true)}
+                disabled={driveDocs.length === 0}
+                className="shrink-0 text-xs font-medium px-4 py-2 border border-[#C5A572] text-[#8B7355] hover:bg-[#FBF8F3] disabled:opacity-30 disabled:cursor-not-allowed transition-colors rounded"
+              >
+                Desvincular archivos
+              </button>
+            </div>
+
+            {/* Acción 2: Eliminar proyecto */}
+            <div className="flex items-start justify-between gap-4 rounded-lg border border-red-200 bg-red-50/30 px-5 py-4">
+              <div className="flex-1">
+                <p className="text-sm font-medium text-red-900">Eliminar proyecto permanentemente</p>
+                <p className="text-xs text-red-700/80 mt-1">
+                  Borra el proyecto y toda su historia: War Room, decisiones, archivos de Drive,
+                  insights de validación. Esta acción no se puede deshacer.
+                </p>
+              </div>
+              <button
+                onClick={() => setDeleteModal(true)}
+                className="shrink-0 text-xs font-medium px-4 py-2 border border-red-300 text-red-700 hover:bg-red-100 transition-colors rounded"
+              >
+                Eliminar proyecto
+              </button>
+            </div>
+          </div>
+        </section>
       </div>
+
+      {/* Modal: Desvincular archivos */}
+      {unlinkModal && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-[#1A1A1A]/40">
+          <div className="w-full max-w-md bg-white border border-[#E8E4DE] rounded-lg shadow-xl">
+            <div className="px-5 py-4 border-b border-[#E8E4DE]">
+              <h3 className="text-base font-medium text-[#1A1A1A]">Desvincular archivos de Drive</h3>
+            </div>
+            <div className="px-5 py-4 space-y-3">
+              <p className="text-sm text-[#5E5E5E]">
+                Esto eliminará <strong>{driveDocs.length} resúmenes de archivos</strong> de Google Drive
+                vinculados a <strong>{project.title}</strong>.
+              </p>
+              <div className="bg-[#FBF8F3] border border-[#C5A572]/30 rounded p-3 text-xs space-y-1">
+                <p className="text-[#8B7355] font-medium">Se preservarán:</p>
+                <p className="text-[#5E5E5E]">· Historia completa del War Room</p>
+                <p className="text-[#5E5E5E]">· Revenue Priority y diagnósticos</p>
+                <p className="text-[#5E5E5E]">· FirmInsights generados</p>
+                <p className="text-[#5E5E5E]">· Tareas del Agile Board</p>
+              </div>
+              <p className="text-xs text-[#5E5E5E]/70">
+                Después podrás vincular una carpeta diferente desde &ldquo;Importar desde Drive&rdquo;.
+              </p>
+            </div>
+            <div className="px-5 py-3 border-t border-[#E8E4DE] flex justify-end gap-2">
+              <button
+                onClick={() => setUnlinkModal(false)}
+                disabled={actionLoading}
+                className="text-xs px-3 py-2 text-[#5E5E5E] hover:text-[#1A1A1A] transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleUnlinkDriveDocs}
+                disabled={actionLoading}
+                className="text-xs px-4 py-2 bg-[#8B7355] text-white hover:bg-[#5E5E5E] disabled:opacity-50 transition-colors rounded"
+              >
+                {actionLoading ? "Desvinculando…" : "Desvincular"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Modal: Eliminar proyecto (type-to-confirm) */}
+      {deleteModal && (
+        <div className="fixed inset-0 z-[200] flex items-center justify-center p-4 bg-[#1A1A1A]/40">
+          <div className="w-full max-w-md bg-white border border-red-200 rounded-lg shadow-xl">
+            <div className="px-5 py-4 border-b border-red-200 bg-red-50/50">
+              <h3 className="text-base font-medium text-red-900">Eliminar proyecto</h3>
+            </div>
+            <div className="px-5 py-4 space-y-3">
+              <p className="text-sm text-[#1A1A1A]">
+                Vas a eliminar permanentemente <strong>{project.title}</strong>.
+              </p>
+              <div className="bg-red-50 border border-red-200 rounded p-3 text-xs space-y-1">
+                <p className="text-red-900 font-medium">Esto eliminará:</p>
+                <p className="text-red-700">· Toda la historia del War Room ({warRoomInsights.length} agentes activos)</p>
+                <p className="text-red-700">· {driveDocs.length} resúmenes de archivos de Drive</p>
+                <p className="text-red-700">· {taskStats.total} tareas del Agile Board</p>
+                <p className="text-red-700">· Decisiones, insights de validación, mensajes</p>
+              </div>
+              <div className="bg-[#FBF8F3] border border-[#C5A572]/30 rounded p-3 text-xs">
+                <p className="text-[#8B7355]">
+                  <strong>Se preservan:</strong> Los FirmInsights generados pasarán al conocimiento institucional del Lab.
+                </p>
+              </div>
+              <div className="pt-2">
+                <label className="text-xs text-[#5E5E5E] block mb-2">
+                  Para confirmar, escribe el nombre del proyecto: <strong className="text-[#1A1A1A]">{project.title}</strong>
+                </label>
+                <input
+                  type="text"
+                  value={deleteConfirmText}
+                  onChange={(e) => setDeleteConfirmText(e.target.value)}
+                  placeholder={project.title}
+                  className="w-full px-3 py-2 border border-[#E8E4DE] rounded text-sm focus:border-red-400 focus:outline-none"
+                />
+              </div>
+            </div>
+            <div className="px-5 py-3 border-t border-[#E8E4DE] flex justify-end gap-2">
+              <button
+                onClick={() => {
+                  setDeleteModal(false);
+                  setDeleteConfirmText("");
+                }}
+                disabled={actionLoading}
+                className="text-xs px-3 py-2 text-[#5E5E5E] hover:text-[#1A1A1A] transition-colors"
+              >
+                Cancelar
+              </button>
+              <button
+                onClick={handleDeleteProject}
+                disabled={actionLoading || deleteConfirmText !== project.title}
+                className="text-xs px-4 py-2 bg-red-600 text-white hover:bg-red-700 disabled:opacity-30 disabled:cursor-not-allowed transition-colors rounded"
+              >
+                {actionLoading ? "Eliminando…" : "Eliminar permanentemente"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

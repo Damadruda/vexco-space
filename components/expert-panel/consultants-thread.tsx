@@ -241,10 +241,27 @@ export function ConsultantsThread({
   const [showFeedback, setShowFeedback] = useState(false);
 
   const threadEndRef = useRef<HTMLDivElement>(null);
+  const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // ── @mention autocomplete state ──────────────────────────────────────────
+  const [mentionDropdown, setMentionDropdown] = useState<{
+    open: boolean;
+    query: string;
+    startIndex: number;
+    selectedIndex: number;
+  }>({ open: false, query: "", startIndex: -1, selectedIndex: 0 });
 
   useEffect(() => {
     threadEndRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages]);
+
+  // ── Auto-resize textarea ──────────────────────────────────────────────────
+  useEffect(() => {
+    const ta = textareaRef.current;
+    if (!ta) return;
+    ta.style.height = "auto";
+    ta.style.height = `${Math.min(ta.scrollHeight, 200)}px`;
+  }, [input]);
 
   // ── 4A: Load persisted messages on mount ──────────────────────────────────
   useEffect(() => {
@@ -463,6 +480,39 @@ export function ConsultantsThread({
 
     await callAgent(newExpert, question, msgId);
     setIsLoading(false);
+  };
+
+  // ── @mention autocomplete helpers ──────────────────────────────────────
+  const filteredAgents = mentionDropdown.open
+    ? EXPERTS.filter((expert) => {
+        if (mentionDropdown.query === "") return true;
+        const aliases = Object.entries(AGENT_ALIASES)
+          .filter(([, target]) => target === expert.id)
+          .map(([alias]) => alias);
+        const searchTargets = [
+          expert.name.toLowerCase(),
+          expert.id.toLowerCase(),
+          ...aliases,
+        ];
+        return searchTargets.some((t) => t.includes(mentionDropdown.query));
+      })
+    : [];
+
+  const selectMention = (expert: Expert) => {
+    const canonicalAlias =
+      Object.entries(AGENT_ALIASES).find(
+        ([, target]) => target === expert.id
+      )?.[0] ?? expert.id;
+
+    const before = input.slice(0, mentionDropdown.startIndex);
+    const after = input.slice(
+      mentionDropdown.startIndex + mentionDropdown.query.length + 1
+    );
+    const newInput = `${before}@${canonicalAlias} ${after}`;
+
+    setInput(newInput);
+    setMentionDropdown({ open: false, query: "", startIndex: -1, selectedIndex: 0 });
+    setTimeout(() => textareaRef.current?.focus(), 0);
   };
 
   // ── Send message → active expert (or @mentioned agent) ─────────────────
@@ -1026,25 +1076,123 @@ export function ConsultantsThread({
           <div ref={threadEndRef} />
         </div>
 
+        {/* @mention dropdown */}
+        {mentionDropdown.open && filteredAgents.length > 0 && (
+          <div className="relative px-6">
+            <div className="absolute bottom-0 left-6 mb-1 w-72 bg-white border border-[#E8E4DE] shadow-lg z-50 max-h-64 overflow-y-auto">
+              <div className="px-3 py-2 border-b border-[#E8E4DE]">
+                <p className="text-[10px] uppercase tracking-wide text-[#5E5E5E]">Mencionar agente</p>
+              </div>
+              {filteredAgents.map((expert, idx) => {
+                const canonical =
+                  Object.entries(AGENT_ALIASES).find(
+                    ([, target]) => target === expert.id
+                  )?.[0] ?? expert.id;
+                return (
+                  <button
+                    key={expert.id}
+                    type="button"
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      selectMention(expert);
+                    }}
+                    className={`w-full flex items-center gap-3 px-3 py-2 text-left transition-colors ${
+                      idx === mentionDropdown.selectedIndex
+                        ? "bg-[#FBF8F3]"
+                        : "hover:bg-[#FBF8F3]/50"
+                    }`}
+                  >
+                    <div className="h-8 w-8 rounded-full bg-[#F3F2F0] flex items-center justify-center text-xs font-medium text-[#1A1A1A] shrink-0">
+                      {expert.initials}
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-sm font-medium text-[#1A1A1A] truncate">{expert.name}</p>
+                      <p className="text-xs text-[#5E5E5E] truncate">{expert.role}</p>
+                    </div>
+                    <span className="text-[10px] text-[#5E5E5E] font-mono shrink-0">@{canonical}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
         {/* Input */}
         <form onSubmit={handleSend} className="border-t border-ql-sand/20 px-6 py-4">
-          <div className="flex gap-3">
-            <input
-              type="text"
+          <div className="flex gap-3 items-end">
+            <textarea
+              ref={textareaRef}
               value={input}
-              onChange={(e) => setInput(e.target.value)}
+              onChange={(e) => {
+                const value = e.target.value;
+                setInput(value);
+
+                const cursorPos = e.target.selectionStart;
+                const textBeforeCursor = value.slice(0, cursorPos);
+                const atMatch = textBeforeCursor.match(/@(\w*)$/);
+
+                if (atMatch) {
+                  setMentionDropdown({
+                    open: true,
+                    query: atMatch[1].toLowerCase(),
+                    startIndex: cursorPos - atMatch[0].length,
+                    selectedIndex: 0,
+                  });
+                } else {
+                  setMentionDropdown((prev) => ({ ...prev, open: false }));
+                }
+              }}
+              onKeyDown={(e) => {
+                if (mentionDropdown.open && filteredAgents.length > 0) {
+                  if (e.key === "ArrowDown") {
+                    e.preventDefault();
+                    setMentionDropdown((prev) => ({
+                      ...prev,
+                      selectedIndex: (prev.selectedIndex + 1) % filteredAgents.length,
+                    }));
+                    return;
+                  }
+                  if (e.key === "ArrowUp") {
+                    e.preventDefault();
+                    setMentionDropdown((prev) => ({
+                      ...prev,
+                      selectedIndex:
+                        prev.selectedIndex === 0
+                          ? filteredAgents.length - 1
+                          : prev.selectedIndex - 1,
+                    }));
+                    return;
+                  }
+                  if (e.key === "Enter" || e.key === "Tab") {
+                    e.preventDefault();
+                    selectMention(filteredAgents[mentionDropdown.selectedIndex]);
+                    return;
+                  }
+                  if (e.key === "Escape") {
+                    setMentionDropdown((prev) => ({ ...prev, open: false }));
+                    return;
+                  }
+                }
+
+                if (e.key === "Enter" && !e.shiftKey) {
+                  e.preventDefault();
+                  handleSend(e as unknown as React.FormEvent);
+                }
+              }}
               placeholder={
                 isLoading
                   ? `${activeExpert.name} respondiendo…`
-                  : `Pregúntale a ${activeExpert.name}…`
+                  : `Pregúntale a ${activeExpert.name}… (Shift+Enter para salto de línea)`
               }
               disabled={isLoading}
-              className="flex-1 ql-input text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+              rows={1}
+              className="flex-1 ql-input text-sm disabled:opacity-40 disabled:cursor-not-allowed resize-none overflow-y-auto"
+              style={{ minHeight: "40px", maxHeight: "200px" }}
             />
             <button
               type="submit"
               disabled={!input.trim() || isLoading}
-              className="flex h-10 w-10 items-center justify-center bg-ql-charcoal text-white hover:bg-ql-slate disabled:bg-ql-cream disabled:cursor-not-allowed transition-colors"
+              className="flex h-10 w-10 shrink-0 items-center justify-center bg-ql-charcoal text-white hover:bg-ql-slate disabled:bg-ql-cream disabled:cursor-not-allowed transition-colors"
             >
               <Send className="h-4 w-4" />
             </button>
