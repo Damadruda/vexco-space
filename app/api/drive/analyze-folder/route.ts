@@ -31,6 +31,47 @@ const CONFIG = {
   TEXT_EXTENSIONS: [".json", ".md", ".html", ".pdf", ".txt", ".csv", ".markdown", ".docx"],
   // UX/UI Expert Mode folder ID
   EXPERT_MODE_FOLDER_ID: "1ekDx8PsLfS2Dgn4C7qMTYRcx_yDti2Lh",
+
+  // SMART IMPORT (Sprint K5.2)
+  MAX_FILES_BUSINESS: 50,
+  MAX_FILES_CODE: 20,
+
+  // Code project detection signals (root-level files)
+  CODE_INDICATORS_FILES: [
+    "package.json", "package-lock.json", "yarn.lock", "pnpm-lock.yaml",
+    "tsconfig.json", "next.config.js", "next.config.ts", "vite.config.ts", "vite.config.js",
+    "pyproject.toml", "requirements.txt", "setup.py", "Pipfile",
+    "Cargo.toml", "go.mod", "pom.xml", "build.gradle", "Gemfile", "composer.json",
+    "Dockerfile", "docker-compose.yml", "docker-compose.yaml",
+    "webpack.config.js", "rollup.config.js", "tailwind.config.js", "tailwind.config.ts",
+  ],
+  CODE_INDICATORS_FOLDERS: [
+    "src", "lib", "app", "components", "pages", "api", "routes",
+    "node_modules", ".git", ".next", "dist", "build",
+  ],
+
+  // Files to ALWAYS exclude in code mode
+  CODE_EXCLUDE_PATHS: [
+    "node_modules", ".next", ".nuxt", "dist", "build", "out",
+    ".git", "vendor", "__pycache__", ".venv", "venv", "env",
+    "target", "coverage", ".cache", ".vercel", ".turbo",
+  ],
+  CODE_EXCLUDE_EXTENSIONS: [
+    ".lock", ".log", ".map", ".min.js", ".min.css",
+    ".DS_Store", ".gitignore", ".env", ".env.local",
+  ],
+
+  // High-priority files for code projects (always include if found)
+  CODE_PRIORITY_FILES: [
+    "README.md", "README.txt", "README.rst", "README",
+    "package.json", "pyproject.toml", "requirements.txt", "Cargo.toml", "go.mod",
+    "tsconfig.json", "next.config.js", "next.config.ts",
+    "tailwind.config.js", "tailwind.config.ts",
+    "CHANGELOG.md", "ROADMAP.md", "ARCHITECTURE.md", "CONTRIBUTING.md",
+    "Dockerfile", "docker-compose.yml",
+    ".env.example",
+  ],
+  CODE_PRIORITY_FOLDERS: ["docs", "documentation"],
 };
 
 interface DriveFile {
@@ -84,6 +125,139 @@ function isImageFileByExtension(filename: string): boolean {
   const imageExtensions = [".jpg", ".jpeg", ".png", ".gif", ".webp"];
   const lowerName = filename.toLowerCase();
   return imageExtensions.some(ext => lowerName.endsWith(ext));
+}
+
+/**
+ * Detect if a folder contains a code project by looking at its file/folder names.
+ * Returns "code" if 2+ code indicators are found, "business" otherwise.
+ */
+function detectProjectType(allFiles: DriveFile[]): "code" | "business" {
+  let codeScore = 0;
+
+  for (const file of allFiles) {
+    const lowerName = file.name.toLowerCase();
+
+    if (CONFIG.CODE_INDICATORS_FILES.some(indicator =>
+      lowerName === indicator.toLowerCase()
+    )) {
+      codeScore += 2;
+    }
+
+    if (file.mimeType === "application/vnd.google-apps.folder") {
+      if (CONFIG.CODE_INDICATORS_FOLDERS.includes(lowerName)) {
+        codeScore += 1;
+      }
+    }
+  }
+
+  return codeScore >= 2 ? "code" : "business";
+}
+
+/**
+ * Filter and prioritize files based on project type.
+ * - For "code" projects: only include README, configs, docs, exclude node_modules etc.
+ * - For "business" projects: exclude images, prioritize PDFs/DOCX/Sheets.
+ */
+function filterAndPrioritizeFiles(
+  allFiles: DriveFile[],
+  projectType: "code" | "business"
+): { selected: DriveFile[]; excluded: { name: string; reason: string }[] } {
+  const excluded: { name: string; reason: string }[] = [];
+
+  if (projectType === "code") {
+    const priority: DriveFile[] = [];
+    const docs: DriveFile[] = [];
+    const other: DriveFile[] = [];
+
+    for (const file of allFiles) {
+      const lowerName = file.name.toLowerCase();
+
+      if (file.mimeType === "application/vnd.google-apps.folder") continue;
+
+      if (CONFIG.CODE_EXCLUDE_PATHS.some(excl => lowerName.includes(excl))) {
+        excluded.push({ name: file.name, reason: "carpeta excluida (build/deps)" });
+        continue;
+      }
+
+      if (CONFIG.CODE_EXCLUDE_EXTENSIONS.some(ext => lowerName.endsWith(ext))) {
+        excluded.push({ name: file.name, reason: "extensión excluida" });
+        continue;
+      }
+
+      if (isImageFileByExtension(file.name) || file.mimeType.startsWith("image/")) {
+        excluded.push({ name: file.name, reason: "imagen" });
+        continue;
+      }
+
+      if (CONFIG.CODE_PRIORITY_FILES.some(prio =>
+        lowerName === prio.toLowerCase()
+      )) {
+        priority.push(file);
+        continue;
+      }
+
+      if (lowerName.endsWith(".md") || lowerName.endsWith(".txt") || lowerName.endsWith(".rst")) {
+        docs.push(file);
+        continue;
+      }
+
+      other.push(file);
+    }
+
+    const allCandidates = [...priority, ...docs, ...other];
+    const selected = allCandidates.slice(0, CONFIG.MAX_FILES_CODE);
+
+    for (let i = CONFIG.MAX_FILES_CODE; i < allCandidates.length; i++) {
+      excluded.push({ name: allCandidates[i].name, reason: `límite ${CONFIG.MAX_FILES_CODE} archivos (modo código)` });
+    }
+
+    return { selected, excluded };
+  }
+
+  // BUSINESS MODE
+  const high: DriveFile[] = [];
+  const medium: DriveFile[] = [];
+  const low: DriveFile[] = [];
+
+  for (const file of allFiles) {
+    const lowerName = file.name.toLowerCase();
+
+    if (file.mimeType === "application/vnd.google-apps.folder") continue;
+
+    if (isImageFileByExtension(file.name) || file.mimeType.startsWith("image/")) {
+      excluded.push({ name: file.name, reason: "imagen" });
+      continue;
+    }
+
+    if (lowerName.endsWith(".pdf") || lowerName.endsWith(".docx") || file.mimeType.includes("document")) {
+      high.push(file);
+      continue;
+    }
+
+    if (lowerName.endsWith(".csv") || lowerName.endsWith(".xlsx") ||
+        file.mimeType.includes("spreadsheet") || file.mimeType.includes("presentation")) {
+      medium.push(file);
+      continue;
+    }
+
+    if (lowerName.endsWith(".txt") || lowerName.endsWith(".md") ||
+        lowerName.endsWith(".json") || lowerName.endsWith(".html")) {
+      low.push(file);
+      continue;
+    }
+
+    // Remaining supported types (Google Docs, etc. caught by mimeType above)
+    low.push(file);
+  }
+
+  const allCandidates = [...high, ...medium, ...low];
+  const selected = allCandidates.slice(0, CONFIG.MAX_FILES_BUSINESS);
+
+  for (let i = CONFIG.MAX_FILES_BUSINESS; i < allCandidates.length; i++) {
+    excluded.push({ name: allCandidates[i].name, reason: `límite ${CONFIG.MAX_FILES_BUSINESS} archivos (modo business)` });
+  }
+
+  return { selected, excluded };
 }
 
 /**
@@ -556,8 +730,8 @@ export async function POST(request: Request) {
     // EXPERT MODE DETECTION
     const isExpertMode = folderId === CONFIG.EXPERT_MODE_FOLDER_ID;
 
-    // 2. SCAN — depth 2, rápido
-    const allFiles = await scanFolderRecursively(folderId, accessToken, 0, 2, folderName);
+    // 2. SCAN — depth 5 to capture both code repos and business folders
+    const allFiles = await scanFolderRecursively(folderId, accessToken, 0, 5, folderName);
     const scanTime = ((Date.now() - startTime) / 1000).toFixed(1);
     console.log(`[DRIVE_IMPORT] Scan: ${scanTime}s — ${allFiles.length} archivos encontrados`);
 
@@ -567,13 +741,16 @@ export async function POST(request: Request) {
       }, { status: 400 });
     }
 
-    // 3. FILTRAR — solo texto, max 10 archivos, sin imágenes
-    const textFiles = allFiles.filter(file => {
-      const isImage = isImageFileByExtension(file.name) || file.mimeType.startsWith("image/");
-      return !isImage;
-    }).slice(0, 10);
+    // 3. DETECTAR TIPO DE PROYECTO + FILTRAR INTELIGENTEMENTE (Sprint K5.2)
+    const projectType = detectProjectType(allFiles);
+    console.log(`[DRIVE_IMPORT] Tipo detectado: ${projectType.toUpperCase()}`);
 
-    console.log(`[DRIVE_IMPORT] Procesando ${textFiles.length} archivos de texto (${allFiles.length - textFiles.length} excluidos)`);
+    const { selected: textFiles, excluded: smartExcluded } = filterAndPrioritizeFiles(allFiles, projectType);
+
+    console.log(`[DRIVE_IMPORT] Procesando ${textFiles.length} archivos (${smartExcluded.length} excluidos por filtro inteligente)`);
+    if (textFiles.length > 0) {
+      console.log(`[DRIVE_IMPORT] Archivos seleccionados:`, textFiles.map(f => f.name).slice(0, 10).join(", "), textFiles.length > 10 ? `... y ${textFiles.length - 10} más` : "");
+    }
 
     // 4. DESCARGAR texto de cada archivo
     const textContents: string[] = [];
@@ -592,8 +769,8 @@ export async function POST(request: Request) {
 
     const downloadTime = ((Date.now() - startTime) / 1000).toFixed(1);
     console.log(`[DRIVE_IMPORT] Descarga: ${downloadTime}s`);
-    console.log(`[DRIVE_IMPORT] Procesados (${processedNames.length}): ${processedNames.join(", ") || "ninguno"}`);
-    console.log(`[DRIVE_IMPORT] Ignorados (${ignoredFiles.length}): ${ignoredFiles.map(f => `${f.name}(${f.reason})`).join(", ") || "ninguno"}`);
+    console.log(`[DRIVE_IMPORT] Modo: ${projectType.toUpperCase()} | Procesados (${processedNames.length}): ${processedNames.slice(0, 5).join(", ")}${processedNames.length > 5 ? `... +${processedNames.length - 5}` : ""}`);
+    console.log(`[DRIVE_IMPORT] Ignorados por filtro inteligente: ${smartExcluded.length} | Ignorados por error de descarga: ${ignoredFiles.length}`);
 
     if (textContents.length === 0) {
       return NextResponse.json({
@@ -853,11 +1030,16 @@ INSTRUCCIONES:
       stats: {
         totalFiles: allFiles.length,
         processedFiles: textContents.length,
+        projectType,
         documents: textContents.length,
         images: 0,
         docSummaries: docsSaved,
         duration: `${duration}s`,
-        files: { processed: processedNames, ignored: ignoredFiles },
+        files: {
+          processed: processedNames,
+          ignored: ignoredFiles,
+          smartExcluded: smartExcluded.slice(0, 20),
+        },
         ...(isExpertMode && {
           patterns: {
             extracted: patternsExtracted.length,

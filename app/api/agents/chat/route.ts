@@ -212,6 +212,37 @@ async function buildProjectContext(memory: Record<string, unknown>, projectId?: 
     }
   }
 
+  // ─── REAL COUNTS BLOCK (Sprint K5.2 anti-hallucination) ───
+  let verifiedCountsBlock = "";
+  if (projectId) {
+    try {
+      const [
+        driveDocsCount,
+        warRoomMessagesCount,
+        firmInsightsCount,
+        agileTasksCount,
+        inboxItemsLinkedCount,
+      ] = await Promise.all([
+        prisma.driveDocSummary.count({ where: { projectId } }),
+        prisma.chatMessage.count({ where: { projectId } }),
+        prisma.firmInsight.count({ where: { sourceProjectId: projectId, isActive: true } }),
+        prisma.agileTask.count({ where: { projectId } }),
+        prisma.inboxItem.count({ where: { projectId } }),
+      ]);
+
+      verifiedCountsBlock = `
+─── DATOS VERIFICADOS (úsalos exactamente, no inventes otros) ───
+- Archivos de Drive importados a este proyecto: ${driveDocsCount}
+- Mensajes históricos en este War Room: ${warRoomMessagesCount}
+- FirmInsights generados desde este proyecto: ${firmInsightsCount}
+- Tareas en el Agile Board de este proyecto: ${agileTasksCount}
+- Items del Inbox vinculados a este proyecto: ${inboxItemsLinkedCount}
+─────────────────────────────────────────────────────────────`;
+    } catch (e) {
+      console.warn("[buildProjectContext] Failed to compute verified counts:", e);
+    }
+  }
+
   return [
     "CONTEXTO DEL PROYECTO:",
     `- Nombre: ${project.title ?? "Sin título"}`,
@@ -227,6 +258,7 @@ async function buildProjectContext(memory: Record<string, unknown>, projectId?: 
     driveLines || "",
     firmInsightContext || "",
     revenuePriorityContext || "",
+    verifiedCountsBlock || "",
   ]
     .filter(Boolean)
     .join("\n");
