@@ -23,10 +23,6 @@ export const metadata: Metadata = {
   metadataBase: new URL(process.env.NEXTAUTH_URL || "http://localhost:3000"),
   title: "Vex&Co Lab - Dashboard de Gestión para Emprendedores",
   description: "Organiza tus ideas, estructura tus proyectos y alcanza tus metas con Vex&Co Lab",
-  icons: {
-    icon: "/favicon.svg",
-    shortcut: "/favicon.svg"
-  },
   openGraph: {
     title: "Vex&Co Lab - Dashboard de Gestión para Emprendedores",
     description: "Organiza tus ideas, estructura tus proyectos y alcanza tus metas con Vex&Co Lab",
