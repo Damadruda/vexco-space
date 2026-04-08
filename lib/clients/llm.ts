@@ -19,6 +19,9 @@ export interface LLMRequest {
   jsonMode: boolean;
   maxTokens?: number;
   temperature?: number;
+  // Gemini structured output — guarantees syntactically valid JSON matching the schema
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  responseSchema?: any;
 }
 
 export interface LLMResponse {
@@ -36,7 +39,9 @@ async function callGemini(
   jsonMode: boolean,
   maxTokens?: number,
   temperature?: number,
-  modelOverride?: string
+  modelOverride?: string,
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  responseSchema?: any
 ): Promise<{ content: string; tokensUsed?: number }> {
   const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
   if (!apiKey) throw new Error("GOOGLE_GENERATIVE_AI_API_KEY no configurada");
@@ -62,7 +67,8 @@ async function callGemini(
         config: {
           ...(maxTokens ? { maxOutputTokens: maxTokens } : {}),
           temperature: temperature !== undefined ? temperature : 0.7,
-          ...(jsonMode ? { responseMimeType: "application/json" } : {}),
+          ...(jsonMode || responseSchema ? { responseMimeType: "application/json" } : {}),
+          ...(responseSchema ? { responseSchema } : {}),
           // thinkingConfig deshabilitado temporalmente — causa posible del 500
           // ...(modelName.includes("pro") ? { thinkingConfig: { thinkingLevel: "low" } } : {}),
         },
@@ -86,7 +92,7 @@ async function callGemini(
   // Fallback Pro → Flash
   if (!modelOverride && modelName === "gemini-3.1-pro-preview") {
     console.warn("[GEMINI] Pro failed twice, falling back to gemini-3-flash-preview");
-    return callGemini(systemPrompt, userPrompt, jsonMode, maxTokens, temperature, "gemini-3-flash-preview");
+    return callGemini(systemPrompt, userPrompt, jsonMode, maxTokens, temperature, "gemini-3-flash-preview", responseSchema);
   }
 
   throw new Error(`Gemini ${modelName} failed after all retries`);
@@ -265,7 +271,7 @@ export async function callGeminiMultimodal(
 // ─── Public API ───────────────────────────────────────────────────────────────
 
 export async function callLLM(request: LLMRequest): Promise<LLMResponse> {
-  const { model, systemPrompt, userPrompt, jsonMode, maxTokens, temperature } = request;
+  const { model, systemPrompt, userPrompt, jsonMode, maxTokens, temperature, responseSchema } = request;
   const startTime = Date.now();
 
   let content: string;
@@ -284,12 +290,12 @@ export async function callLLM(request: LLMRequest): Promise<LLMResponse> {
     content = res.content;
     realModel = apiKey ? "sonar-pro" : "gemini-3-flash-preview (fallback)";
   } else if (model === "gemini-pro") {
-    const res = await callGemini(systemPrompt, userPrompt, jsonMode, maxTokens, temperature, "gemini-3.1-pro-preview");
+    const res = await callGemini(systemPrompt, userPrompt, jsonMode, maxTokens, temperature, "gemini-3.1-pro-preview", responseSchema);
     content = res.content;
     tokensUsed = res.tokensUsed;
     realModel = "gemini-3.1-pro-preview";
   } else {
-    const res = await callGemini(systemPrompt, userPrompt, jsonMode, maxTokens, temperature, "gemini-3-flash-preview");
+    const res = await callGemini(systemPrompt, userPrompt, jsonMode, maxTokens, temperature, "gemini-3-flash-preview", responseSchema);
     content = res.content;
     tokensUsed = res.tokensUsed;
     realModel = "gemini-3-flash-preview";

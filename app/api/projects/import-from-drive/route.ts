@@ -160,7 +160,100 @@ function smartFilter(files: DriveFile[]): DriveFile[] {
   return selected;
 }
 
-// ─── Analyze files with Gemini ───────────────────────────────────────────────
+// ─── Gemini structured output schema ─────────────────────────────────────────
+
+const projectStructureSchema = {
+  type: "object",
+  properties: {
+    title: { type: "string" },
+    description: { type: "string" },
+    category: {
+      type: "string",
+      enum: ["startup", "product", "service", "research", "other"],
+    },
+    tags: { type: "array", items: { type: "string" } },
+    concept: {
+      type: "object",
+      properties: {
+        idea: { type: "string" },
+        problem: { type: "string" },
+        solution: { type: "string" },
+        value: { type: "string" },
+      },
+      required: ["idea", "problem", "solution", "value"],
+    },
+    market: {
+      type: "object",
+      properties: {
+        target: { type: "string" },
+        size: { type: "string" },
+        trends: { type: "string" },
+        competitors: { type: "string" },
+      },
+      required: ["target", "size", "trends", "competitors"],
+    },
+    model: {
+      type: "object",
+      properties: {
+        revenue: { type: "string" },
+        costs: { type: "string" },
+        channels: { type: "string" },
+        resources: { type: "string" },
+      },
+      required: ["revenue", "costs", "channels", "resources"],
+    },
+    action: {
+      type: "object",
+      properties: {
+        milestones: { type: "string" },
+        timeline: { type: "string" },
+        tasks: { type: "string" },
+        metrics: { type: "string" },
+      },
+      required: ["milestones", "timeline", "tasks", "metrics"],
+    },
+    resourcesPlan: {
+      type: "object",
+      properties: {
+        team: { type: "string" },
+        tools: { type: "string" },
+        budget: { type: "string" },
+        partners: { type: "string" },
+      },
+      required: ["team", "tools", "budget", "partners"],
+    },
+    extractedNotes: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          title: { type: "string" },
+          content: { type: "string" },
+        },
+        required: ["title", "content"],
+      },
+    },
+    extractedLinks: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          url: { type: "string" },
+          title: { type: "string" },
+          description: { type: "string" },
+        },
+        required: ["url", "title", "description"],
+      },
+    },
+  },
+  required: [
+    "title", "description", "category", "tags",
+    "concept", "market", "model", "action", "resourcesPlan",
+    "extractedNotes", "extractedLinks",
+  ],
+};
+
+// ─── Analyze files with Gemini (structured output) ───────────────────────────
 
 async function analyzeFilesWithGemini(fileContents: FileContent[]): Promise<Record<string, unknown>> {
   const filesDescription = fileContents
@@ -170,71 +263,31 @@ async function analyzeFilesWithGemini(fileContents: FileContent[]): Promise<Reco
     )
     .join("\n\n");
 
-  const systemPrompt = `Eres un experto analista de proyectos empresariales. Analiza documentos de una carpeta y estructúralos en un proyecto.
+  const systemPrompt = `Eres un experto analista de proyectos empresariales. Analiza documentos de una carpeta de Google Drive y estructuralos en un proyecto de negocio completo. Extrae toda la informacion relevante de los documentos.`;
 
-REGLA: Devuelve SOLO JSON válido. Sin markdown, sin texto extra.`;
+  const userPrompt = `Analiza los siguientes documentos y genera la estructura del proyecto:
 
-  const userPrompt = `Analiza estos documentos y genera un objeto JSON con esta estructura exacta:
-
-{
-  "title": "Título del proyecto",
-  "description": "Descripción breve",
-  "category": "startup|product|service|research|other",
-  "tags": ["tag1", "tag2", "tag3"],
-  "concept": {
-    "idea": "Idea principal",
-    "problem": "Problema identificado",
-    "solution": "Solución propuesta",
-    "value": "Propuesta de valor"
-  },
-  "market": {
-    "target": "Público objetivo",
-    "size": "Tamaño de mercado",
-    "trends": "Tendencias",
-    "competitors": "Competidores"
-  },
-  "model": {
-    "revenue": "Fuentes de ingresos",
-    "costs": "Estructura de costos",
-    "channels": "Canales de distribución",
-    "resources": "Recursos clave"
-  },
-  "action": {
-    "milestones": "Hitos principales",
-    "timeline": "Timeline estimado",
-    "tasks": "Tareas prioritarias",
-    "metrics": "Métricas de éxito"
-  },
-  "resourcesPlan": {
-    "team": "Equipo necesario",
-    "tools": "Herramientas",
-    "budget": "Presupuesto",
-    "partners": "Partners"
-  },
-  "extractedNotes": [{"title": "...", "content": "..."}],
-  "extractedLinks": [{"url": "...", "title": "...", "description": "..."}]
-}
-
-DOCUMENTOS:
-${filesDescription}
-
-Responde SOLO con el JSON.`;
+${filesDescription}`;
 
   const response = await callLLM({
     model: "gemini-pro",
     systemPrompt,
     userPrompt,
-    jsonMode: true,
-    maxTokens: 4096,
-    temperature: 0.5,
+    jsonMode: false, // responseSchema handles JSON output
+    responseSchema: projectStructureSchema,
+    maxTokens: 8192,
+    temperature: 0.4,
   });
 
-  const jsonMatch = response.content.match(/\{[\s\S]*\}/);
-  if (!jsonMatch) {
-    throw new Error("No se pudo extraer JSON de la respuesta de Gemini");
+  try {
+    return JSON.parse(response.content);
+  } catch (parseErr) {
+    console.error("[import-from-drive] llm raw response:", response.content.substring(0, 500));
+    console.error("[import-from-drive] llm raw length:", response.content.length);
+    throw new Error(
+      `JSON parse failed: ${parseErr instanceof Error ? parseErr.message : String(parseErr)} | raw length: ${response.content.length}`
+    );
   }
-
-  return JSON.parse(jsonMatch[0]);
 }
 
 // ─── POST: Analyze Drive folder ──────────────────────────────────────────────
