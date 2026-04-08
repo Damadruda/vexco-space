@@ -3,6 +3,9 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth-options";
 import { prisma } from "@/lib/db";
 import { getDefaultUserId } from "@/lib/get-default-user";
+import { callLLM } from "@/lib/clients/llm";
+
+export const maxDuration = 300;
 
 interface FileContent {
   name: string;
@@ -12,116 +15,174 @@ interface FileContent {
   url?: string;
 }
 
-// Extraer contenido de un archivo de Google Drive
-async function extractFileContent(fileId: string, mimeType: string, accessToken: string): Promise<string> {
+// ─── File extraction from Google Drive ───────────────────────────────────────
+
+async function extractFileContent(
+  fileId: string,
+  mimeType: string,
+  accessToken: string
+): Promise<string> {
   try {
-    // Para Google Docs, Sheets, Slides - exportar como texto
     if (mimeType.includes("google-apps")) {
       let exportMimeType = "text/plain";
-      
-      if (mimeType.includes("document")) {
-        exportMimeType = "text/plain";
-      } else if (mimeType.includes("spreadsheet")) {
-        exportMimeType = "text/csv";
-      } else if (mimeType.includes("presentation")) {
-        exportMimeType = "text/plain";
-      }
-      
+      if (mimeType.includes("spreadsheet")) exportMimeType = "text/csv";
+
       const response = await fetch(
         `https://www.googleapis.com/drive/v3/files/${fileId}/export?mimeType=${encodeURIComponent(exportMimeType)}`,
-        {
-          headers: {
-            Authorization: `Bearer ${accessToken}`
-          }
-        }
+        { headers: { Authorization: `Bearer ${accessToken}` } }
       );
-      
-      if (response.ok) {
-        return await response.text();
-      }
+      if (response.ok) return await response.text();
     }
-    
-    // Para PDFs y otros archivos - obtener contenido directo
+
     if (mimeType === "application/pdf" || mimeType.startsWith("text/")) {
       const response = await fetch(
         `https://www.googleapis.com/drive/v3/files/${fileId}?alt=media`,
-        {
-          headers: {
-            Authorization: `Bearer ${accessToken}`
-          }
-        }
+        { headers: { Authorization: `Bearer ${accessToken}` } }
       );
-      
-      if (response.ok) {
-        return await response.text();
-      }
+      if (response.ok) return await response.text();
     }
-    
+
     return "";
   } catch (error) {
-    console.error(`Error extracting content from file ${fileId}:`, error);
+    console.error(`[import-from-drive] extract error for ${fileId}:`, error);
     return "";
   }
 }
 
-// Analizar todos los archivos con IA y generar estructura de proyecto
-async function analyzeFilesWithAI(fileContents: FileContent[]): Promise<any> {
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  
-  if (!apiKey) {
-    throw new Error("ANTHROPIC_API_KEY no configurada");
+// ─── Smart file filtering (Sprint K5.2 + Sprint Audit enhancements) ─────────
+
+const BUSINESS_MIMES = [
+  "application/vnd.google-apps.document",
+  "application/vnd.google-apps.presentation",
+  "application/vnd.google-apps.spreadsheet",
+  "application/pdf",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "text/plain",
+  "text/markdown",
+];
+
+const CODE_EXTENSIONS = [
+  ".js", ".ts", ".tsx", ".jsx", ".py", ".rb", ".php", ".java", ".swift",
+  ".kt", ".go", ".rs", ".css", ".scss", ".html", ".vue", ".svelte",
+];
+
+const IGNORED_PATTERNS = [
+  "node_modules", ".git", ".next", "dist", "build", "__pycache__", ".cache",
+  "package-lock.json", "yarn.lock", "tsconfig", "webpack", ".env",
+  ".gitignore", ".eslint", ".prettier", "babel", "vite.config",
+  "next.config", "tailwind.config", "postcss", "dockerfile", "docker-compose",
+];
+
+const HIGH_PRIORITY_KEYWORDS = [
+  "brief", "plan", "propuesta", "análisis", "analisis", "roadmap", "spec",
+  "estrategia", "presupuesto", "budget", "modelo", "model", "pitch",
+  "resumen", "summary", "requirements", "requisitos", "scope", "alcance",
+  "timeline", "cronograma", "milestones", "hitos", "mercado", "market",
+  "cliente", "customer", "business", "negocio", "revenue", "pricing",
+];
+
+interface DriveFile {
+  id: string;
+  name: string;
+  path: string;
+  mimeType: string;
+  modifiedTime?: string;
+  size?: number;
+  webViewLink?: string;
+}
+
+function smartFilter(files: DriveFile[]): DriveFile[] {
+  const isCodeProject = files.some(
+    (f) =>
+      f.name === "README.md" ||
+      f.name === "package.json" ||
+      CODE_EXTENSIONS.some((ext) => f.name.toLowerCase().endsWith(ext))
+  );
+
+  const maxBusiness = 50;
+  const maxCode = isCodeProject ? 20 : 0;
+
+  const business: Array<DriveFile & { priority: number }> = [];
+  const code: DriveFile[] = [];
+
+  for (const file of files) {
+    const name = file.name.toLowerCase();
+    const mime = file.mimeType || "";
+
+    // Skip folders, media, ignored patterns
+    if (
+      mime.includes("folder") ||
+      mime.startsWith("image/") ||
+      mime.startsWith("video/") ||
+      mime.startsWith("audio/") ||
+      IGNORED_PATTERNS.some((p) => name.includes(p.toLowerCase()))
+    ) {
+      continue;
+    }
+
+    const isBusiness = BUSINESS_MIMES.some((bm) => mime.includes(bm.split(".").pop() || bm));
+    const isCode = CODE_EXTENSIONS.some((ext) => name.endsWith(ext));
+    const hasKeyword = HIGH_PRIORITY_KEYWORDS.some((kw) => name.includes(kw));
+
+    if (isBusiness || name.endsWith(".md") || name.endsWith(".txt")) {
+      let priority = 2; // medium
+      if (hasKeyword) priority = 3; // high
+      if (mime.includes("spreadsheet")) priority = 1; // lower
+      business.push({ ...file, priority });
+    } else if (isCode && isCodeProject) {
+      // For code projects, prioritize README, configs, docs
+      if (name === "readme.md" || name.endsWith(".md") || name.includes("doc")) {
+        business.push({ ...file, priority: 3 });
+      } else {
+        code.push(file);
+      }
+    }
   }
-  
+
+  // Sort business by priority desc, then by recency
+  business.sort((a, b) => {
+    if (b.priority !== a.priority) return b.priority - a.priority;
+    const aTime = a.modifiedTime ? new Date(a.modifiedTime).getTime() : 0;
+    const bTime = b.modifiedTime ? new Date(b.modifiedTime).getTime() : 0;
+    return bTime - aTime;
+  });
+
+  const selected = [
+    ...business.slice(0, maxBusiness),
+    ...code.slice(0, maxCode),
+  ];
+
+  // If total > 70, trim by keeping highest priority
+  if (selected.length > 70) {
+    return selected.slice(0, 70);
+  }
+
+  return selected;
+}
+
+// ─── Analyze files with Gemini ───────────────────────────────────────────────
+
+async function analyzeFilesWithGemini(fileContents: FileContent[]): Promise<Record<string, unknown>> {
   const filesDescription = fileContents
-    .map((file) => `
-### ${file.name} (${file.path})
-Tipo: ${file.mimeType}
-Contenido:
-${file.content.substring(0, 2000)}${file.content.length > 2000 ? "..." : ""}
-`)
+    .map(
+      (file) =>
+        `### ${file.name} (${file.path})\nTipo: ${file.mimeType}\nContenido:\n${file.content.substring(0, 8000)}`
+    )
     .join("\n\n");
-  
-  const systemPrompt = `Eres un experto analista de proyectos empresariales. Tu tarea es analizar una colección de documentos de una carpeta y estructurarlos en un proyecto siguiendo este framework de 5 pasos:
 
-1. CONCEPT (Concepto):
-   - Idea principal
-   - Problema que resuelve
-   - Solución propuesta
-   - Propuesta de valor
+  const systemPrompt = `Eres un experto analista de proyectos empresariales. Analiza documentos de una carpeta y estructúralos en un proyecto.
 
-2. MARKET (Mercado):
-   - Target/Público objetivo
-   - Tamaño de mercado
-   - Tendencias
-   - Competidores
+REGLA: Devuelve SOLO JSON válido. Sin markdown, sin texto extra.`;
 
-3. MODEL (Modelo de Negocio):
-   - Fuentes de ingresos
-   - Estructura de costos
-   - Canales de distribución
-   - Recursos clave
-
-4. ACTION (Plan de Acción):
-   - Hitos principales
-   - Timeline
-   - Tareas prioritarias
-   - Métricas de éxito
-
-5. RESOURCES (Recursos):
-   - Equipo necesario
-   - Herramientas y tecnología
-   - Presupuesto
-   - Partners/colaboradores
-
-DEBES responder SOLO con un objeto JSON válido con esta estructura exacta:
+  const userPrompt = `Analiza estos documentos y genera un objeto JSON con esta estructura exacta:
 
 {
   "title": "Título del proyecto",
-  "description": "Descripción breve del proyecto",
+  "description": "Descripción breve",
   "category": "startup|product|service|research|other",
   "tags": ["tag1", "tag2", "tag3"],
   "concept": {
-    "idea": "Idea principal extraída",
+    "idea": "Idea principal",
     "problem": "Problema identificado",
     "solution": "Solución propuesta",
     "value": "Propuesta de valor"
@@ -129,8 +190,8 @@ DEBES responder SOLO con un objeto JSON válido con esta estructura exacta:
   "market": {
     "target": "Público objetivo",
     "size": "Tamaño de mercado",
-    "trends": "Tendencias relevantes",
-    "competitors": "Competidores principales"
+    "trends": "Tendencias",
+    "competitors": "Competidores"
   },
   "model": {
     "revenue": "Fuentes de ingresos",
@@ -146,209 +207,146 @@ DEBES responder SOLO con un objeto JSON válido con esta estructura exacta:
   },
   "resourcesPlan": {
     "team": "Equipo necesario",
-    "tools": "Herramientas y tecnología",
-    "budget": "Presupuesto estimado",
-    "partners": "Partners/colaboradores"
+    "tools": "Herramientas",
+    "budget": "Presupuesto",
+    "partners": "Partners"
   },
-  "extractedNotes": [
-    {"title": "Título nota 1", "content": "Contenido relevante extraído"},
-    {"title": "Título nota 2", "content": "Contenido relevante extraído"}
-  ],
-  "extractedLinks": [
-    {"url": "https://example.com", "title": "Título del link", "description": "Descripción"}
-  ]
-}`;
-  
-  const userPrompt = `Analiza los siguientes documentos de una carpeta de Drive y genera una estructura de proyecto completa:\n\n${filesDescription}\n\nRecuerda: responde SOLO con el objeto JSON, sin texto adicional.`;
-  
-  // Llamada a Claude API
-  const response = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": apiKey,
-      "anthropic-version": "2023-06-01"
-    },
-    body: JSON.stringify({
-      model: "claude-sonnet-4-5-20250929",
-      max_tokens: 4000,
-      system: systemPrompt,
-      messages: [
-        { role: "user", content: userPrompt }
-      ]
-    })
+  "extractedNotes": [{"title": "...", "content": "..."}],
+  "extractedLinks": [{"url": "...", "title": "...", "description": "..."}]
+}
+
+DOCUMENTOS:
+${filesDescription}
+
+Responde SOLO con el JSON.`;
+
+  const response = await callLLM({
+    model: "gemini-pro",
+    systemPrompt,
+    userPrompt,
+    jsonMode: true,
+    maxTokens: 4096,
+    temperature: 0.5,
   });
-  
-  if (!response.ok) {
-    const errorText = await response.text();
-    console.error("Claude API error:", errorText);
-    throw new Error("Error al analizar con Claude");
-  }
-  
-  const data = await response.json();
-  const content = data.content?.[0]?.text || "";
-  
-  // Extraer JSON del contenido
-  const jsonMatch = content.match(/```json\n([\s\S]*?)\n```/) || content.match(/\{[\s\S]*\}/);
-  
+
+  const jsonMatch = response.content.match(/\{[\s\S]*\}/);
   if (!jsonMatch) {
-    throw new Error("No se pudo extraer JSON de la respuesta de IA");
+    throw new Error("No se pudo extraer JSON de la respuesta de Gemini");
   }
-  
-  const jsonStr = jsonMatch[1] || jsonMatch[0];
-  return JSON.parse(jsonStr);
+
+  return JSON.parse(jsonMatch[0]);
 }
 
-// Palabras clave de alta prioridad para documentos de negocio
-const HIGH_PRIORITY_KEYWORDS = [
-  'brief', 'plan', 'propuesta', 'análisis', 'analisis', 'roadmap', 'spec',
-  'estrategia', 'presupuesto', 'budget', 'modelo', 'model', 'pitch',
-  'resumen', 'summary', 'requirements', 'requisitos', 'scope', 'alcance',
-  'timeline', 'cronograma', 'milestones', 'hitos', 'competencia', 'competitor',
-  'mercado', 'market', 'cliente', 'customer', 'persona', 'user', 'business',
-  'negocio', 'revenue', 'ingresos', 'costs', 'costos', 'pricing', 'precios'
-];
-
-// Extensiones/tipos a ignorar (archivos de desarrollo)
-const IGNORED_PATTERNS = [
-  // Código fuente
-  '.js', '.ts', '.tsx', '.jsx', '.py', '.rb', '.php', '.java', '.swift', '.kt',
-  '.css', '.scss', '.sass', '.less', '.html', '.vue', '.svelte',
-  // Configuración
-  'package.json', 'package-lock.json', 'yarn.lock', 'tsconfig', 'webpack',
-  '.env', '.gitignore', '.eslint', '.prettier', 'babel', 'vite.config',
-  'next.config', 'tailwind.config', 'postcss', 'dockerfile', 'docker-compose',
-  // Carpetas de desarrollo
-  'node_modules', '.git', '.next', 'dist', 'build', '__pycache__', '.cache'
-];
-
-function prioritizeFiles(files: any[]): any[] {
-  // Separar por prioridad
-  const highPriority: any[] = [];
-  const mediumPriority: any[] = [];
-  const lowPriority: any[] = [];
-  
-  for (const file of files) {
-    const name = file.name.toLowerCase();
-    const mimeType = file.mimeType || '';
-    
-    // Ignorar carpetas, media y archivos de desarrollo
-    if (mimeType.includes('folder') ||
-        mimeType.startsWith('image/') ||
-        mimeType.startsWith('video/') ||
-        mimeType.startsWith('audio/') ||
-        IGNORED_PATTERNS.some(pattern => name.includes(pattern.toLowerCase()))) {
-      continue;
-    }
-    
-    // Alta prioridad: Google Docs, PDFs, Presentations con palabras clave
-    const isGoogleDoc = mimeType.includes('document') || mimeType.includes('presentation');
-    const isPDF = mimeType === 'application/pdf';
-    const hasKeyword = HIGH_PRIORITY_KEYWORDS.some(kw => name.includes(kw));
-    
-    if ((isGoogleDoc || isPDF) && hasKeyword) {
-      highPriority.push(file);
-    } else if (isGoogleDoc || isPDF) {
-      mediumPriority.push(file);
-    } else if (mimeType.includes('spreadsheet')) {
-      // Hojas de cálculo - prioridad media
-      mediumPriority.push(file);
-    } else if (name.endsWith('.md') || name.endsWith('.txt')) {
-      // Markdown y texto - pueden tener contexto útil
-      lowPriority.push(file);
-    }
-  }
-  
-  // Combinar manteniendo orden de prioridad
-  return [...highPriority, ...mediumPriority, ...lowPriority];
-}
+// ─── POST: Analyze Drive folder ──────────────────────────────────────────────
 
 export async function POST(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
-    
+
     if (!session?.user) {
-      return NextResponse.json({ 
-        error: "No autenticado",
-        needsGoogleAuth: true 
-      }, { status: 401 });
+      return NextResponse.json(
+        { error: "No autenticado", needsGoogleAuth: true },
+        { status: 401 }
+      );
     }
-    
+
     const accessToken = (session.user as any).accessToken;
-    
     if (!accessToken) {
-      return NextResponse.json({ 
-        error: "Token de Google no disponible",
-        needsGoogleAuth: true 
-      }, { status: 401 });
+      return NextResponse.json(
+        { error: "Token de Google no disponible", needsGoogleAuth: true },
+        { status: 401 }
+      );
     }
-    
+
     const { files, folderName } = await request.json();
-    
+
     if (!files || !Array.isArray(files)) {
-      return NextResponse.json({ error: "Archivos no proporcionados" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Archivos no proporcionados", stage: "filter" },
+        { status: 400 }
+      );
     }
-    
-    // Filtrar y priorizar archivos inteligentemente
-    const prioritizedFiles = prioritizeFiles(files);
-    
-    // Extraer contenido de cada archivo (máximo 50 archivos priorizados)
+
+    // Smart filter
+    const filtered = smartFilter(files);
+    console.log(
+      `[import-from-drive] Smart filter: ${files.length} archivos → ${filtered.length} seleccionados`
+    );
+
+    // Extract content (truncated to 8000 chars each)
     const fileContents: FileContent[] = [];
-    const maxFiles = Math.min(prioritizedFiles.length, 50);
-    
-    for (let i = 0; i < maxFiles; i++) {
-      const file = prioritizedFiles[i];
-      const content = await extractFileContent(file.id, file.mimeType, accessToken);
-      
-      if (content) {
-        fileContents.push({
-          name: file.name,
-          path: file.path,
-          mimeType: file.mimeType,
-          content,
-          url: file.webViewLink
-        });
+    for (const file of filtered) {
+      try {
+        const content = await extractFileContent(file.id, file.mimeType, accessToken);
+        if (content) {
+          fileContents.push({
+            name: file.name,
+            path: file.path,
+            mimeType: file.mimeType,
+            content: content.substring(0, 8000),
+            url: file.webViewLink,
+          });
+        }
+      } catch (err) {
+        console.warn(`[import-from-drive] extract skip ${file.name}:`, err);
       }
     }
-    
+
     if (fileContents.length === 0) {
-      return NextResponse.json({ 
-        error: "No se pudo extraer contenido de ningún archivo" 
-      }, { status: 400 });
+      return NextResponse.json(
+        { error: "No se pudo extraer contenido de ningun archivo", stage: "extract" },
+        { status: 400 }
+      );
     }
-    
-    // Analizar con IA
-    const projectStructure = await analyzeFilesWithAI(fileContents);
-    
-    // Añadir información de la carpeta original
+
+    // Analyze with Gemini
+    let projectStructure: Record<string, unknown>;
+    try {
+      projectStructure = await analyzeFilesWithGemini(fileContents);
+    } catch (llmErr) {
+      console.error("[import-from-drive] llm:", llmErr);
+      return NextResponse.json(
+        {
+          error: "Error al analizar la carpeta",
+          stage: "llm",
+          details: llmErr instanceof Error ? llmErr.message : String(llmErr),
+        },
+        { status: 500 }
+      );
+    }
+
     projectStructure.sourceFolderName = folderName;
     projectStructure.totalFilesProcessed = fileContents.length;
     projectStructure.totalFilesInFolder = files.length;
-    
-    return NextResponse.json({
-      success: true,
-      projectStructure
-    });
-    
+
+    return NextResponse.json({ success: true, projectStructure });
   } catch (error) {
-    console.error("Error importing from Drive:", error);
-    return NextResponse.json({ 
-      error: error instanceof Error ? error.message : "Error al importar desde Drive" 
-    }, { status: 500 });
+    console.error("[import-from-drive] general:", error);
+    return NextResponse.json(
+      {
+        error: error instanceof Error ? error.message : "Error al importar desde Drive",
+        stage: "general",
+        details: error instanceof Error ? error.message : String(error),
+      },
+      { status: 500 }
+    );
   }
 }
 
-// Endpoint para confirmar y crear el proyecto
+// ─── PUT: Create project from analyzed structure ─────────────────────────────
+
 export async function PUT(request: NextRequest) {
   try {
     const userId = await getDefaultUserId();
     const { projectStructure } = await request.json();
-    
+
     if (!projectStructure) {
-      return NextResponse.json({ error: "Estructura de proyecto no proporcionada" }, { status: 400 });
+      return NextResponse.json(
+        { error: "Estructura de proyecto no proporcionada" },
+        { status: 400 }
+      );
     }
-    
-    // Crear el proyecto con campos que coinciden con el schema
+
     const project = await prisma.project.create({
       data: {
         userId,
@@ -357,54 +355,43 @@ export async function PUT(request: NextRequest) {
         category: projectStructure.category || "other",
         tags: projectStructure.tags || [],
         status: "idea",
-        progress: 20, // Ya tiene información inicial
+        progress: 20,
         priority: "medium",
-        
-        // Step 1: Concept
-        concept: `${projectStructure.concept?.idea || ''}\n\n${projectStructure.concept?.solution || ''}`,
-        problemSolved: `${projectStructure.concept?.problem || ''}\n\nPropuesta de valor: ${projectStructure.concept?.value || ''}`,
-        
-        // Step 2: Market
-        targetMarket: `${projectStructure.market?.target || ''}\n\nTamaño: ${projectStructure.market?.size || ''}`,
-        marketValidation: `Tendencias: ${projectStructure.market?.trends || ''}\n\nCompetidores: ${projectStructure.market?.competitors || ''}`,
-        
-        // Step 3: Business Model
-        businessModel: `Ingresos: ${projectStructure.model?.revenue || ''}\n\nCostos: ${projectStructure.model?.costs || ''}`,
-        valueProposition: `Canales: ${projectStructure.model?.channels || ''}\n\nRecursos clave: ${projectStructure.model?.resources || ''}`,
-        
-        // Step 4: Action Plan
-        actionPlan: projectStructure.action?.tasks || '',
-        milestones: `${projectStructure.action?.milestones || ''}\n\nTimeline: ${projectStructure.action?.timeline || ''}`,
-        
-        // Step 5: Resources
-        resources: `Equipo: ${projectStructure.resourcesPlan?.team || ''}\n\nHerramientas: ${projectStructure.resourcesPlan?.tools || ''}\n\nPresupuesto: ${projectStructure.resourcesPlan?.budget || ''}`,
-        metrics: `${projectStructure.action?.metrics || ''}\n\nPartners: ${projectStructure.resourcesPlan?.partners || ''}`,
-        
-        currentStep: 5 // Ha completado la estructura inicial
-      }
+        concept: `${projectStructure.concept?.idea || ""}\n\n${projectStructure.concept?.solution || ""}`,
+        problemSolved: `${projectStructure.concept?.problem || ""}\n\nPropuesta de valor: ${projectStructure.concept?.value || ""}`,
+        targetMarket: `${projectStructure.market?.target || ""}\n\nTamaño: ${projectStructure.market?.size || ""}`,
+        marketValidation: `Tendencias: ${projectStructure.market?.trends || ""}\n\nCompetidores: ${projectStructure.market?.competitors || ""}`,
+        businessModel: `Ingresos: ${projectStructure.model?.revenue || ""}\n\nCostos: ${projectStructure.model?.costs || ""}`,
+        valueProposition: `Canales: ${projectStructure.model?.channels || ""}\n\nRecursos clave: ${projectStructure.model?.resources || ""}`,
+        actionPlan: projectStructure.action?.tasks || "",
+        milestones: `${projectStructure.action?.milestones || ""}\n\nTimeline: ${projectStructure.action?.timeline || ""}`,
+        resources: `Equipo: ${projectStructure.resourcesPlan?.team || ""}\n\nHerramientas: ${projectStructure.resourcesPlan?.tools || ""}\n\nPresupuesto: ${projectStructure.resourcesPlan?.budget || ""}`,
+        metrics: `${projectStructure.action?.metrics || ""}\n\nPartners: ${projectStructure.resourcesPlan?.partners || ""}`,
+        currentStep: 5,
+      },
     });
-    
-    // Crear notas extraídas
-    if (projectStructure.extractedNotes && projectStructure.extractedNotes.length > 0) {
+
+    // Create extracted notes
+    if (projectStructure.extractedNotes?.length > 0) {
       await Promise.all(
-        projectStructure.extractedNotes.map((note: any) =>
+        projectStructure.extractedNotes.map((note: { title: string; content: string }) =>
           prisma.note.create({
             data: {
               userId,
               projectId: project.id,
               title: note.title,
               content: note.content,
-              tags: []
-            }
+              tags: [],
+            },
           })
         )
       );
     }
-    
-    // Crear links extraídos
-    if (projectStructure.extractedLinks && projectStructure.extractedLinks.length > 0) {
+
+    // Create extracted links
+    if (projectStructure.extractedLinks?.length > 0) {
       await Promise.all(
-        projectStructure.extractedLinks.map((link: any) =>
+        projectStructure.extractedLinks.map((link: { url: string; title: string; description: string }) =>
           prisma.link.create({
             data: {
               userId,
@@ -412,22 +399,19 @@ export async function PUT(request: NextRequest) {
               url: link.url,
               title: link.title,
               description: link.description,
-              tags: []
-            }
+              tags: [],
+            },
           })
         )
       );
     }
-    
-    return NextResponse.json({
-      success: true,
-      project
-    });
-    
+
+    return NextResponse.json({ success: true, project });
   } catch (error) {
-    console.error("Error creating project:", error);
-    return NextResponse.json({ 
-      error: "Error al crear el proyecto" 
-    }, { status: 500 });
+    console.error("[import-from-drive] create:", error);
+    return NextResponse.json(
+      { error: "Error al crear el proyecto" },
+      { status: 500 }
+    );
   }
 }

@@ -1,10 +1,16 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { GoogleGenAI } from "@google/genai";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 120;
 
-type DocumentType = "business_plan" | "pitch_deck" | "executive_summary" | "competitor_report" | "market_analysis";
+type DocumentType =
+  | "business_plan"
+  | "pitch_deck"
+  | "executive_summary"
+  | "competitor_report"
+  | "market_analysis";
 
 interface DocumentRequest {
   projectId: string;
@@ -17,270 +23,44 @@ const documentTemplates: Record<DocumentType, { title: string; prompt: string }>
     prompt: `Genera un Plan de Negocios completo y profesional con las siguientes secciones:
 
 1. **Resumen Ejecutivo**
-   - Visión general del negocio
-   - Propuesta de valor
-   - Objetivos principales
-
 2. **Descripción del Negocio**
-   - Misión y visión
-   - Modelo de negocio
-   - Estructura legal recomendada
-
 3. **Análisis de Mercado**
-   - Tamaño del mercado
-   - Tendencias
-   - Segmentación de clientes
-
 4. **Análisis Competitivo**
-   - Competidores principales
-   - Ventajas competitivas
-   - Posicionamiento
-
 5. **Estrategia de Marketing y Ventas**
-   - Estrategia de precios
-   - Canales de distribución
-   - Plan de promoción
-
 6. **Plan Operativo**
-   - Procesos clave
-   - Recursos necesarios
-   - Proveedores
-
 7. **Equipo y Organización**
-   - Estructura organizacional
-   - Roles clave
-   - Plan de contratación
-
 8. **Plan Financiero**
-   - Proyecciones de ingresos (3 años)
-   - Estructura de costos
-   - Punto de equilibrio
-   - Necesidades de financiamiento
-
 9. **Análisis de Riesgos**
-   - Riesgos identificados
-   - Estrategias de mitigación
-
-10. **Hoja de Ruta**
-    - Hitos principales
-    - Timeline de implementación`
+10. **Hoja de Ruta**`,
   },
   pitch_deck: {
     title: "Contenido para Pitch Deck",
     prompt: `Genera el contenido para un Pitch Deck de 10-12 slides:
-
-**Slide 1: Portada**
-- Nombre del proyecto
-- Tagline impactante
-
-**Slide 2: El Problema**
-- Problema que resolvemos
-- Dolor del cliente
-- Magnitud del problema
-
-**Slide 3: La Solución**
-- Nuestra propuesta
-- Cómo resolvemos el problema
-- Beneficios clave
-
-**Slide 4: Producto/Servicio**
-- Descripción detallada
-- Características principales
-- Screenshots/mockups sugeridos
-
-**Slide 5: Modelo de Negocio**
-- Cómo generamos ingresos
-- Pricing
-- Unit economics
-
-**Slide 6: Mercado**
-- TAM, SAM, SOM
-- Crecimiento del mercado
-- Tendencias
-
-**Slide 7: Competencia**
-- Panorama competitivo
-- Nuestra diferenciación
-- Ventajas competitivas
-
-**Slide 8: Tracción**
-- Métricas actuales (o proyectadas)
-- Hitos alcanzados
-- Testimonios/casos de éxito
-
-**Slide 9: Equipo**
-- Fundadores y roles
-- Experiencia relevante
-- Advisors
-
-**Slide 10: Financieros**
-- Proyecciones de ingresos
-- Runway actual
-- Métricas clave
-
-**Slide 11: El Ask**
-- Cuánto necesitamos
-- Uso de fondos
-- Términos
-
-**Slide 12: Contacto**
-- Información de contacto
-- Call to action`
+Slide 1: Portada — Slide 2: El Problema — Slide 3: La Solución — Slide 4: Producto/Servicio —
+Slide 5: Modelo de Negocio — Slide 6: Mercado — Slide 7: Competencia — Slide 8: Tracción —
+Slide 9: Equipo — Slide 10: Financieros — Slide 11: El Ask — Slide 12: Contacto`,
   },
   executive_summary: {
     title: "Resumen Ejecutivo",
     prompt: `Genera un Resumen Ejecutivo de 1-2 páginas que incluya:
-
-**1. Visión General del Negocio** (1 párrafo)
-- Qué hacemos y para quién
-
-**2. El Problema** (1 párrafo)
-- Problema que resolvemos
-- Por qué es importante
-
-**3. Nuestra Solución** (1-2 párrafos)
-- Cómo lo resolvemos
-- Propuesta de valor única
-
-**4. Oportunidad de Mercado** (1 párrafo)
-- Tamaño del mercado
-- Potencial de crecimiento
-
-**5. Modelo de Negocio** (1 párrafo)
-- Cómo generamos dinero
-- Principales fuentes de ingreso
-
-**6. Ventaja Competitiva** (1 párrafo)
-- Qué nos hace diferentes
-- Barreras de entrada
-
-**7. Estado Actual y Tracción** (1 párrafo)
-- Dónde estamos
-- Logros hasta la fecha
-
-**8. Equipo** (1 párrafo)
-- Quiénes somos
-- Por qué estamos calificados
-
-**9. Necesidades de Financiamiento** (1 párrafo)
-- Cuánto necesitamos
-- Para qué lo usaremos
-
-**10. Proyecciones** (datos clave)
-- Revenue proyectado
-- Métricas de crecimiento`
+1. Visión General — 2. El Problema — 3. Nuestra Solución — 4. Oportunidad de Mercado —
+5. Modelo de Negocio — 6. Ventaja Competitiva — 7. Estado Actual — 8. Equipo —
+9. Necesidades de Financiamiento — 10. Proyecciones`,
   },
   competitor_report: {
     title: "Informe de Competencia",
     prompt: `Genera un Informe de Análisis Competitivo detallado:
-
-**1. Resumen Ejecutivo**
-- Panorama competitivo general
-- Principales hallazgos
-
-**2. Metodología de Análisis**
-- Criterios de selección de competidores
-- Fuentes de información
-
-**3. Competidores Directos** (3-5 empresas)
-Para cada uno:
-- Nombre y descripción
-- Productos/servicios
-- Modelo de negocio
-- Fortalezas
-- Debilidades
-- Precios
-- Market share estimado
-
-**4. Competidores Indirectos** (2-3 empresas)
-- Alternativas que resuelven el mismo problema
-- Análisis breve de cada uno
-
-**5. Matriz Comparativa**
-- Tabla de características
-- Comparación de precios
-- Comparación de valor
-
-**6. Análisis de Posicionamiento**
-- Mapa de posicionamiento
-- Espacios no atendidos
-
-**7. Tendencias Competitivas**
-- Hacia dónde va el mercado
-- Movimientos recientes de competidores
-
-**8. Oportunidades de Diferenciación**
-- Espacios donde podemos destacar
-- Nichos desatendidos
-
-**9. Amenazas y Riesgos**
-- Riesgos competitivos
-- Barreras de entrada
-
-**10. Recomendaciones Estratégicas**
-- Acciones concretas
-- Prioridades`
+1. Resumen Ejecutivo — 2. Metodología — 3. Competidores Directos (3-5) — 4. Competidores Indirectos —
+5. Matriz Comparativa — 6. Posicionamiento — 7. Tendencias — 8. Oportunidades de Diferenciación —
+9. Amenazas — 10. Recomendaciones Estratégicas`,
   },
   market_analysis: {
     title: "Análisis de Mercado",
     prompt: `Genera un Análisis de Mercado completo:
-
-**1. Resumen Ejecutivo**
-- Principales hallazgos
-- Oportunidad identificada
-
-**2. Definición del Mercado**
-- Alcance del mercado
-- Segmentos incluidos
-
-**3. Tamaño del Mercado**
-- TAM (Total Addressable Market)
-- SAM (Serviceable Available Market)
-- SOM (Serviceable Obtainable Market)
-- Metodología de cálculo
-
-**4. Crecimiento del Mercado**
-- Tasa de crecimiento histórica
-- Proyecciones futuras
-- Drivers de crecimiento
-
-**5. Tendencias del Mercado**
-- Tendencias tecnológicas
-- Tendencias de consumo
-- Tendencias regulatorias
-
-**6. Análisis de la Demanda**
-- Perfil del cliente ideal
-- Comportamiento de compra
-- Necesidades no satisfechas
-
-**7. Segmentación del Mercado**
-- Segmentos identificados
-- Características de cada segmento
-- Tamaño de cada segmento
-
-**8. Análisis de Precios**
-- Rangos de precios del mercado
-- Disposición a pagar
-- Estrategias de precios de competidores
-
-**9. Canales de Distribución**
-- Canales principales
-- Tendencias en distribución
-
-**10. Barreras de Entrada**
-- Barreras identificadas
-- Requisitos regulatorios
-- Capital necesario
-
-**11. Factores de Éxito**
-- Factores críticos
-- Mejores prácticas
-
-**12. Conclusiones y Recomendaciones**
-- Oportunidad validada
-- Próximos pasos recomendados`
-  }
+1. Resumen — 2. Definición del Mercado — 3. TAM/SAM/SOM — 4. Crecimiento — 5. Tendencias —
+6. Análisis de Demanda — 7. Segmentación — 8. Precios — 9. Canales — 10. Barreras de Entrada —
+11. Factores de Éxito — 12. Conclusiones`,
+  },
 };
 
 export async function POST(request: NextRequest) {
@@ -299,8 +79,8 @@ export async function POST(request: NextRequest) {
       where: { id: projectId },
       include: {
         notes: { take: 20 },
-        links: { take: 20 }
-      }
+        links: { take: 20 },
+      },
     });
 
     if (!project) {
@@ -324,120 +104,67 @@ DESCRIPCIÓN: ${project.description || "No especificada"}
 CATEGORÍA: ${project.category || "No especificada"}
 ESTADO: ${project.status}
 
-CONCEPTO:
-${project.concept || "No definido"}
+CONCEPTO: ${project.concept || "No definido"}
+MERCADO OBJETIVO: ${project.targetMarket || "No definido"}
+MODELO DE NEGOCIO: ${project.businessModel || "No definido"}
+PLAN DE ACCIÓN: ${project.actionPlan || "No definido"}
+RECURSOS: ${project.resources || "No definidos"}
 
-MERCADO OBJETIVO:
-${project.targetMarket || "No definido"}
+NOTAS: ${project.notes.map((n: any) => `- ${n.title}: ${n.content?.substring(0, 200)}`).join("\n") || "Sin notas"}
+ENLACES: ${project.links.map((l: any) => `- ${l.title}: ${l.url}`).join("\n") || "Sin enlaces"}`;
 
-MODELO DE NEGOCIO:
-${project.businessModel || "No definido"}
-
-PLAN DE ACCIÓN:
-${project.actionPlan || "No definido"}
-
-RECURSOS:
-${project.resources || "No definidos"}
-
-NOTAS DEL PROYECTO:
-${project.notes.map((n: any) => `- ${n.title}: ${n.content?.substring(0, 200)}...`).join("\n") || "Sin notas"}
-
-ENLACES GUARDADOS:
-${project.links.map((l: any) => `- ${l.title}: ${l.url}`).join("\n") || "Sin enlaces"}
-`;
-
-    const systemPrompt = `Eres un consultor de negocios senior con más de 25 años de experiencia. Tu tarea es generar documentos profesionales de alta calidad basados en la información del proyecto proporcionada.
-
-Responde siempre en español. El documento debe ser:
-- Profesional y listo para presentar
-- Basado en la información real del proyecto
-- Completo pero conciso
-- Orientado a la acción
-
-Si falta información crítica, haz suposiciones razonables basadas en el contexto e indícalo claramente.`;
+    const systemPrompt = `Eres un consultor de negocios senior con más de 25 años de experiencia. Genera documentos profesionales de alta calidad basados en la información del proyecto. Responde siempre en español. Si falta información, haz suposiciones razonables e indícalo.`;
 
     const userMessage = `${template.prompt}\n\nINFORMACIÓN DEL PROYECTO:\n${projectContext}`;
 
-    // Llamada a Claude API con streaming
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        "x-api-key": process.env.ANTHROPIC_API_KEY || "",
-        "anthropic-version": "2023-06-01"
-      },
-      body: JSON.stringify({
-        model: "claude-sonnet-4-5-20250929",
-        max_tokens: 8000,
-        stream: true,
-        system: systemPrompt,
-        messages: [
-          { role: "user", content: userMessage }
-        ]
-      })
-    });
-
-    if (!response.ok) {
-      const errorText = await response.text();
-      console.error("Claude API error:", errorText);
-      throw new Error("Error en la API de Claude");
+    // Gemini streaming
+    const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+    if (!apiKey) {
+      throw new Error("GOOGLE_GENERATIVE_AI_API_KEY no configurada");
     }
 
-    // Stream the response - adaptar formato Anthropic
+    const ai = new GoogleGenAI({ apiKey });
+    const fullPrompt = `${systemPrompt}\n\n${userMessage}`;
+
     const stream = new ReadableStream({
       async start(controller) {
-        const reader = response.body?.getReader();
-        const decoder = new TextDecoder();
         const encoder = new TextEncoder();
-
         try {
-          let buffer = "";
-          while (reader) {
-            const { done, value } = await reader.read();
-            if (done) break;
-            
-            buffer += decoder.decode(value, { stream: true });
-            const lines = buffer.split("\n");
-            buffer = lines.pop() || "";
-            
-            for (const line of lines) {
-              if (line.startsWith("data: ")) {
-                const data = line.slice(6);
-                if (data === "[DONE]") continue;
-                
-                try {
-                  const parsed = JSON.parse(data);
-                  if (parsed.type === "content_block_delta" && parsed.delta?.text) {
-                    const openAIFormat = {
-                      choices: [{ delta: { content: parsed.delta.text } }]
-                    };
-                    controller.enqueue(encoder.encode(`data: ${JSON.stringify(openAIFormat)}\n\n`));
-                  }
-                } catch (e) {
-                  // Ignorar líneas que no son JSON válido
-                }
-              }
+          const streamIter = await ai.models.generateContentStream({
+            model: "gemini-3.1-pro-preview",
+            contents: fullPrompt,
+            config: { maxOutputTokens: 8192, temperature: 0.7 },
+          });
+
+          for await (const chunk of streamIter) {
+            const text = chunk.text || "";
+            if (text) {
+              const openAIFormat = {
+                choices: [{ delta: { content: text } }],
+              };
+              controller.enqueue(
+                encoder.encode(`data: ${JSON.stringify(openAIFormat)}\n\n`)
+              );
             }
           }
         } catch (error) {
-          console.error("Stream error:", error);
+          console.error("[ai/documents] stream error:", error);
           controller.error(error);
         } finally {
           controller.close();
         }
-      }
+      },
     });
 
     return new Response(stream, {
       headers: {
         "Content-Type": "text/event-stream",
         "Cache-Control": "no-cache",
-        "Connection": "keep-alive"
-      }
+        Connection: "keep-alive",
+      },
     });
-
   } catch (error) {
-    console.error("Document generation error:", error);
+    console.error("[ai/documents] error:", error);
     return NextResponse.json(
       { success: false, error: "Error al generar el documento" },
       { status: 500 }
