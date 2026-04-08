@@ -5,6 +5,7 @@
 
 import { EXPERTS } from "@/components/expert-panel/experts-data";
 import { callLLM } from "@/lib/clients/llm";
+import { prisma } from "@/lib/db";
 import { getAgentConfig } from "./agents";
 import { getRequiredSkills, researchSkill, inspirationSkill, crossValidationSkill } from "./skills";
 import { buildAgentPrompt } from "./prompts";
@@ -78,6 +79,32 @@ export async function routeToAgent(
   const skillsUsed = skillResults
     .filter((r) => r !== null && r.data)
     .map((r) => r!.skill);
+
+  // ── 2b. Inject cross-portfolio context for strategist ────────────────────
+  if (agentId === "strategist" && !projectMemory.portfolioContext) {
+    try {
+      const [projectCount, channelCount, prospectCount, metaProjects] = await Promise.all([
+        prisma.project.count({ where: { isArchived: false } }),
+        prisma.channel.count(),
+        prisma.prospect.count(),
+        prisma.metaProject.findMany({
+          where: { status: "active" },
+          include: { _count: { select: { components: true } } },
+        }),
+      ]);
+      projectMemory.portfolioContext = {
+        totalProjects: projectCount,
+        totalChannels: channelCount,
+        totalProspects: prospectCount,
+        metaProjects: metaProjects.map((mp) => ({
+          name: mp.name,
+          componentCount: mp._count.components,
+        })),
+      };
+    } catch (e) {
+      console.warn("[ROUTER] Failed to load portfolio context:", e);
+    }
+  }
 
   // ── 3. Build prompt ────────────────────────────────────────────────────────
   const systemPrompt = agentConfig

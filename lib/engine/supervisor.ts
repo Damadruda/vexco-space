@@ -30,7 +30,7 @@ export async function loadProjectMemory(
 
   if (!project) return null;
 
-  const [decisions, agileTasks, roadmap, conceptInsights, recentNotes, recentIdeas] =
+  const [decisions, agileTasks, roadmap, conceptInsights, recentNotes, recentIdeas, metaComponents] =
     await Promise.all([
       prisma.decisionLog.findMany({
         where: { projectId },
@@ -58,7 +58,33 @@ export async function loadProjectMemory(
         orderBy: { createdAt: "desc" },
         take: 10,
       }),
+      // Sprint M — Check if this project belongs to a MetaProject
+      prisma.metaProjectComponent.findMany({
+        where: { projectId },
+        include: {
+          metaProject: {
+            include: {
+              components: {
+                include: { project: { select: { id: true, title: true } } },
+              },
+            },
+          },
+        },
+      }),
     ]);
+
+  // Build MetaProject context if this project is part of a program
+  let metaProjectContext: Record<string, unknown> | undefined;
+  if (metaComponents.length > 0) {
+    const mp = metaComponents[0].metaProject;
+    metaProjectContext = {
+      metaProjectName: mp.name,
+      metaProjectNarrative: mp.narrative,
+      otherComponents: mp.components
+        .filter((c) => c.projectId !== projectId)
+        .map((c) => ({ title: c.project.title, role: c.role })),
+    };
+  }
 
   return {
     project,
@@ -68,6 +94,7 @@ export async function loadProjectMemory(
     conceptInsights,
     recentNotes,
     recentIdeas,
+    metaProjectContext,
     stats: {
       totalTasks: agileTasks.length,
       completedTasks: agileTasks.filter((t) => t.status === "done").length,

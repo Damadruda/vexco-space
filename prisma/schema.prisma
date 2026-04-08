@@ -49,6 +49,10 @@ model User {
   decisionLogs     DecisionLog[]
   warRoomSessions  WarRoomSession[]
   firmInsights     FirmInsight[]
+  // Sprint M — Cross-portfolio
+  channels     Channel[]
+  prospects    Prospect[]
+  metaProjects MetaProject[]
 }
 
 model Account {
@@ -214,6 +218,10 @@ model Project {
   driveDocSummaries DriveDocSummary[]
   documents         DocumentGeneration[]
   firmInsights      FirmInsight[] @relation("InsightSource")
+  // Sprint M — Cross-portfolio
+  channelLinks          ChannelProject[]
+  prospectFits          ProspectFit[]
+  metaProjectComponents MetaProjectComponent[]
 
   @@index([userId])
   @@index([status])
@@ -683,4 +691,151 @@ model FirmInsight {
   @@index([sourceProjectId])
   @@index([ownerId])
   @@index([domain])
+}
+
+// =============================================================================
+// SPRINT M — CROSS-PORTFOLIO INTELLIGENCE
+// =============================================================================
+
+model Channel {
+  id                String           @id @default(cuid())
+  name              String
+  type              String           // individual | firm | community | platform
+  reachDescription  String?          @db.Text
+  relationshipStage String           @default("cold") // cold | warm | activated | producing
+  notes             String?          @db.Text
+  ownerId           String
+  owner             User             @relation(fields: [ownerId], references: [id])
+  channelProjects   ChannelProject[]
+  prospects         Prospect[]
+  createdAt         DateTime         @default(now())
+  updatedAt         DateTime         @updatedAt
+
+  @@index([ownerId])
+}
+
+model ChannelProject {
+  id               String    @id @default(cuid())
+  channelId        String
+  projectId        String
+  fitRationale     String?   @db.Text
+  activationStatus String    @default("idle") // idle | proposed | active | producing
+  lastTouchAt      DateTime?
+  channel          Channel   @relation(fields: [channelId], references: [id], onDelete: Cascade)
+  project          Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdAt        DateTime  @default(now())
+
+  @@unique([channelId, projectId])
+  @@index([channelId])
+  @@index([projectId])
+}
+
+model Prospect {
+  id                 String        @id @default(cuid())
+  name               String
+  company            String?
+  source             String?       // referral | inbound | outbound | event | channel
+  stage              String        @default("discovery") // discovery | qualified | proposal | negotiation | won | lost
+  estimatedDealValue Float?
+  currency           String        @default("EUR")
+  notes              String?       @db.Text
+  ownerId            String
+  owner              User          @relation(fields: [ownerId], references: [id])
+  fits               ProspectFit[]
+  channelId          String?
+  channel            Channel?      @relation(fields: [channelId], references: [id])
+  createdAt          DateTime      @default(now())
+  updatedAt          DateTime      @updatedAt
+
+  @@index([ownerId])
+  @@index([channelId])
+}
+
+model ProspectFit {
+  id         String   @id @default(cuid())
+  prospectId String
+  projectId  String
+  fitScore   Int      // 0-100
+  rationale  String   @db.Text
+  isPrimary  Boolean  @default(false)
+  prospect   Prospect @relation(fields: [prospectId], references: [id], onDelete: Cascade)
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  createdAt  DateTime @default(now())
+
+  @@unique([prospectId, projectId])
+  @@index([prospectId])
+  @@index([projectId])
+}
+
+model MetaProject {
+  id               String                 @id @default(cuid())
+  name             String
+  narrative        String                 @db.Text
+  status           String                 @default("active") // active | paused | dissolved
+  affinitySnapshot Json                   // snapshot de scores al momento de instanciación
+  ownerId          String
+  owner            User                   @relation(fields: [ownerId], references: [id])
+  components       MetaProjectComponent[]
+  milestones       MetaProjectMilestone[]
+  revenueScore     Float?                 // score propio en Revenue Priority
+  createdAt        DateTime               @default(now())
+  updatedAt        DateTime               @updatedAt
+
+  @@index([ownerId])
+}
+
+model MetaProjectComponent {
+  id            String      @id @default(cuid())
+  metaProjectId String
+  projectId     String
+  role          String      @default("complement") // anchor | complement | enabler
+  metaProject   MetaProject @relation(fields: [metaProjectId], references: [id], onDelete: Cascade)
+  project       Project     @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  addedAt       DateTime    @default(now())
+
+  @@unique([metaProjectId, projectId])
+  @@index([metaProjectId])
+  @@index([projectId])
+}
+
+model MetaProjectMilestone {
+  id                  String      @id @default(cuid())
+  metaProjectId       String
+  title               String
+  description         String?     @db.Text
+  status              String      @default("pending") // pending | in_progress | done | blocked
+  dependsOnProjectIds String[]
+  dueDate             DateTime?
+  ownerId             String?
+  metaProject         MetaProject @relation(fields: [metaProjectId], references: [id], onDelete: Cascade)
+  createdAt           DateTime    @default(now())
+  updatedAt           DateTime    @updatedAt
+
+  @@index([metaProjectId])
+}
+
+model CrossPortfolioAnalysis {
+  id                   String    @id @default(cuid())
+  status               String    @default("running") // running | completed | failed
+  agentVersion         String
+  affinityMatrix       Json      // [{ projectAId, projectBId, audience, valueProp, channels, deliverables, overall, rationale }]
+  metaProjectProposals Json      // [{ name, narrative, componentProjectIds, suggestedMilestones, rationale, clusterAvgScore }]
+  channelRouting       Json      // [{ channelId, recommendedProjectIds, rationale, nextAction }]
+  prospectRouting      Json      // [{ prospectId, fits: [{ projectId, fitScore, rationale }], primaryProjectId, nextAction }]
+  triggeredBy          String
+  errorMessage         String?   @db.Text
+  createdAt            DateTime  @default(now())
+  completedAt          DateTime?
+}
+
+model RevenuePriorityEntry {
+  id           String   @id @default(cuid())
+  entityType   String   // project | metaProject
+  entityId     String
+  score        Float
+  calculatedAt DateTime @default(now())
+  rationale    String?  @db.Text
+
+  @@unique([entityType, entityId])
+  @@index([entityType])
 }

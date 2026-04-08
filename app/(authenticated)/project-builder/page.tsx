@@ -4,7 +4,7 @@ import { useState, useEffect } from "react";
 import { Header } from "@/components/ui/header";
 import { ProjectCard } from "@/components/ui/project-card";
 import { DriveProjectImporter } from "@/components/ui/drive-project-importer";
-import { Plus, FolderKanban, LayoutGrid, List, CloudDownload, ChevronDown, ChevronRight } from "lucide-react";
+import { Plus, FolderKanban, LayoutGrid, List, CloudDownload, ChevronDown, ChevronRight, ExternalLink } from "lucide-react";
 import Link from "next/link";
 import { PROJECT_TYPES, PROJECT_TYPE_ORDER, ProjectType } from "@/lib/project-types";
 
@@ -22,12 +22,34 @@ interface Project {
   currentStep: number;
 }
 
+interface MetaProject {
+  id: string;
+  name: string;
+  narrative: string;
+  status: string;
+  revenueScore: number | null;
+  components: Array<{
+    id: string;
+    role: string;
+    project: { id: string; title: string; revenueProximityScore: number | null };
+  }>;
+  milestones: Array<{ id: string; title: string; status: string }>;
+}
+
+const ROLE_BADGE: Record<string, string> = {
+  anchor: "text-[#8B7355] bg-[#FBF8F3] border-[#C5A572]/40",
+  complement: "text-[#5E5E5E] bg-[#F9F8F6] border-[#E8E4DE]",
+  enabler: "text-blue-700 bg-blue-50 border-blue-200",
+};
+
 export default function ProjectBuilderPage() {
   const [projects, setProjects] = useState<Project[]>([]);
+  const [metaProjects, setMetaProjects] = useState<MetaProject[]>([]);
   const [loading, setLoading] = useState(true);
   const [view, setView] = useState<"grid" | "list">("grid");
   const [importerOpen, setImporterOpen] = useState(false);
   const [collapsedGroups, setCollapsedGroups] = useState<Set<string>>(new Set());
+  const [expandedMeta, setExpandedMeta] = useState<Set<string>>(new Set());
 
   useEffect(() => {
     fetchProjects();
@@ -35,14 +57,28 @@ export default function ProjectBuilderPage() {
 
   const fetchProjects = async () => {
     try {
-      const res = await fetch("/api/projects");
-      const data = await res.json();
-      setProjects(data?.projects ?? []);
+      const [projRes, metaRes] = await Promise.all([
+        fetch("/api/projects"),
+        fetch("/api/meta-projects"),
+      ]);
+      const projData = await projRes.json();
+      const metaData = await metaRes.json();
+      setProjects(projData?.projects ?? []);
+      setMetaProjects((metaData?.metaProjects ?? []).filter((mp: MetaProject) => mp.status === "active"));
     } catch (error) {
       console.error("Error fetching projects:", error);
     } finally {
       setLoading(false);
     }
+  };
+
+  const toggleMeta = (id: string) => {
+    setExpandedMeta((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
   };
 
   const handleDelete = async (id: string) => {
@@ -145,6 +181,68 @@ export default function ProjectBuilderPage() {
             })}
           </div>
         </div>
+
+        {/* Programas (MetaProjects) */}
+        {metaProjects.length > 0 && (
+          <div className="space-y-3">
+            <p className="ql-label">Programas</p>
+            {metaProjects.map((mp) => {
+              const isExpanded = expandedMeta.has(mp.id);
+              const doneMilestones = mp.milestones.filter((m) => m.status === "done").length;
+              return (
+                <div key={mp.id} className="rounded-lg border border-[#C5A572]/30 bg-white overflow-hidden">
+                  <button
+                    onClick={() => toggleMeta(mp.id)}
+                    className="w-full flex items-center gap-4 px-5 py-4 text-left hover:bg-[#FBF8F3]/50 transition-colors"
+                  >
+                    <span className="inline-flex items-center rounded-full border border-[#C5A572]/40 bg-[#FBF8F3] px-2 py-0.5 text-[10px] uppercase tracking-wide text-[#8B7355]">
+                      Programa
+                    </span>
+                    <div className="flex-1 min-w-0">
+                      <h3 className="text-sm font-medium text-[#1A1A1A] truncate">{mp.name}</h3>
+                      <p className="text-xs text-[#5E5E5E] mt-0.5 line-clamp-1">{mp.narrative}</p>
+                    </div>
+                    {mp.revenueScore != null && (
+                      <span className="text-lg font-light text-[#C5A572] tabular-nums shrink-0">
+                        {mp.revenueScore}<span className="text-xs text-[#5E5E5E]/50">/10</span>
+                      </span>
+                    )}
+                    {isExpanded ? <ChevronDown className="h-4 w-4 text-[#5E5E5E]/50 shrink-0" /> : <ChevronRight className="h-4 w-4 text-[#5E5E5E]/50 shrink-0" />}
+                  </button>
+                  {isExpanded && (
+                    <div className="border-t border-[#E8E4DE] px-5 py-4 space-y-3">
+                      <div className="flex flex-wrap gap-2">
+                        {mp.components.map((comp) => (
+                          <Link
+                            key={comp.id}
+                            href={`/project-builder/${comp.project.id}`}
+                            className="inline-flex items-center gap-1.5 rounded-full border border-[#E8E4DE] bg-[#F9F8F6] px-2.5 py-1 text-xs text-[#5E5E5E] hover:border-[#C5A572]/40 transition-colors"
+                          >
+                            {comp.project.title}
+                            <span className={`inline-flex items-center rounded-full border px-1.5 py-0 text-[9px] uppercase ${ROLE_BADGE[comp.role] || ROLE_BADGE.complement}`}>
+                              {comp.role}
+                            </span>
+                          </Link>
+                        ))}
+                      </div>
+                      {mp.milestones.length > 0 && (
+                        <p className="text-xs text-[#5E5E5E]/70">
+                          {doneMilestones}/{mp.milestones.length} milestones completados
+                        </p>
+                      )}
+                      <Link
+                        href={`/project-builder/meta/${mp.id}`}
+                        className="inline-flex items-center gap-1 text-xs text-[#C5A572] hover:text-[#8B7355]"
+                      >
+                        Ver detalle <ExternalLink className="h-3 w-3" />
+                      </Link>
+                    </div>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        )}
 
         {/* Projects */}
         {loading ? (

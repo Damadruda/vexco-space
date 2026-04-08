@@ -136,6 +136,20 @@ export function buildAgentPrompt(
   const agileTasks = (projectMemory.agileTasks as unknown[]) ?? [];
   const recentNotes = (projectMemory.recentNotes as unknown[]) ?? [];
 
+  // Sprint M — Cross-portfolio context injection
+  const metaProjectContext = projectMemory.metaProjectContext as {
+    metaProjectName?: string;
+    metaProjectNarrative?: string;
+    otherComponents?: Array<{ title: string; role: string }>;
+  } | undefined;
+
+  const portfolioContext = projectMemory.portfolioContext as {
+    totalProjects?: number;
+    totalChannels?: number;
+    totalProspects?: number;
+    metaProjects?: Array<{ name: string; componentCount: number }>;
+  } | undefined;
+
   const debateContext = projectMemory.debateContext as {
     topic?: string;
     myPreviousAnalysis?: string;
@@ -216,6 +230,29 @@ ${agentConfig.domainInstructions}`
     debateSection = `\n\nCONTEXTO DEL DEBATE:\n${parts.join("\n\n")}`;
   }
 
+  // Build cross-portfolio injection
+  let crossPortfolioSection = "";
+  if (metaProjectContext?.metaProjectName) {
+    const others = metaProjectContext.otherComponents
+      ?.map((c) => `${c.title} (${c.role})`)
+      .join(", ") || "ninguno";
+    crossPortfolioSection = `\n\nCONTEXTO DE PROGRAMA:
+Este project forma parte del Programa "${metaProjectContext.metaProjectName}" junto con [${others}].
+Narrativa del programa: ${metaProjectContext.metaProjectNarrative || "N/A"}
+Considera el contexto del programa al responder. Las recomendaciones deben ser coherentes con la estrategia del programa.`;
+  }
+  if (portfolioContext && portfolioContext.totalProjects) {
+    crossPortfolioSection += `\n\nPORTAFOLIO VEX&CO (counts verificados):
+- Proyectos activos: ${portfolioContext.totalProjects}
+- Canales registrados: ${portfolioContext.totalChannels || 0}
+- Prospects en pipeline: ${portfolioContext.totalProspects || 0}
+- Programas activos: ${portfolioContext.metaProjects?.length || 0}${
+  portfolioContext.metaProjects && portfolioContext.metaProjects.length > 0
+    ? "\n" + portfolioContext.metaProjects.map((mp) => `  · ${mp.name} (${mp.componentCount} componentes)`).join("\n")
+    : ""
+}`;
+  }
+
   return `${identity}
 
 ${ANTI_IA_RULE}
@@ -227,7 +264,7 @@ CONTEXTO DEL PROYECTO:
 - Progreso: ${project?.progress ?? 0}%
 - Tareas activas: ${agileTasks.length}
 - Notas disponibles: ${recentNotes.length}
-${debateSection}
+${crossPortfolioSection}${debateSection}
 
 EL SUPERVISOR TE HA ASIGNADO ESTA TAREA:
 "${supervisorPlan.proposedAction}"

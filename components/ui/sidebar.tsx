@@ -7,19 +7,24 @@ import {
   LayoutDashboard,
   FolderKanban,
   Search,
-  Swords,
   Inbox,
   Brain,
   Settings,
   Menu,
   X,
   CheckSquare,
+  Network,
+  Target,
+  BrainCircuit,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
 const WORKSPACE = [
   { href: "/dashboard", icon: LayoutDashboard, label: "Dashboard" },
   { href: "/project-builder", icon: FolderKanban, label: "Proyectos" },
+  { href: "/channels", icon: Network, label: "Canales" },
+  { href: "/prospects", icon: Target, label: "Prospects" },
+  { href: "/intelligence", icon: BrainCircuit, label: "Inteligencia" },
   { href: "/agile-board", icon: CheckSquare, label: "Agile Board" },
   { href: "/inbox", icon: Inbox, label: "Inbox" },
   { href: "/knowledge", icon: Brain, label: "Conocimiento" },

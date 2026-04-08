@@ -5,7 +5,7 @@ import { Header } from "@/components/ui/header";
 import { CommandBar } from "@/components/ui/command-bar";
 import {
   ArrowRight, Flame, Clock, CircleDot, TrendingUp, AlertTriangle,
-  CheckSquare, Sparkles, Inbox, Activity,
+  CheckSquare, Sparkles, Inbox, Activity, BrainCircuit,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -48,19 +48,37 @@ export default function DashboardPage() {
     projects: RevenueProject[];
     alerts: Array<{ projectId: string; message: string; severity: string }>;
   } | null>(null);
+  const [intelligenceData, setIntelligenceData] = useState<{
+    hasAnalysis: boolean;
+    topProposal?: string;
+    pendingCount?: number;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     async function fetchAll() {
       try {
-        const [statsRes, revRes] = await Promise.all([
+        const [statsRes, revRes, intRes] = await Promise.all([
           fetch("/api/stats"),
           fetch("/api/projects/revenue-ranking"),
+          fetch("/api/intelligence/cross-portfolio/latest"),
         ]);
         const statsData = await statsRes.json();
         const revData = await revRes.json();
+        const intData = await intRes.json();
         setStats(statsData?.stats);
         if (revData?.projects) setRevenueData(revData);
+        if (intData?.analysis) {
+          const proposals = (intData.analysis.metaProjectProposals || []) as Array<{ name: string; clusterAvgScore: number }>;
+          const sorted = [...proposals].sort((a, b) => b.clusterAvgScore - a.clusterAvgScore);
+          setIntelligenceData({
+            hasAnalysis: true,
+            topProposal: sorted[0]?.name,
+            pendingCount: proposals.length,
+          });
+        } else {
+          setIntelligenceData({ hasAnalysis: false });
+        }
       } catch (error) {
         console.error("Dashboard fetch error:", error);
       } finally {
@@ -216,7 +234,36 @@ export default function DashboardPage() {
           <p className="ql-label mb-2">Pulso del Lab</p>
           <h2 className="ql-h2 mb-5">Lo que está pasando ahora</h2>
 
-          <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-4">
+          <div className="grid gap-4 grid-cols-1 md:grid-cols-2 lg:grid-cols-5">
+            {/* Card 0: Inteligencia de portafolio */}
+            <div className="rounded-lg border border-[#E8E4DE] bg-white p-5 hover:border-[#C5A572]/40 transition-colors">
+              <div className="flex items-center justify-between mb-3">
+                <BrainCircuit className="h-4 w-4 text-[#5E5E5E]" />
+              </div>
+              {intelligenceData?.hasAnalysis ? (
+                <>
+                  {intelligenceData.topProposal && (
+                    <p className="text-sm font-medium text-[#1A1A1A] truncate mb-1">
+                      {intelligenceData.topProposal}
+                    </p>
+                  )}
+                  <p className="text-xs text-[#5E5E5E] mb-3">
+                    {intelligenceData.pendingCount} propuesta{intelligenceData.pendingCount !== 1 ? "s" : ""} pendiente{intelligenceData.pendingCount !== 1 ? "s" : ""}
+                  </p>
+                </>
+              ) : (
+                <>
+                  <p className="text-xs text-[#5E5E5E] mb-3 mt-1">Sin analisis previo</p>
+                  <p className="text-xs text-[#5E5E5E]/70 border-t border-[#E8E4DE] pt-3">
+                    Detecta sinergias entre proyectos
+                  </p>
+                </>
+              )}
+              <Link href="/intelligence" className="mt-3 inline-flex items-center gap-1 text-xs text-[#C5A572] hover:text-[#8B7355]">
+                {intelligenceData?.hasAnalysis ? "Ver Inteligencia" : "Ejecutar primer analisis"} <ArrowRight className="h-3 w-3" />
+              </Link>
+            </div>
+
             {/* Card 1: Tareas esta semana */}
             <div className="rounded-lg border border-[#E8E4DE] bg-white p-5 hover:border-[#C5A572]/40 transition-colors">
               <div className="flex items-center justify-between mb-3">
