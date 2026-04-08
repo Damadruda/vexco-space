@@ -61,17 +61,23 @@ async function callGemini(
       const timeoutPromise = new Promise<never>((_, reject) =>
         setTimeout(() => reject(new Error(`Gemini timeout after ${timeoutMs / 1000}s`)), timeoutMs)
       );
+
+      // Build config explicitly — no conditional spreads for critical params
+      const geminiConfig: Record<string, unknown> = {
+        maxOutputTokens: maxTokens || 8192,
+        temperature: temperature !== undefined ? temperature : 0.7,
+      };
+      if (jsonMode || responseSchema) {
+        geminiConfig.responseMimeType = "application/json";
+      }
+      if (responseSchema) {
+        geminiConfig.responseSchema = responseSchema;
+      }
+
       const generatePromise = ai.models.generateContent({
         model: modelName,
         contents: fullPrompt,
-        config: {
-          ...(maxTokens ? { maxOutputTokens: maxTokens } : {}),
-          temperature: temperature !== undefined ? temperature : 0.7,
-          ...(jsonMode || responseSchema ? { responseMimeType: "application/json" } : {}),
-          ...(responseSchema ? { responseSchema } : {}),
-          // thinkingConfig deshabilitado temporalmente — causa posible del 500
-          // ...(modelName.includes("pro") ? { thinkingConfig: { thinkingLevel: "low" } } : {}),
-        },
+        config: geminiConfig,
       });
       const result = await Promise.race([generatePromise, timeoutPromise]);
       const text = result.text || "";
