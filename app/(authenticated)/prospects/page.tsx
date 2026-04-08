@@ -30,7 +30,7 @@ export default function ProspectsPage() {
   const [prospects, setProspects] = useState<Prospect[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState({ name: "", company: "", source: "inbound", estimatedDealValue: "", currency: "EUR", notes: "" });
+  const [form, setForm] = useState({ name: "", company: "", source: "inbound", stage: "discovery", estimatedDealValue: "", currency: "EUR", notes: "" });
 
   useEffect(() => {
     fetch("/api/prospects")
@@ -50,7 +50,7 @@ export default function ProspectsPage() {
       const { prospect } = await res.json();
       setProspects((prev) => [{ ...prospect, fits: [], channel: null }, ...prev]);
       setShowModal(false);
-      setForm({ name: "", company: "", source: "inbound", estimatedDealValue: "", currency: "EUR", notes: "" });
+      setForm({ name: "", company: "", source: "inbound", stage: "discovery", estimatedDealValue: "", currency: "EUR", notes: "" });
     }
   };
 
@@ -191,19 +191,47 @@ export default function ProspectsPage() {
                   </select>
                 </div>
               </div>
+              <div className="grid grid-cols-2 gap-4">
+                <div>
+                  <label className="ql-label mb-1 block">Fuente</label>
+                  <select
+                    value={form.source}
+                    onChange={(e) => setForm({ ...form, source: e.target.value })}
+                    className="w-full bg-transparent border-b border-[#E8E4DE] focus:border-[#1A1A1A] outline-none py-2 text-sm"
+                  >
+                    <option value="referral">Referral</option>
+                    <option value="inbound">Inbound</option>
+                    <option value="outbound">Outbound</option>
+                    <option value="event">Evento</option>
+                    <option value="channel">Canal</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="ql-label mb-1 block">Stage</label>
+                  <select
+                    value={form.stage}
+                    onChange={(e) => setForm({ ...form, stage: e.target.value })}
+                    className="w-full bg-transparent border-b border-[#E8E4DE] focus:border-[#1A1A1A] outline-none py-2 text-sm"
+                  >
+                    <option value="discovery">Discovery</option>
+                    <option value="qualified">Qualified</option>
+                    <option value="proposal">Proposal</option>
+                    <option value="negotiation">Negotiation</option>
+                    <option value="won">Won</option>
+                    <option value="lost">Lost</option>
+                  </select>
+                </div>
+              </div>
               <div>
-                <label className="ql-label mb-1 block">Fuente</label>
-                <select
-                  value={form.source}
-                  onChange={(e) => setForm({ ...form, source: e.target.value })}
-                  className="w-full bg-transparent border-b border-[#E8E4DE] focus:border-[#1A1A1A] outline-none py-2 text-sm"
-                >
-                  <option value="referral">Referral</option>
-                  <option value="inbound">Inbound</option>
-                  <option value="outbound">Outbound</option>
-                  <option value="event">Evento</option>
-                  <option value="channel">Canal</option>
-                </select>
+                <label className="ql-label mb-1 block">Notas</label>
+                <textarea
+                  value={form.notes}
+                  onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                  placeholder="Notas sobre el prospect (opcional)"
+                  rows={2}
+                  maxLength={2000}
+                  className="w-full bg-transparent border-b border-transparent hover:border-[#5E5E5E]/30 focus:border-[#1A1A1A] outline-none py-2 text-sm resize-none"
+                />
               </div>
               <div className="flex justify-end gap-3 pt-2">
                 <button onClick={() => setShowModal(false)} className="px-4 py-2 text-sm text-[#5E5E5E] hover:text-[#1A1A1A]">

@@ -34,7 +34,7 @@ export default function ChannelsPage() {
   const [channels, setChannels] = useState<Channel[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState({ name: "", type: "individual", reachDescription: "", notes: "" });
+  const [form, setForm] = useState({ name: "", type: "individual", reachDescription: "", relationshipStage: "cold", notes: "" });
 
   useEffect(() => {
     fetch("/api/channels")
@@ -54,7 +54,7 @@ export default function ChannelsPage() {
       const { channel } = await res.json();
       setChannels((prev) => [{ ...channel, channelProjects: [], _count: { prospects: 0 } }, ...prev]);
       setShowModal(false);
-      setForm({ name: "", type: "individual", reachDescription: "", notes: "" });
+      setForm({ name: "", type: "individual", reachDescription: "", relationshipStage: "cold", notes: "" });
     }
   };
 
@@ -168,6 +168,29 @@ export default function ChannelsPage() {
                   value={form.reachDescription}
                   onChange={(e) => setForm({ ...form, reachDescription: e.target.value })}
                   placeholder="Audiencia, tamano estimado, contexto..."
+                  rows={2}
+                  className="w-full bg-transparent border-b border-transparent hover:border-[#5E5E5E]/30 focus:border-[#1A1A1A] outline-none py-2 text-sm resize-none"
+                />
+              </div>
+              <div>
+                <label className="ql-label mb-1 block">Etapa de relacion</label>
+                <select
+                  value={form.relationshipStage}
+                  onChange={(e) => setForm({ ...form, relationshipStage: e.target.value })}
+                  className="w-full bg-transparent border-b border-[#E8E4DE] focus:border-[#1A1A1A] outline-none py-2 text-sm"
+                >
+                  <option value="cold">Cold</option>
+                  <option value="warm">Warm</option>
+                  <option value="activated">Activated</option>
+                  <option value="producing">Producing</option>
+                </select>
+              </div>
+              <div>
+                <label className="ql-label mb-1 block">Notas</label>
+                <textarea
+                  value={form.notes}
+                  onChange={(e) => setForm({ ...form, notes: e.target.value })}
+                  placeholder="Notas sobre el canal (opcional)"
                   rows={2}
                   className="w-full bg-transparent border-b border-transparent hover:border-[#5E5E5E]/30 focus:border-[#1A1A1A] outline-none py-2 text-sm resize-none"
                 />

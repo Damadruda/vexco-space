@@ -1,14 +1,14 @@
 // =============================================================================
 // VEXCO-LAB ENGINE — CROSS-PORTFOLIO INTELLIGENCE
 // Analyzes synergies across projects, channels, and prospects.
-// Uses Gemini Pro for affinity scoring and meta-project proposals.
+// Uses Gemini Pro structured output for affinity scoring.
 // =============================================================================
 
 import { prisma } from "@/lib/db";
 import { callLLM } from "@/lib/clients/llm";
 import { z } from "zod";
 
-// ─── Zod Schemas for Gemini Output Validation ────────────────────────────────
+// ─── Zod Schemas for post-parse validation ───────────────────────────────────
 
 const AffinityPairSchema = z.object({
   projectAId: z.string(),
@@ -25,11 +25,14 @@ const MetaProjectProposalSchema = z.object({
   name: z.string(),
   narrative: z.string(),
   componentProjectIds: z.array(z.string()),
-  roles: z.record(z.string(), z.enum(["anchor", "complement", "enabler"])).optional(),
+  componentRoles: z.array(z.object({
+    projectId: z.string(),
+    role: z.enum(["anchor", "complement", "enabler"]),
+  })),
   suggestedMilestones: z.array(z.object({
     title: z.string(),
-    description: z.string().optional(),
-    dependsOnProjectIds: z.array(z.string()).optional(),
+    description: z.string(),
+    dependsOnProjectIds: z.array(z.string()),
   })),
   rationale: z.string(),
   clusterAvgScore: z.number(),
@@ -61,6 +64,106 @@ const CrossPortfolioOutputSchema = z.object({
 });
 
 type CrossPortfolioOutput = z.infer<typeof CrossPortfolioOutputSchema>;
+
+// ─── Gemini Structured Output Schema ─────────────────────────────────────────
+
+const crossPortfolioResponseSchema = {
+  type: "object",
+  properties: {
+    affinityMatrix: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          projectAId: { type: "string" },
+          projectBId: { type: "string" },
+          audience: { type: "number" },
+          valueProp: { type: "number" },
+          channels: { type: "number" },
+          deliverables: { type: "number" },
+          overall: { type: "number" },
+          rationale: { type: "string" },
+        },
+        required: ["projectAId", "projectBId", "audience", "valueProp", "channels", "deliverables", "overall", "rationale"],
+      },
+    },
+    metaProjectProposals: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          name: { type: "string" },
+          narrative: { type: "string" },
+          componentProjectIds: { type: "array", items: { type: "string" } },
+          componentRoles: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                projectId: { type: "string" },
+                role: { type: "string", enum: ["anchor", "complement", "enabler"] },
+              },
+              required: ["projectId", "role"],
+            },
+          },
+          suggestedMilestones: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                title: { type: "string" },
+                description: { type: "string" },
+                dependsOnProjectIds: { type: "array", items: { type: "string" } },
+              },
+              required: ["title", "description", "dependsOnProjectIds"],
+            },
+          },
+          rationale: { type: "string" },
+          clusterAvgScore: { type: "number" },
+        },
+        required: ["name", "narrative", "componentProjectIds", "componentRoles", "suggestedMilestones", "rationale", "clusterAvgScore"],
+      },
+    },
+    channelRouting: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          channelId: { type: "string" },
+          recommendedProjectIds: { type: "array", items: { type: "string" } },
+          rationale: { type: "string" },
+          nextAction: { type: "string" },
+        },
+        required: ["channelId", "recommendedProjectIds", "rationale", "nextAction"],
+      },
+    },
+    prospectRouting: {
+      type: "array",
+      items: {
+        type: "object",
+        properties: {
+          prospectId: { type: "string" },
+          fits: {
+            type: "array",
+            items: {
+              type: "object",
+              properties: {
+                projectId: { type: "string" },
+                fitScore: { type: "number" },
+                rationale: { type: "string" },
+              },
+              required: ["projectId", "fitScore", "rationale"],
+            },
+          },
+          primaryProjectId: { type: "string" },
+          nextAction: { type: "string" },
+        },
+        required: ["prospectId", "fits", "primaryProjectId", "nextAction"],
+      },
+    },
+  },
+  required: ["affinityMatrix", "metaProjectProposals", "channelRouting", "prospectRouting"],
+};
 
 // ─── Main Analysis Function ──────────────────────────────────────────────────
 
@@ -104,7 +207,7 @@ export async function analyzeCrossPortfolio(opts: {
   const analysis = await prisma.crossPortfolioAnalysis.create({
     data: {
       status: "running",
-      agentVersion: "gemini-pro-sprint-m",
+      agentVersion: "gemini-pro-sprint-m1",
       affinityMatrix: [],
       metaProjectProposals: [],
       channelRouting: [],
@@ -162,66 +265,64 @@ Analizas sinergias estructurales entre vehiculos de monetizacion.
 REGLA #0.5 — ANTI-ALUCINACION (CRITICO):
 Solo puedes referenciar entidades cuyos IDs aparecen en la lista proporcionada.
 Cualquier ID que inventes invalida toda la corrida.
-No inventes nombres de proyectos, canales ni prospects.
-
-Devuelve SOLO JSON valido. Sin markdown, sin texto extra.`;
+No inventes nombres de proyectos, canales ni prospects.`;
 
     const userPrompt = `PROYECTOS ACTIVOS (${projects.length}):
 ${JSON.stringify(projectContext, null, 2)}
 
 CANALES (${channels.length}):
-${channels.length > 0 ? JSON.stringify(channelContext, null, 2) : "No hay canales registrados. channelRouting debe ser array vacio."}
+${channels.length > 0 ? JSON.stringify(channelContext, null, 2) : "No hay canales registrados. channelRouting debe ser array vacio []."}
 
 PROSPECTS (${prospects.length}):
-${prospects.length > 0 ? JSON.stringify(prospectContext, null, 2) : "No hay prospects registrados. prospectRouting debe ser array vacio."}
+${prospects.length > 0 ? JSON.stringify(prospectContext, null, 2) : "No hay prospects registrados. prospectRouting debe ser array vacio []."}
 
 INSTRUCCIONES:
-Genera un JSON con estos 4 bloques:
+Genera el analisis con estos 4 bloques:
 
-1. "affinityMatrix": Para cada par de proyectos (combinaciones, no permutaciones), scorea 4 ejes (0-100):
+1. affinityMatrix: Para cada par de proyectos (combinaciones, no permutaciones), scorea 4 ejes (0-100):
    - audience: superposicion de segmento objetivo
    - valueProp: complementariedad de propuesta de valor
-   - channels: canales de distribucion compartidos o sinergicos
+   - channels: canales de distribucion compartidos
    - deliverables: entregables que se potencian mutuamente
    - overall: promedio ponderado (audience 30%, valueProp 30%, channels 20%, deliverables 20%)
-   - rationale: 1-2 oraciones explicando la relacion
+   - rationale: 1-2 oraciones
 
-2. "metaProjectProposals": Clusters de proyectos con overall promedio >= 70 Y que comparten al menos audiencia o canales. Cada propuesta:
-   - name: nombre tentativo del programa
-   - narrative: 3-5 oraciones de narrativa unificada
-   - componentProjectIds: IDs de los proyectos del cluster
-   - roles: objeto { projectId: "anchor"|"complement"|"enabler" }
-   - suggestedMilestones: 3-5 hitos del meta-nivel con title, description, dependsOnProjectIds
-   - rationale: por que estos proyectos forman un programa
-   - clusterAvgScore: promedio del overall de los pares dentro del cluster
+   Ejemplo de 1 celda:
+   { "projectAId": "${projects[0]?.id}", "projectBId": "${projects[1]?.id}", "audience": 75, "valueProp": 60, "channels": 80, "deliverables": 50, "overall": 67, "rationale": "Ambos apuntan a profesionales senior..." }
 
-3. "channelRouting": Para cada canal, mapea a 1+ proyectos recomendados con rationale y nextAction.
-   Si no hay canales, devuelve array vacio [].
+2. metaProjectProposals: Clusters con overall promedio >= 70. Usa componentRoles como array [{projectId, role}].
+   Si no hay clusters con >= 70, devuelve array vacio [].
 
-4. "prospectRouting": Para cada prospect, mapea a 1+ proyectos con fitScore (0-100) y rationale.
-   Marca primaryProjectId al de mayor fit. Si no hay prospects, devuelve array vacio [].
+3. channelRouting: Para cada canal, mapea a proyectos recomendados.
+   ${channels.length === 0 ? "No hay canales. Devuelve array vacio []." : ""}
 
-RECUERDA: Solo usa IDs de la lista. Cualquier ID inventado = corrida invalida.`;
+4. prospectRouting: Para cada prospect, mapea fits con fitScore.
+   ${prospects.length === 0 ? "No hay prospects. Devuelve array vacio []." : ""}
 
-    // 5. Call Gemini Pro
+RECUERDA: Solo usa IDs de la lista proporcionada.`;
+
+    // 5. Call Gemini Pro with structured output
     const llmResponse = await callLLM({
       model: "gemini-pro",
       systemPrompt,
       userPrompt,
-      jsonMode: true,
+      jsonMode: false,
+      responseSchema: crossPortfolioResponseSchema,
+      maxTokens: 16384,
       temperature: 0.4,
     });
 
-    // 6. Parse and validate with Zod
+    // 6. Parse and validate with Zod (second layer)
     let parsed: CrossPortfolioOutput;
     try {
-      const jsonMatch = llmResponse.content.match(/\{[\s\S]*\}/);
-      const raw = JSON.parse(jsonMatch ? jsonMatch[0] : llmResponse.content);
+      const raw = JSON.parse(llmResponse.content);
       parsed = CrossPortfolioOutputSchema.parse(raw);
     } catch (zodErr) {
       const errMsg = zodErr instanceof z.ZodError
         ? zodErr.errors.map((e) => `${e.path.join(".")}: ${e.message}`).join("; ")
         : String(zodErr);
+
+      console.error("[analyzeCrossPortfolio] zod validation failed:", llmResponse.content.substring(0, 2000));
 
       await prisma.crossPortfolioAnalysis.update({
         where: { id: analysis.id },
@@ -241,8 +342,11 @@ RECUERDA: Solo usa IDs de la lista. Cualquier ID inventado = corrida invalida.`;
       for (const pid of proposal.componentProjectIds) {
         if (!validProjectIds.has(pid)) invalidIds.push(pid);
       }
+      for (const cr of proposal.componentRoles) {
+        if (!validProjectIds.has(cr.projectId)) invalidIds.push(cr.projectId);
+      }
       for (const ms of proposal.suggestedMilestones) {
-        for (const depId of ms.dependsOnProjectIds ?? []) {
+        for (const depId of ms.dependsOnProjectIds) {
           if (!validProjectIds.has(depId)) invalidIds.push(depId);
         }
       }
@@ -270,14 +374,19 @@ RECUERDA: Solo usa IDs de la lista. Cualquier ID inventado = corrida invalida.`;
       return { analysisId: analysis.id, status: "failed", errorMessage: errMsg };
     }
 
-    // 8. Persist completed result
+    // 8. Persist completed result — convert componentRoles to roles record for UI compatibility
+    const proposalsForStorage = parsed.metaProjectProposals.map((p) => ({
+      ...p,
+      roles: Object.fromEntries(p.componentRoles.map((cr) => [cr.projectId, cr.role])),
+    }));
+
     await prisma.crossPortfolioAnalysis.update({
       where: { id: analysis.id },
       data: {
         status: "completed",
         completedAt: new Date(),
         affinityMatrix: parsed.affinityMatrix as unknown as Record<string, unknown>[],
-        metaProjectProposals: parsed.metaProjectProposals as unknown as Record<string, unknown>[],
+        metaProjectProposals: proposalsForStorage as unknown as Record<string, unknown>[],
         channelRouting: parsed.channelRouting as unknown as Record<string, unknown>[],
         prospectRouting: parsed.prospectRouting as unknown as Record<string, unknown>[],
       },
@@ -286,6 +395,7 @@ RECUERDA: Solo usa IDs de la lista. Cualquier ID inventado = corrida invalida.`;
     return { analysisId: analysis.id, status: "completed" };
   } catch (err) {
     const errMsg = err instanceof Error ? err.message : String(err);
+    console.error("[analyzeCrossPortfolio] error:", err);
     await prisma.crossPortfolioAnalysis.update({
       where: { id: analysis.id },
       data: { status: "failed", errorMessage: errMsg },
@@ -315,6 +425,7 @@ export async function instantiateMetaProjectFromProposal(args: {
     narrative: string;
     componentProjectIds: string[];
     roles?: Record<string, string>;
+    componentRoles?: Array<{ projectId: string; role: string }>;
     suggestedMilestones: Array<{
       title: string;
       description?: string;
@@ -326,6 +437,14 @@ export async function instantiateMetaProjectFromProposal(args: {
   const proposal = proposals[args.proposalIndex];
   if (!proposal) {
     throw new Error(`Propuesta index ${args.proposalIndex} no encontrada`);
+  }
+
+  // Build roles map from either format
+  const rolesMap: Record<string, string> = proposal.roles || {};
+  if (!proposal.roles && proposal.componentRoles) {
+    for (const cr of proposal.componentRoles) {
+      rolesMap[cr.projectId] = cr.role;
+    }
   }
 
   // Extract affinity snapshot for this cluster's pairs
@@ -350,7 +469,7 @@ export async function instantiateMetaProjectFromProposal(args: {
       components: {
         create: proposal.componentProjectIds.map((pid) => ({
           projectId: pid,
-          role: proposal.roles?.[pid] || "complement",
+          role: rolesMap[pid] || "complement",
         })),
       },
       milestones: {
