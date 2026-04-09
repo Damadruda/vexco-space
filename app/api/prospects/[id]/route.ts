@@ -45,6 +45,17 @@ export async function PATCH(
       return NextResponse.json({ error: "No encontrado" }, { status: 404 });
     }
 
+    // Auto-set dormantSince when status changes to DORMANT
+    const statusData: Record<string, unknown> = {};
+    if (body.status !== undefined) {
+      statusData.status = body.status;
+      if (body.status === "DORMANT" && existing.status !== "DORMANT") {
+        statusData.dormantSince = new Date();
+      } else if (body.status !== "DORMANT") {
+        statusData.dormantSince = null;
+      }
+    }
+
     const prospect = await prisma.prospect.update({
       where: { id },
       data: {
@@ -58,6 +69,8 @@ export async function PATCH(
         ...(body.currency !== undefined && { currency: body.currency }),
         ...(body.notes !== undefined && { notes: body.notes }),
         ...(body.channelId !== undefined && { channelId: body.channelId }),
+        ...(body.lostReason !== undefined && { lostReason: body.lostReason }),
+        ...statusData,
       },
     });
     return NextResponse.json({ prospect });

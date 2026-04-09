@@ -188,9 +188,10 @@ model Project {
   currentStep      Int     @default(1) // 1-5
 
   // V4 relations
-  trackType     TrackType @default(GO_TO_MARKET)
-  isArchived    Boolean   @default(false)
-  driveFolderId String?   // Google Drive folder ID linked to this project
+  trackType     TrackType        @default(GO_TO_MARKET)
+  archetype     ProjectArchetype @default(CLIENT)
+  isArchived    Boolean          @default(false)
+  driveFolderId String?          // Google Drive folder ID linked to this project
 
   // Revenue Priority System
   revenueProximityScore   Int?      // 1-10, evaluated by Strategist (10 = ready to invoice)
@@ -393,6 +394,60 @@ model ChatMessage {
 enum TrackType {
   GO_TO_MARKET
   ONE_TIME_SERVICE
+}
+
+// Project archetype — distinguishes client projects from campaign projects
+enum ProjectArchetype {
+  CLIENT
+  CAMPAIGN
+}
+
+// Prospect lifecycle status (separate from pipeline stage)
+enum ProspectStatus {
+  ACTIVE
+  DORMANT
+  LOST
+  WON
+}
+
+// Prospect acquisition source
+enum ProspectSource {
+  MANUAL
+  REFERRAL
+  INBOUND
+  OUTBOUND
+  EVENT
+  CHANNEL
+  APOLLO
+  LINKEDIN
+  CORPUS
+}
+
+// Corpus document classification
+enum CorpusDocumentType {
+  CASE_STUDY
+  PROPOSAL_WON
+  PROPOSAL_LOST
+  PROPOSAL_DORMANT
+  INDUSTRY_RESEARCH
+  METHODOLOGY
+  UNCLASSIFIED
+}
+
+// Corpus document outcome
+enum CorpusOutcome {
+  WON
+  LOST
+  DORMANT
+  IN_PROGRESS
+  NA
+}
+
+// Embedding processing status
+enum EmbeddingStatus {
+  PENDING
+  READY
+  FAILED
 }
 
 // Outcome enum for DecisionLog
@@ -731,24 +786,28 @@ model ChannelProject {
 }
 
 model Prospect {
-  id                 String        @id @default(cuid())
+  id                 String         @id @default(cuid())
   name               String
   company            String?
-  source             String?       // referral | inbound | outbound | event | channel
-  stage              String        @default("discovery") // discovery | qualified | proposal | negotiation | won | lost
+  source             ProspectSource @default(MANUAL)
+  stage              String         @default("discovery") // discovery | qualified | proposal | negotiation | won | lost
+  status             ProspectStatus @default(ACTIVE)
   estimatedDealValue Float?
-  currency           String        @default("EUR")
-  notes              String?       @db.Text
+  currency           String         @default("EUR")
+  notes              String?        @db.Text
+  lostReason         String?        @db.Text
+  dormantSince       DateTime?
   ownerId            String
-  owner              User          @relation(fields: [ownerId], references: [id])
+  owner              User           @relation(fields: [ownerId], references: [id])
   fits               ProspectFit[]
   channelId          String?
-  channel            Channel?      @relation(fields: [channelId], references: [id])
-  createdAt          DateTime      @default(now())
-  updatedAt          DateTime      @updatedAt
+  channel            Channel?       @relation(fields: [channelId], references: [id])
+  createdAt          DateTime       @default(now())
+  updatedAt          DateTime       @updatedAt
 
   @@index([ownerId])
   @@index([channelId])
+  @@index([status])
 }
 
 model ProspectFit {
@@ -838,4 +897,52 @@ model RevenuePriorityEntry {
 
   @@unique([entityType, entityId])
   @@index([entityType])
+}
+
+// =============================================================================
+// SPRINT M.2a — FIRM CORPUS (Transversal Case-Book)
+// =============================================================================
+
+model FirmCorpus {
+  id             String           @id @default(cuid())
+  name           String           @default("Vex&Co Firm Corpus")
+  description    String?          @db.Text
+  driveFolderId  String?
+  driveFolderUrl String?
+  lastSyncedAt   DateTime?
+  syncStatus     String           @default("idle") // idle | running | completed | failed
+  syncProgress   Json?            // { processed: number, total: number, currentBatch: number }
+  singleton      Boolean          @default(true) @unique
+  documents      CorpusDocument[]
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+}
+
+model CorpusDocument {
+  id               String             @id @default(cuid())
+  corpusId         String
+  corpus           FirmCorpus         @relation(fields: [corpusId], references: [id], onDelete: Cascade)
+  driveFileId      String             @unique
+  driveFileName    String
+  driveFileUrl     String
+  mimeType         String
+  documentType     CorpusDocumentType @default(UNCLASSIFIED)
+  industry         String?
+  geography        String?
+  companySize      String?
+  outcome          CorpusOutcome?
+  customTags       String[]           @default([])
+  extractedSummary String?            @db.Text
+  keyEntities      Json?              // { companies: [], people: [], sectors: [] }
+  rawContent       String?            @db.Text
+  embeddingStatus  EmbeddingStatus    @default(PENDING)
+  lastProcessedAt  DateTime?
+  processingError  String?            @db.Text
+  createdAt        DateTime           @default(now())
+  updatedAt        DateTime           @updatedAt
+
+  @@index([corpusId])
+  @@index([documentType])
+  @@index([industry])
+  @@index([corpusId, documentType, industry])
 }

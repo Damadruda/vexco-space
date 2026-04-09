@@ -16,6 +16,7 @@ import {
   Network,
   Target,
   BrainCircuit,
+  Library,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -28,6 +29,7 @@ const WORKSPACE = [
   { href: "/agile-board", icon: CheckSquare, label: "Agile Board" },
   { href: "/inbox", icon: Inbox, label: "Inbox" },
   { href: "/knowledge", icon: Brain, label: "Conocimiento" },
+  { href: "/firm-corpus", icon: Library, label: "Firm Corpus" },
 ];
 
 const CONFIG = [

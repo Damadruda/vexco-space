@@ -30,7 +30,7 @@ export default function ProspectsPage() {
   const [prospects, setProspects] = useState<Prospect[]>([]);
   const [loading, setLoading] = useState(true);
   const [showModal, setShowModal] = useState(false);
-  const [form, setForm] = useState({ name: "", company: "", source: "inbound", stage: "discovery", estimatedDealValue: "", currency: "EUR", notes: "" });
+  const [form, setForm] = useState({ name: "", company: "", source: "INBOUND", stage: "discovery", estimatedDealValue: "", currency: "EUR", notes: "" });
 
   useEffect(() => {
     fetch("/api/prospects")
@@ -50,7 +50,7 @@ export default function ProspectsPage() {
       const { prospect } = await res.json();
       setProspects((prev) => [{ ...prospect, fits: [], channel: null }, ...prev]);
       setShowModal(false);
-      setForm({ name: "", company: "", source: "inbound", stage: "discovery", estimatedDealValue: "", currency: "EUR", notes: "" });
+      setForm({ name: "", company: "", source: "INBOUND", stage: "discovery", estimatedDealValue: "", currency: "EUR", notes: "" });
     }
   };
 
@@ -199,11 +199,15 @@ export default function ProspectsPage() {
                     onChange={(e) => setForm({ ...form, source: e.target.value })}
                     className="w-full bg-transparent border-b border-[#E8E4DE] focus:border-[#1A1A1A] outline-none py-2 text-sm"
                   >
-                    <option value="referral">Referral</option>
-                    <option value="inbound">Inbound</option>
-                    <option value="outbound">Outbound</option>
-                    <option value="event">Evento</option>
-                    <option value="channel">Canal</option>
+                    <option value="MANUAL">Manual</option>
+                    <option value="REFERRAL">Referral</option>
+                    <option value="INBOUND">Inbound</option>
+                    <option value="OUTBOUND">Outbound</option>
+                    <option value="EVENT">Evento</option>
+                    <option value="CHANNEL">Canal</option>
+                    <option value="APOLLO">Apollo</option>
+                    <option value="LINKEDIN">LinkedIn</option>
+                    <option value="CORPUS">Corpus</option>
                   </select>
                 </div>
                 <div>

@@ -35,7 +35,7 @@ const STAGE_STYLES: Record<string, string> = {
 };
 
 const STAGES = ["discovery", "qualified", "proposal", "negotiation", "won", "lost"];
-const SOURCES = ["referral", "inbound", "outbound", "event", "channel"];
+const SOURCES = ["MANUAL", "REFERRAL", "INBOUND", "OUTBOUND", "EVENT", "CHANNEL", "APOLLO", "LINKEDIN", "CORPUS"];
 
 export default function ProspectDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -83,7 +83,7 @@ export default function ProspectDetailPage({ params }: { params: Promise<{ id: s
       body: JSON.stringify({
         name: draft.name,
         company: draft.company || null,
-        source: draft.source || null,
+        source: draft.source || "MANUAL",
         stage: draft.stage,
         estimatedDealValue: draft.estimatedDealValue || null,
         currency: draft.currency,

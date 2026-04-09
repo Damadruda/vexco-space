@@ -39,7 +39,7 @@ export async function POST(request: Request) {
       data: {
         name,
         company: company || null,
-        source: source || null,
+        source: source || "MANUAL",
         stage: stage || "discovery",
         estimatedDealValue: estimatedDealValue ? parseFloat(estimatedDealValue) : null,
         currency: currency || "EUR",
