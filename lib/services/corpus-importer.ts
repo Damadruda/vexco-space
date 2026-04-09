@@ -4,6 +4,7 @@
 // =============================================================================
 
 import { prisma } from "@/lib/prisma";
+import mammoth from "mammoth";
 import { getFirmCorpus } from "./firm-corpus";
 import { routeFile } from "@/lib/firm-corpus/file-router";
 import { runStageA } from "@/lib/firm-corpus/stage-a-classifier";
@@ -98,13 +99,20 @@ async function listFolderRecursively(
   return allItems;
 }
 
+// Binary file extensions that need special handling (not plain text)
+const BINARY_EXTENSIONS = new Set(["docx", "doc", "xlsx", "xls", "pptx"]);
+
+function getFileExtension(fileName: string): string {
+  return (fileName.toLowerCase().match(/\.([^.]+)$/)?.[1] || "");
+}
+
 export async function extractFileContent(
   file: DriveFileRef,
   accessToken: string
 ): Promise<string> {
-  let exportUrl: string;
-
+  // Google Workspace files: export as text directly
   if (file.mimeType.includes("google-apps")) {
+    let exportUrl: string;
     if (file.mimeType.includes("spreadsheet")) {
       exportUrl = `https://www.googleapis.com/drive/v3/files/${file.id}/export?mimeType=text/csv`;
     } else if (file.mimeType.includes("presentation")) {
@@ -112,18 +120,54 @@ export async function extractFileContent(
     } else {
       exportUrl = `https://www.googleapis.com/drive/v3/files/${file.id}/export?mimeType=text/plain`;
     }
-  } else {
-    exportUrl = `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`;
+
+    const response = await fetch(exportUrl, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status} fetching ${file.name}`);
+    return response.text();
   }
 
-  const response = await fetch(exportUrl, {
+  const ext = getFileExtension(file.name);
+  const downloadUrl = `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`;
+
+  // Binary files: download as arraybuffer
+  if (BINARY_EXTENSIONS.has(ext) || file.mimeType.includes("officedocument") || file.mimeType === "application/msword") {
+    const response = await fetch(downloadUrl, {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+    if (!response.ok) throw new Error(`HTTP ${response.status} fetching ${file.name}`);
+
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+
+    // DOCX: use mammoth for text extraction
+    if (ext === "docx" || file.mimeType === "application/vnd.openxmlformats-officedocument.wordprocessingml.document") {
+      const result = await mammoth.extractRawText({ buffer });
+      const text = result.value?.trim() ?? "";
+      if (!text || text.length < 10) {
+        throw new Error(`DOCX extraction returned empty or minimal content (${text.length} chars)`);
+      }
+      console.log(`[extract-content] DOCX ${file.name}: extracted ${text.length} chars via mammoth`);
+      return sanitizeForPostgres(text);
+    }
+
+    // DOC (legacy): attempt as UTF-8, likely partial
+    if (ext === "doc" || file.mimeType === "application/msword") {
+      console.warn(`[extract-content] Legacy .doc format for ${file.name}, attempting UTF-8 decode (may be partial)`);
+      return sanitizeForPostgres(buffer.toString("utf-8"));
+    }
+
+    // Other binary Office formats: fall back to UTF-8 (xlsx/pptx — these should be routed to operational by file-router)
+    console.warn(`[extract-content] Binary format ${ext} for ${file.name}, falling back to UTF-8`);
+    return sanitizeForPostgres(buffer.toString("utf-8"));
+  }
+
+  // Text files (pdf, md, txt, html, json, csv, etc): download as text
+  const response = await fetch(downloadUrl, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
-
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status} fetching ${file.name}`);
-  }
-
+  if (!response.ok) throw new Error(`HTTP ${response.status} fetching ${file.name}`);
   return response.text();
 }
 
