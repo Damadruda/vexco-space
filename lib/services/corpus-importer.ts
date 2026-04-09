@@ -68,6 +68,39 @@ const CLASSIFICATION_SCHEMA = {
   required: ["documentType", "extractedSummary", "keyEntities"],
 };
 
+// ─── Sanitization ────────────────────────────────────────────────────────────
+
+function sanitizeForPostgres(input: string | null | undefined): string {
+  if (!input) return "";
+  return input
+    .replace(/\x00/g, "")                            // null bytes
+    .replace(/[\x01-\x08\x0B\x0C\x0E-\x1F]/g, ""); // other problematic control chars
+}
+
+function sanitizeJson(obj: Record<string, unknown>): Record<string, unknown> {
+  const result: Record<string, unknown> = {};
+  for (const [key, value] of Object.entries(obj)) {
+    if (typeof value === "string") {
+      result[key] = sanitizeForPostgres(value);
+    } else if (Array.isArray(value)) {
+      result[key] = value.map((v) => (typeof v === "string" ? sanitizeForPostgres(v) : v));
+    } else {
+      result[key] = value;
+    }
+  }
+  return result;
+}
+
+function logSanitizationDelta(field: string, driveFileId: string, before: string | null | undefined, after: string) {
+  const beforeLen = before?.length ?? 0;
+  const afterLen = after.length;
+  if (beforeLen !== afterLen) {
+    console.warn(
+      `[corpus-import] SANITIZED ${field} for ${driveFileId}: ${beforeLen} → ${afterLen} chars (removed ${beforeLen - afterLen} problematic bytes)`
+    );
+  }
+}
+
 // ─── Configuration ───────────────────────────────────────────────────────────
 
 const BATCH_SIZE = 5;
@@ -261,6 +294,9 @@ export async function importCorpusFromDrive(
     // Step 2: Filter for incremental mode
     let filesToProcess: DriveFileRef[];
     if (mode === "full") {
+      // Clean slate: delete all existing documents for fresh re-import
+      const deleted = await prisma.corpusDocument.deleteMany({ where: { corpusId: corpus.id } });
+      console.log(`[corpus-import] Full mode: deleted ${deleted.count} existing documents`);
       filesToProcess = processableFiles;
     } else {
       // Check which files need processing
@@ -299,7 +335,11 @@ export async function importCorpusFromDrive(
         batch.map(async (file) => {
           try {
             // Extract content
-            const rawContent = await extractFileContent(file, accessToken);
+            const rawContentUnsafe = await extractFileContent(file, accessToken);
+
+            // Sanitize raw content for Postgres
+            const rawContent = sanitizeForPostgres(rawContentUnsafe);
+            logSanitizationDelta("rawContent", file.id, rawContentUnsafe, rawContent);
 
             // Truncate raw content if too large
             let storedContent = rawContent;
@@ -315,52 +355,86 @@ export async function importCorpusFromDrive(
             // Classify with Gemini Flash
             const classification = await classifyDocument(file.name, rawContent);
 
-            // Upsert document
-            await prisma.corpusDocument.upsert({
-              where: { driveFileId: file.id },
-              create: {
-                corpusId: corpus.id,
-                driveFileId: file.id,
-                driveFileName: file.name,
-                driveFileUrl:
-                  file.webViewLink ||
-                  `https://drive.google.com/file/d/${file.id}/view`,
-                mimeType: file.mimeType,
-                documentType: classification.documentType as CorpusDocumentType,
-                industry: classification.industry,
-                geography: classification.geography,
-                companySize: classification.companySize,
-                outcome: classification.outcome as CorpusOutcome | null,
-                extractedSummary: classification.extractedSummary,
-                keyEntities: classification.keyEntities,
-                rawContent: storedContent,
-                embeddingStatus: "PENDING",
-                lastProcessedAt: new Date(),
-              },
-              update: {
-                driveFileName: file.name,
-                driveFileUrl:
-                  file.webViewLink ||
-                  `https://drive.google.com/file/d/${file.id}/view`,
-                mimeType: file.mimeType,
-                documentType: classification.documentType as CorpusDocumentType,
-                industry: classification.industry,
-                geography: classification.geography,
-                companySize: classification.companySize,
-                outcome: classification.outcome as CorpusOutcome | null,
-                extractedSummary: classification.extractedSummary,
-                keyEntities: classification.keyEntities,
-                rawContent: storedContent,
-                embeddingStatus: "PENDING",
-                lastProcessedAt: new Date(),
-                processingError: null,
-              },
-            });
+            // Sanitize all LLM output strings
+            const safeSummary = sanitizeForPostgres(classification.extractedSummary);
+            logSanitizationDelta("extractedSummary", file.id, classification.extractedSummary, safeSummary);
+            const safeIndustry = classification.industry ? sanitizeForPostgres(classification.industry) : null;
+            const safeGeography = classification.geography ? sanitizeForPostgres(classification.geography) : null;
+            const safeCompanySize = classification.companySize ? sanitizeForPostgres(classification.companySize) : null;
+            const safeEntities = sanitizeJson(classification.keyEntities as unknown as Record<string, unknown>);
+            const safeFileName = sanitizeForPostgres(file.name);
+            const driveFileUrl = file.webViewLink || `https://drive.google.com/file/d/${file.id}/view`;
+
+            const upsertData = {
+              documentType: classification.documentType as CorpusDocumentType,
+              industry: safeIndustry,
+              geography: safeGeography,
+              companySize: safeCompanySize,
+              outcome: classification.outcome as CorpusOutcome | null,
+              extractedSummary: safeSummary,
+              keyEntities: safeEntities,
+              rawContent: storedContent,
+              embeddingStatus: "PENDING" as const,
+              lastProcessedAt: new Date(),
+              processingError: null,
+            };
+
+            // Fault-tolerant upsert: try with rawContent, fallback without
+            try {
+              await prisma.corpusDocument.upsert({
+                where: { driveFileId: file.id },
+                create: {
+                  corpusId: corpus.id,
+                  driveFileId: file.id,
+                  driveFileName: safeFileName,
+                  driveFileUrl,
+                  mimeType: file.mimeType,
+                  ...upsertData,
+                },
+                update: {
+                  driveFileName: safeFileName,
+                  driveFileUrl,
+                  mimeType: file.mimeType,
+                  ...upsertData,
+                },
+              });
+            } catch (upsertError: unknown) {
+              const upsertMsg = upsertError instanceof Error ? upsertError.message : String(upsertError);
+              const isEncodingError = upsertMsg.includes("22021") || upsertMsg.includes("invalid byte sequence");
+
+              if (isEncodingError) {
+                console.warn(`[corpus-import] Encoding error for ${file.name}, retrying without rawContent — metadata preserved`);
+                await prisma.corpusDocument.upsert({
+                  where: { driveFileId: file.id },
+                  create: {
+                    corpusId: corpus.id,
+                    driveFileId: file.id,
+                    driveFileName: safeFileName,
+                    driveFileUrl,
+                    mimeType: file.mimeType,
+                    ...upsertData,
+                    rawContent: "",
+                    processingError: "Content extraction had encoding issues, metadata preserved",
+                  },
+                  update: {
+                    driveFileName: safeFileName,
+                    driveFileUrl,
+                    mimeType: file.mimeType,
+                    ...upsertData,
+                    rawContent: "",
+                    processingError: "Content extraction had encoding issues, metadata preserved",
+                  },
+                });
+              } else {
+                throw upsertError; // Re-throw non-encoding errors
+              }
+            }
 
             return { success: true, fileName: file.name };
           } catch (error: unknown) {
             const msg = error instanceof Error ? error.message : String(error);
-            console.error(`[corpus-import] FAILED: ${file.name} — ${msg}`);
+            const safeMsg = sanitizeForPostgres(msg);
+            console.error(`[corpus-import] FAILED: ${file.name} — ${safeMsg}`);
 
             // Save error but don't abort
             await prisma.corpusDocument
@@ -369,17 +443,17 @@ export async function importCorpusFromDrive(
                 create: {
                   corpusId: corpus.id,
                   driveFileId: file.id,
-                  driveFileName: file.name,
+                  driveFileName: sanitizeForPostgres(file.name),
                   driveFileUrl:
                     file.webViewLink ||
                     `https://drive.google.com/file/d/${file.id}/view`,
                   mimeType: file.mimeType,
-                  processingError: msg,
+                  processingError: safeMsg,
                   embeddingStatus: "FAILED",
                   lastProcessedAt: new Date(),
                 },
                 update: {
-                  processingError: msg,
+                  processingError: safeMsg,
                   embeddingStatus: "FAILED",
                   lastProcessedAt: new Date(),
                 },
@@ -388,7 +462,7 @@ export async function importCorpusFromDrive(
                 console.error(`[corpus-import] Could not save error for ${file.name}:`, e)
               );
 
-            return { success: false, fileName: file.name, error: msg };
+            return { success: false, fileName: file.name, error: safeMsg };
           }
         })
       );

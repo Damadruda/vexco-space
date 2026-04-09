@@ -632,11 +632,15 @@ export default function FirmCorpusPage() {
                   Sincronizar
                 </button>
                 <button
-                  onClick={() => handleSync("full")}
+                  onClick={() => {
+                    if (window.confirm("Esto borrara todos los documentos procesados y volvera a importarlos desde Drive. ¿Continuar?")) {
+                      handleSync("full");
+                    }
+                  }}
                   disabled={syncing}
                   className="inline-flex items-center gap-2 px-4 py-2 text-sm border border-gray-200 text-[#5E5E5E] rounded-md hover:bg-gray-50 transition-colors disabled:opacity-50"
                 >
-                  Re-procesar todo
+                  Re-sincronizar completo
                 </button>
                 <button
                   onClick={() => setShowFolderPicker(true)}
