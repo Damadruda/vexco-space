@@ -22,6 +22,8 @@ export async function GET(request: NextRequest) {
     const documentType = params.get("documentType") as CorpusDocumentType | null;
     const industry = params.get("industry") || undefined;
     const outcome = params.get("outcome") || undefined;
+    const provenance = params.get("provenance") || undefined;
+    const archived = params.get("archived") === "true";
     const search = params.get("search") || undefined;
     const page = parseInt(params.get("page") || "1", 10);
     const pageSize = Math.min(parseInt(params.get("pageSize") || "50", 10), 100);
@@ -30,6 +32,8 @@ export async function GET(request: NextRequest) {
       documentType: documentType || undefined,
       industry,
       outcome,
+      provenance,
+      archived,
       search,
       page,
       pageSize,

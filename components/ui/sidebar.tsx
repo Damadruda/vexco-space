@@ -17,6 +17,8 @@ import {
   Target,
   BrainCircuit,
   Library,
+  Boxes,
+  TableProperties,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -30,6 +32,8 @@ const WORKSPACE = [
   { href: "/inbox", icon: Inbox, label: "Inbox" },
   { href: "/knowledge", icon: Brain, label: "Conocimiento" },
   { href: "/firm-corpus", icon: Library, label: "Firm Corpus" },
+  { href: "/frameworks", icon: Boxes, label: "Frameworks" },
+  { href: "/operational-sources", icon: TableProperties, label: "Op. Sources" },
 ];
 
 const CONFIG = [

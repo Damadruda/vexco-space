@@ -1,13 +1,14 @@
 // =============================================================================
-// CORPUS IMPORTER — Incremental Drive import for Firm Corpus
-// Processes documents in batches of 5, classifies with Gemini Flash,
-// stores raw content + structured metadata per document.
+// CORPUS IMPORTER — Orchestrator for Firm Corpus pipeline
+// M.2a-PLUS: Split A (Flash metadata) + B (Pro comprehension) + file routing
 // =============================================================================
 
 import { prisma } from "@/lib/prisma";
-import { callLLM } from "@/lib/clients/llm";
 import { getFirmCorpus } from "./firm-corpus";
-import type { CorpusDocumentType, CorpusOutcome } from "@prisma/client";
+import { routeFile } from "@/lib/firm-corpus/file-router";
+import { runStageA } from "@/lib/firm-corpus/stage-a-classifier";
+import { runStageB } from "@/lib/firm-corpus/stage-b-comprehension";
+import { persistDocument, persistOperationalSource, sanitizeForPostgres } from "@/lib/firm-corpus/persist";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -20,92 +21,10 @@ interface DriveFileRef {
   size?: string;
 }
 
-interface ClassificationResult {
-  documentType: CorpusDocumentType;
-  industry: string | null;
-  geography: string | null;
-  companySize: string | null;
-  outcome: CorpusOutcome | null;
-  extractedSummary: string;
-  keyEntities: { companies: string[]; people: string[]; sectors: string[] };
-}
-
-// Gemini structured output schema for classification
-const CLASSIFICATION_SCHEMA = {
-  type: "object",
-  properties: {
-    documentType: {
-      type: "string",
-      enum: [
-        "CASE_STUDY",
-        "PROPOSAL_WON",
-        "PROPOSAL_LOST",
-        "PROPOSAL_DORMANT",
-        "INDUSTRY_RESEARCH",
-        "METHODOLOGY",
-        "UNCLASSIFIED",
-      ],
-    },
-    industry: { type: "string", nullable: true },
-    geography: { type: "string", nullable: true },
-    companySize: { type: "string", nullable: true },
-    outcome: {
-      type: "string",
-      enum: ["WON", "LOST", "DORMANT", "IN_PROGRESS", "NA"],
-      nullable: true,
-    },
-    extractedSummary: { type: "string" },
-    keyEntities: {
-      type: "object",
-      properties: {
-        companies: { type: "array", items: { type: "string" } },
-        people: { type: "array", items: { type: "string" } },
-        sectors: { type: "array", items: { type: "string" } },
-      },
-      required: ["companies", "people", "sectors"],
-    },
-  },
-  required: ["documentType", "extractedSummary", "keyEntities"],
-};
-
-// ─── Sanitization ────────────────────────────────────────────────────────────
-
-function sanitizeForPostgres(input: string | null | undefined): string {
-  if (!input) return "";
-  return input
-    .replace(/\x00/g, "")                            // null bytes
-    .replace(/[\x01-\x08\x0B\x0C\x0E-\x1F]/g, ""); // other problematic control chars
-}
-
-function sanitizeJson(obj: Record<string, unknown>): Record<string, unknown> {
-  const result: Record<string, unknown> = {};
-  for (const [key, value] of Object.entries(obj)) {
-    if (typeof value === "string") {
-      result[key] = sanitizeForPostgres(value);
-    } else if (Array.isArray(value)) {
-      result[key] = value.map((v) => (typeof v === "string" ? sanitizeForPostgres(v) : v));
-    } else {
-      result[key] = value;
-    }
-  }
-  return result;
-}
-
-function logSanitizationDelta(field: string, driveFileId: string, before: string | null | undefined, after: string) {
-  const beforeLen = before?.length ?? 0;
-  const afterLen = after.length;
-  if (beforeLen !== afterLen) {
-    console.warn(
-      `[corpus-import] SANITIZED ${field} for ${driveFileId}: ${beforeLen} → ${afterLen} chars (removed ${beforeLen - afterLen} problematic bytes)`
-    );
-  }
-}
-
 // ─── Configuration ───────────────────────────────────────────────────────────
 
-const BATCH_SIZE = 5;
+const BATCH_SIZE = 3; // Reduced from 5: Pro calls are heavier than Flash
 const MAX_DEPTH = 10;
-const MAX_RAW_CONTENT_BYTES = 1_000_000; // 1MB per document
 const SUPPORTED_MIME_TYPES = new Set([
   "application/vnd.google-apps.document",
   "application/vnd.google-apps.spreadsheet",
@@ -122,6 +41,7 @@ const SUPPORTED_MIME_TYPES = new Set([
 ]);
 const TEXT_EXTENSIONS = new Set([
   ".md", ".txt", ".json", ".html", ".csv", ".markdown", ".docx", ".pdf",
+  ".xlsx", ".xls", ".tsv",
 ]);
 
 function isProcessableFile(file: DriveFileRef): boolean {
@@ -178,7 +98,7 @@ async function listFolderRecursively(
   return allItems;
 }
 
-async function extractFileContent(
+export async function extractFileContent(
   file: DriveFileRef,
   accessToken: string
 ): Promise<string> {
@@ -204,108 +124,8 @@ async function extractFileContent(
     throw new Error(`HTTP ${response.status} fetching ${file.name}`);
   }
 
-  const text = await response.text();
-  return text;
+  return response.text();
 }
-
-// ─── Classification ──────────────────────────────────────────────────────────
-
-const CLASSIFIER_SYSTEM_PROMPT = `You are a consulting firm document classifier for Vex&Co, a strategic consulting firm operating in Spain and Latin America.
-Classify the following document and extract structured metadata.
-
-Rules:
-- documentType: Choose the most specific type. Use UNCLASSIFIED only if truly ambiguous.
-- CASE_STUDY: Completed client engagements with results/outcomes described
-- PROPOSAL_WON/LOST/DORMANT: Sales proposals with clear outcome indicators
-- INDUSTRY_RESEARCH: Market studies, sector analyses, trend reports
-- METHODOLOGY: Internal frameworks, processes, templates, playbooks
-- industry: The primary industry (e.g., "Technology", "Healthcare", "Financial Services"). Null if not specific.
-- geography: Country or region focus (e.g., "Spain", "LATAM", "Colombia"). Null if not specific.
-- companySize: Target company size if mentioned (e.g., "SMB", "Enterprise", "Startup"). Null if not mentioned.
-- outcome: WON/LOST/DORMANT/IN_PROGRESS for proposals/cases. NA for research/methodology.
-- extractedSummary: Max 500 words. Distill the most relevant strategic insights — do NOT just compress the text.
-- keyEntities: Extract mentioned companies, people names, and business sectors.`;
-
-function parseClassificationResponse(raw: string): ClassificationResult {
-  const parsed = JSON.parse(raw);
-  return {
-    documentType: parsed.documentType || "UNCLASSIFIED",
-    industry: parsed.industry || null,
-    geography: parsed.geography || null,
-    companySize: parsed.companySize || null,
-    outcome: parsed.outcome || null,
-    extractedSummary: parsed.extractedSummary || "",
-    keyEntities: parsed.keyEntities || { companies: [], people: [], sectors: [] },
-  };
-}
-
-async function classifyDocument(
-  fileName: string,
-  rawContent: string
-): Promise<ClassificationResult> {
-  const contentForLLM = rawContent.length > 15000
-    ? rawContent.substring(0, 15000) + "\n[... content truncated for classification ...]"
-    : rawContent;
-
-  const userPrompt = `File: ${fileName}\n\nContent:\n${contentForLLM}`;
-
-  // Attempt 1: structured output with responseSchema (should guarantee valid JSON)
-  let rawResponse1 = "";
-  try {
-    const response = await callLLM({
-      model: "gemini-flash",
-      systemPrompt: CLASSIFIER_SYSTEM_PROMPT,
-      userPrompt,
-      jsonMode: true,
-      responseSchema: CLASSIFICATION_SCHEMA,
-      maxTokens: 2048,
-      temperature: 0.2,
-    });
-    rawResponse1 = response.content;
-    return parseClassificationResponse(rawResponse1);
-  } catch (err1: unknown) {
-    const msg1 = err1 instanceof Error ? err1.message : String(err1);
-    console.error(
-      `[corpus-import] PARSE_FAIL attempt 1 for ${fileName}:\n  error: ${msg1}\n  raw_output: ${(rawResponse1 || msg1).substring(0, 2000)}`
-    );
-
-    // Attempt 2: temperature 0, reinforced system prompt
-    let rawResponse2 = "";
-    try {
-      const response2 = await callLLM({
-        model: "gemini-flash",
-        systemPrompt: CLASSIFIER_SYSTEM_PROMPT +
-          "\n\nReturn ONLY the JSON object matching the schema. No markdown, no code fences, no commentary, no prefix, no suffix.",
-        userPrompt,
-        jsonMode: true,
-        responseSchema: CLASSIFICATION_SCHEMA,
-        maxTokens: 2048,
-        temperature: 0,
-      });
-      rawResponse2 = response2.content;
-      return parseClassificationResponse(rawResponse2);
-    } catch (err2: unknown) {
-      const msg2 = err2 instanceof Error ? err2.message : String(err2);
-      console.error(
-        `[corpus-import] PARSE_FAIL attempt 2 for ${fileName}:\n  error: ${msg2}\n  raw_output: ${(rawResponse2 || msg2).substring(0, 2000)}`
-      );
-
-      // Final fallback: return UNCLASSIFIED with error info
-      return {
-        documentType: "UNCLASSIFIED" as CorpusDocumentType,
-        industry: null,
-        geography: null,
-        companySize: null,
-        outcome: null,
-        extractedSummary: `Classification failed after 2 attempts. File: ${fileName}`,
-        keyEntities: { companies: [], people: [], sectors: [] },
-      };
-    }
-  }
-}
-
-// Exported for reclassify-failed endpoint
-export { classifyDocument, sanitizeForPostgres, sanitizeJson, logSanitizationDelta };
 
 // ─── Main Import Function ────────────────────────────────────────────────────
 
@@ -313,10 +133,9 @@ export async function importCorpusFromDrive(
   driveFolderId: string,
   accessToken: string,
   mode: "full" | "incremental" = "incremental"
-): Promise<{ processed: number; skipped: number; failed: number; total: number }> {
+): Promise<{ processed: number; skipped: number; failed: number; operational: number; total: number }> {
   const corpus = await getFirmCorpus();
 
-  // Update sync status
   await prisma.firmCorpus.update({
     where: { id: corpus.id },
     data: {
@@ -329,9 +148,9 @@ export async function importCorpusFromDrive(
   let processed = 0;
   let skipped = 0;
   let failed = 0;
+  let operational = 0;
 
   try {
-    // Step 1: List all files recursively
     console.log(`[corpus-import] Scanning folder ${driveFolderId} recursively...`);
     const allFiles = await listFolderRecursively(driveFolderId, accessToken);
     const processableFiles = allFiles.filter(isProcessableFile);
@@ -343,187 +162,139 @@ export async function importCorpusFromDrive(
       data: { syncProgress: { processed: 0, total: totalFiles, currentBatch: 0 } },
     });
 
-    // Step 2: Filter for incremental mode
+    // Clean slate for full mode
+    if (mode === "full") {
+      const [delDocs, delOps, delFSD] = await Promise.all([
+        prisma.corpusDocument.deleteMany({ where: { corpusId: corpus.id } }),
+        prisma.operationalSource.deleteMany({}),
+        prisma.frameworkSourceDocument.deleteMany({}),
+        // NOT deleting Framework records — preserve for future sprints
+      ]);
+      console.log(`[corpus-import] Full mode: deleted ${delDocs.count} docs, ${delOps.count} ops, ${delFSD.count} framework links`);
+    }
+
+    // Filter for incremental mode
     let filesToProcess: DriveFileRef[];
     if (mode === "full") {
-      // Clean slate: delete all existing documents for fresh re-import
-      const deleted = await prisma.corpusDocument.deleteMany({ where: { corpusId: corpus.id } });
-      console.log(`[corpus-import] Full mode: deleted ${deleted.count} existing documents`);
       filesToProcess = processableFiles;
     } else {
-      // Check which files need processing
       const existingDocs = await prisma.corpusDocument.findMany({
         where: { corpusId: corpus.id },
         select: { driveFileId: true, lastProcessedAt: true },
       });
-      const existingMap = new Map(
-        existingDocs.map((d) => [d.driveFileId, d.lastProcessedAt])
-      );
+      const existingOps = await prisma.operationalSource.findMany({
+        select: { driveFileId: true, lastSeenAt: true },
+      });
+      const existingMap = new Map<string, Date | null>();
+      existingDocs.forEach((d) => existingMap.set(d.driveFileId, d.lastProcessedAt));
+      existingOps.forEach((o) => existingMap.set(o.driveFileId, o.lastSeenAt));
 
       filesToProcess = processableFiles.filter((file) => {
         const lastProcessed = existingMap.get(file.id);
-        if (!lastProcessed) return true; // New file
-        const modifiedTime = new Date(file.modifiedTime);
-        return modifiedTime > lastProcessed; // Modified since last processing
+        if (!lastProcessed) return true;
+        return new Date(file.modifiedTime) > lastProcessed;
       });
 
       skipped = totalFiles - filesToProcess.length;
-      console.log(
-        `[corpus-import] Incremental: ${filesToProcess.length} to process, ${skipped} up-to-date`
-      );
+      console.log(`[corpus-import] Incremental: ${filesToProcess.length} to process, ${skipped} up-to-date`);
     }
 
-    // Step 3: Process in batches of 5
+    // Process in batches
     const totalBatches = Math.ceil(filesToProcess.length / BATCH_SIZE);
 
     for (let batchIdx = 0; batchIdx < totalBatches; batchIdx++) {
       const batchStart = batchIdx * BATCH_SIZE;
       const batch = filesToProcess.slice(batchStart, batchStart + BATCH_SIZE);
-      console.log(
-        `[corpus-import] Processing batch ${batchIdx + 1}/${totalBatches} (${batch.length} files)`
-      );
+      console.log(`[corpus-import] Processing batch ${batchIdx + 1}/${totalBatches} (${batch.length} files)`);
 
-      const batchResults = await Promise.allSettled(
-        batch.map(async (file) => {
-          try {
-            // Extract content
-            const rawContentUnsafe = await extractFileContent(file, accessToken);
+      // Process sequentially within batch to avoid Pro rate limits
+      for (const file of batch) {
+        try {
+          const routing = routeFile(file.name, file.mimeType);
 
-            // Sanitize raw content for Postgres
-            const rawContent = sanitizeForPostgres(rawContentUnsafe);
-            logSanitizationDelta("rawContent", file.id, rawContentUnsafe, rawContent);
-
-            // Truncate raw content if too large
-            let storedContent = rawContent;
-            if (Buffer.byteLength(rawContent, "utf-8") > MAX_RAW_CONTENT_BYTES) {
-              storedContent =
-                rawContent.substring(0, MAX_RAW_CONTENT_BYTES) +
-                "\n[... content truncated at 1MB ...]";
-              console.warn(
-                `[corpus-import] WARNING: ${file.name} exceeds 1MB, truncated for storage`
-              );
-            }
-
-            // Classify with Gemini Flash
-            const classification = await classifyDocument(file.name, rawContent);
-
-            // Sanitize all LLM output strings
-            const safeSummary = sanitizeForPostgres(classification.extractedSummary);
-            logSanitizationDelta("extractedSummary", file.id, classification.extractedSummary, safeSummary);
-            const safeIndustry = classification.industry ? sanitizeForPostgres(classification.industry) : null;
-            const safeGeography = classification.geography ? sanitizeForPostgres(classification.geography) : null;
-            const safeCompanySize = classification.companySize ? sanitizeForPostgres(classification.companySize) : null;
-            const safeEntities = sanitizeJson(classification.keyEntities as unknown as Record<string, unknown>);
-            const safeFileName = sanitizeForPostgres(file.name);
-            const driveFileUrl = file.webViewLink || `https://drive.google.com/file/d/${file.id}/view`;
-
-            const upsertData = {
-              documentType: classification.documentType as CorpusDocumentType,
-              industry: safeIndustry,
-              geography: safeGeography,
-              companySize: safeCompanySize,
-              outcome: classification.outcome as CorpusOutcome | null,
-              extractedSummary: safeSummary,
-              keyEntities: safeEntities,
-              rawContent: storedContent,
-              embeddingStatus: "PENDING" as const,
-              lastProcessedAt: new Date(),
-              processingError: null,
-            };
-
-            // Fault-tolerant upsert: try with rawContent, fallback without
-            try {
-              await prisma.corpusDocument.upsert({
-                where: { driveFileId: file.id },
-                create: {
-                  corpusId: corpus.id,
-                  driveFileId: file.id,
-                  driveFileName: safeFileName,
-                  driveFileUrl,
-                  mimeType: file.mimeType,
-                  ...upsertData,
-                },
-                update: {
-                  driveFileName: safeFileName,
-                  driveFileUrl,
-                  mimeType: file.mimeType,
-                  ...upsertData,
-                },
-              });
-            } catch (upsertError: unknown) {
-              const upsertMsg = upsertError instanceof Error ? upsertError.message : String(upsertError);
-              const isEncodingError = upsertMsg.includes("22021") || upsertMsg.includes("invalid byte sequence");
-
-              if (isEncodingError) {
-                console.warn(`[corpus-import] Encoding error for ${file.name}, retrying without rawContent — metadata preserved`);
-                await prisma.corpusDocument.upsert({
-                  where: { driveFileId: file.id },
-                  create: {
-                    corpusId: corpus.id,
-                    driveFileId: file.id,
-                    driveFileName: safeFileName,
-                    driveFileUrl,
-                    mimeType: file.mimeType,
-                    ...upsertData,
-                    rawContent: "",
-                    processingError: "Content extraction had encoding issues, metadata preserved",
-                  },
-                  update: {
-                    driveFileName: safeFileName,
-                    driveFileUrl,
-                    mimeType: file.mimeType,
-                    ...upsertData,
-                    rawContent: "",
-                    processingError: "Content extraction had encoding issues, metadata preserved",
-                  },
-                });
-              } else {
-                throw upsertError; // Re-throw non-encoding errors
-              }
-            }
-
-            return { success: true, fileName: file.name };
-          } catch (error: unknown) {
-            const msg = error instanceof Error ? error.message : String(error);
-            const safeMsg = sanitizeForPostgres(msg);
-            console.error(`[corpus-import] FAILED: ${file.name} — ${safeMsg}`);
-
-            // Save error but don't abort
-            await prisma.corpusDocument
-              .upsert({
-                where: { driveFileId: file.id },
-                create: {
-                  corpusId: corpus.id,
-                  driveFileId: file.id,
-                  driveFileName: sanitizeForPostgres(file.name),
-                  driveFileUrl:
-                    file.webViewLink ||
-                    `https://drive.google.com/file/d/${file.id}/view`,
-                  mimeType: file.mimeType,
-                  processingError: safeMsg,
-                  embeddingStatus: "FAILED",
-                  lastProcessedAt: new Date(),
-                },
-                update: {
-                  processingError: safeMsg,
-                  embeddingStatus: "FAILED",
-                  lastProcessedAt: new Date(),
-                },
-              })
-              .catch((e: unknown) =>
-                console.error(`[corpus-import] Could not save error for ${file.name}:`, e)
-              );
-
-            return { success: false, fileName: file.name, error: safeMsg };
+          if (routing.kind === "operational") {
+            await persistOperationalSource(file, routing.detectedKind);
+            console.log(`[corpus-import] OPERATIONAL ${file.name} -> ${routing.detectedKind}`);
+            operational++;
+            continue;
           }
-        })
-      );
 
-      // Count results
-      for (const result of batchResults) {
-        if (result.status === "fulfilled" && result.value.success) {
+          // Narrative pipeline
+          const rawContentUnsafe = await extractFileContent(file, accessToken);
+          const rawContent = sanitizeForPostgres(rawContentUnsafe);
+
+          const beforeLen = rawContentUnsafe.length;
+          const afterLen = rawContent.length;
+          if (beforeLen !== afterLen) {
+            console.warn(`[corpus-import] SANITIZED rawContent for ${file.id}: ${beforeLen} -> ${afterLen} chars`);
+          }
+
+          // Stage A: Flash classification
+          let stageA;
+          try {
+            stageA = await runStageA(rawContent, file.name);
+          } catch (stageAError: unknown) {
+            const msg = stageAError instanceof Error ? stageAError.message : String(stageAError);
+            console.error(`[corpus-import] STAGE_A_FAIL ${file.name}: ${msg}`);
+            stageA = { documentType: "UNCLASSIFIED" as const, industry: null, geography: null, outcome: null };
+          }
+
+          // Stage B: Pro comprehension
+          let stageB;
+          try {
+            stageB = await runStageB(rawContent, file.name, stageA);
+          } catch (stageBError: unknown) {
+            const msg = stageBError instanceof Error ? stageBError.message : String(stageBError);
+            console.error(`[corpus-import] STAGE_B_FAIL ${file.name}: ${msg}`);
+            // Persist with Stage A only + error
+            await prisma.corpusDocument.upsert({
+              where: { driveFileId: file.id },
+              create: {
+                corpusId: corpus.id,
+                driveFileId: file.id,
+                driveFileName: sanitizeForPostgres(file.name),
+                driveFileUrl: file.webViewLink || `https://drive.google.com/file/d/${file.id}/view`,
+                mimeType: file.mimeType,
+                processingError: sanitizeForPostgres(`Stage B failed: ${msg}`),
+                embeddingStatus: "FAILED",
+                lastProcessedAt: new Date(),
+              },
+              update: {
+                processingError: sanitizeForPostgres(`Stage B failed: ${msg}`),
+                embeddingStatus: "FAILED",
+                lastProcessedAt: new Date(),
+              },
+            }).catch(() => {});
+            failed++;
+            continue;
+          }
+
+          await persistDocument(file, rawContent, stageA, stageB, corpus.id);
+          console.log(`[corpus-import] NARRATIVE ${file.name} -> ${stageA.documentType} / ${stageB.provenance} / ${stageB.detectedFrameworks.length} frameworks`);
           processed++;
-        } else {
+        } catch (error: unknown) {
+          const msg = error instanceof Error ? error.message : String(error);
+          console.error(`[corpus-import] FAILED ${file.name}: ${sanitizeForPostgres(msg)}`);
+
+          await prisma.corpusDocument.upsert({
+            where: { driveFileId: file.id },
+            create: {
+              corpusId: corpus.id,
+              driveFileId: file.id,
+              driveFileName: sanitizeForPostgres(file.name),
+              driveFileUrl: file.webViewLink || `https://drive.google.com/file/d/${file.id}/view`,
+              mimeType: file.mimeType,
+              processingError: sanitizeForPostgres(msg),
+              embeddingStatus: "FAILED",
+              lastProcessedAt: new Date(),
+            },
+            update: {
+              processingError: sanitizeForPostgres(msg),
+              embeddingStatus: "FAILED",
+              lastProcessedAt: new Date(),
+            },
+          }).catch(() => {});
+
           failed++;
         }
       }
@@ -533,7 +304,7 @@ export async function importCorpusFromDrive(
         where: { id: corpus.id },
         data: {
           syncProgress: {
-            processed: processed + skipped,
+            processed: processed + operational + skipped,
             total: totalFiles,
             currentBatch: batchIdx + 1,
           },
@@ -541,30 +312,20 @@ export async function importCorpusFromDrive(
         },
       });
 
-      console.log(
-        `[corpus-import] Batch ${batchIdx + 1} complete: ${processed} processed, ${failed} failed`
-      );
+      console.log(`[corpus-import] Batch ${batchIdx + 1} complete: ${processed} narrative, ${operational} operational, ${failed} failed`);
     }
 
-    // Final status update
     await prisma.firmCorpus.update({
       where: { id: corpus.id },
       data: {
         syncStatus: "completed",
-        syncProgress: {
-          processed: processed + skipped,
-          total: totalFiles,
-          currentBatch: totalBatches,
-        },
+        syncProgress: { processed: processed + operational + skipped, total: totalFiles, currentBatch: totalBatches },
         lastSyncedAt: new Date(),
       },
     });
 
-    console.log(
-      `[corpus-import] COMPLETE: ${processed} processed, ${skipped} skipped, ${failed} failed out of ${totalFiles}`
-    );
-
-    return { processed, skipped, failed, total: totalFiles };
+    console.log(`[corpus-import] COMPLETE: ${processed} narrative, ${operational} operational, ${skipped} skipped, ${failed} failed out of ${totalFiles}`);
+    return { processed, skipped, failed, operational, total: totalFiles };
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : String(error);
     console.error(`[corpus-import] FATAL ERROR: ${msg}`);

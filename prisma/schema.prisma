@@ -223,6 +223,8 @@ model Project {
   channelLinks          ChannelProject[]
   prospectFits          ProspectFit[]
   metaProjectComponents MetaProjectComponent[]
+  // Sprint M.2a-PLUS — Frameworks
+  frameworks            FrameworkProject[]
 
   @@index([userId])
   @@index([status])
@@ -726,7 +728,8 @@ model FirmInsight {
   id              String    @id @default(cuid())
   title           String
   content         String    @db.Text
-  insightType     String    // "finding" | "segment" | "decision" | "error" | "pattern" | "contrarian_moat"
+  insightType     String    // "finding" | "segment" | "decision" | "error" | "pattern" | "contrarian_moat" | "framework_adopted"
+  framework       Framework?
   domain          String?   // e.g. "senior_professionals", "fractional", "b2b_saas", "content_led"
   tags            String[]  @default([])
   confidence      Int       @default(50) // 0-100, grows with validation
@@ -931,13 +934,16 @@ model CorpusDocument {
   geography        String?
   companySize      String?
   outcome          CorpusOutcome?
+  provenance       Provenance         @default(UNKNOWN)
+  archived         Boolean            @default(false)
   customTags       String[]           @default([])
   extractedSummary String?            @db.Text
-  keyEntities      Json?              // { companies: [], people: [], sectors: [] }
+  keyEntities      Json?              // [{ name, type: COMPANY|PERSON|PRODUCT|FRAMEWORK|CONCEPT|LOCATION }]
   rawContent       String?            @db.Text
   embeddingStatus  EmbeddingStatus    @default(PENDING)
   lastProcessedAt  DateTime?
   processingError  String?            @db.Text
+  frameworkSources FrameworkSourceDocument[]
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
 
@@ -945,4 +951,143 @@ model CorpusDocument {
   @@index([documentType])
   @@index([industry])
   @@index([corpusId, documentType, industry])
+  @@index([archived])
+}
+
+// =============================================================================
+// SPRINT M.2a-PLUS — FRAMEWORKS + OPERATIONAL SOURCES
+// =============================================================================
+
+enum Provenance {
+  OWN        // Material producido por Vex&Co
+  EXTERNAL   // Material de terceros curado como referencia
+  MIXED      // Hibrido (propuesta Vex&Co que cita frameworks externos)
+  UNKNOWN    // No determinable
+}
+
+enum FrameworkLifecycleStage {
+  EXTERNAL   // Tal cual del autor original
+  ADOPTED    // Vex&Co lo usa sistematicamente, atribuido
+  ADAPTED    // Modificado, atribucion parcial
+  DERIVED    // Nuevo framework propio inspirado en X
+  OWN        // Framework propio puro
+}
+
+enum FrameworkUpdateStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+}
+
+enum OperationalSourceKind {
+  PARTNER_LIST
+  CONTACT_LIST
+  COMPANY_LIST
+  CAMPAIGN_DATA
+  UNKNOWN_TABULAR
+}
+
+enum OperationalTargetSystem {
+  HUBSPOT
+  APOLLO
+  NOTION
+  UNDECIDED
+}
+
+enum OperationalSourceStatus {
+  PENDING    // Detectado, no revisado
+  TAGGED     // Diego asigno targetSystem
+  MIGRATED   // Ya cargado en destino
+  ARCHIVED   // Diego decidio no usarlo
+}
+
+model Framework {
+  id                    String                   @id @default(cuid())
+  name                  String
+  slug                  String                   @unique
+  originSource          String                   // e.g. "Winning by Design", "Reforge", "Vex&Co Original"
+  originAuthor          String?
+  originYear            Int?
+  lifecycleStage        FrameworkLifecycleStage   @default(EXTERNAL)
+  originalDescription   String                   @db.Text
+  originalComponents    Json?                    // array of stages/elements
+  currentVexcoVariant   String?                  @db.Text
+  currentVexcoComponents Json?
+  adaptationLog         Json                     @default("[]") // [{date, projectId, modification, sessionId}]
+  applicationCount      Int                      @default(0)
+  lastAppliedAt         DateTime?
+  lastDiscoveryCheck    DateTime?
+  firmInsightId         String?                  @unique
+  firmInsight           FirmInsight?             @relation(fields: [firmInsightId], references: [id])
+  sourceDocuments       FrameworkSourceDocument[]
+  appliedInProjects     FrameworkProject[]
+  updates               FrameworkUpdate[]
+  derivedFromId         String?
+  derivedFrom           Framework?               @relation("FrameworkDerivation", fields: [derivedFromId], references: [id])
+  derivatives           Framework[]              @relation("FrameworkDerivation")
+  createdAt             DateTime                 @default(now())
+  updatedAt             DateTime                 @updatedAt
+
+  @@index([lifecycleStage])
+  @@index([originSource])
+}
+
+model FrameworkSourceDocument {
+  id          String         @id @default(cuid())
+  frameworkId String
+  framework   Framework      @relation(fields: [frameworkId], references: [id], onDelete: Cascade)
+  documentId  String
+  document    CorpusDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  confidence  Float          // 0..1
+  detectedAt  DateTime       @default(now())
+
+  @@unique([frameworkId, documentId])
+  @@index([frameworkId])
+  @@index([documentId])
+}
+
+model FrameworkProject {
+  id          String    @id @default(cuid())
+  frameworkId String
+  framework   Framework @relation(fields: [frameworkId], references: [id], onDelete: Cascade)
+  projectId   String
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  appliedAt   DateTime  @default(now())
+  notes       String?   @db.Text
+
+  @@unique([frameworkId, projectId])
+  @@index([frameworkId])
+  @@index([projectId])
+}
+
+model FrameworkUpdate {
+  id          String                @id @default(cuid())
+  frameworkId String
+  framework   Framework             @relation(fields: [frameworkId], references: [id], onDelete: Cascade)
+  source      String                // URL, "raindrop", "perplexity_discovery", "manual"
+  description String                @db.Text
+  rawPayload  Json?
+  foundAt     DateTime              @default(now())
+  status      FrameworkUpdateStatus @default(PENDING)
+  reviewedAt  DateTime?
+
+  @@index([frameworkId])
+  @@index([status])
+}
+
+model OperationalSource {
+  id               String                   @id @default(cuid())
+  driveFileId      String                   @unique
+  driveFileName    String
+  driveFileMimeType String
+  driveFolderId    String?
+  detectedKind     OperationalSourceKind    @default(UNKNOWN_TABULAR)
+  targetSystem     OperationalTargetSystem?
+  status           OperationalSourceStatus  @default(PENDING)
+  notes            String?                  @db.Text
+  discoveredAt     DateTime                 @default(now())
+  lastSeenAt       DateTime                 @default(now())
+
+  @@index([detectedKind])
+  @@index([status])
 }

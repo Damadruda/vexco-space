@@ -219,3 +219,36 @@ git checkout main && git merge vexco-lab --no-ff -m "🎉 Merge vexco-lab: Vex&C
 - **Production:** https://vexco-space.vercel.app
 - **GitHub:** https://github.com/Damadruda/vexco-space (private)
 - **Vercel Project:** prj_8yUzvhXTXwWrTMlxJQ12Hu8Rm25d
+
+---
+
+## 15. LLM Routing Policy (validada 9 abr, lineup Claude 4.6)
+
+**T1 — Mecanico:** Gemini Flash (`gemini-2.5-flash`) o Claude Haiku 4.5 (`claude-haiku-4-5-20251001`).
+Uso: clasificacion estructural pura, extraccion de enums/tags, triage, smart filter.
+NUNCA para generar texto que vaya a ser leido por agentes.
+
+**T2 — Analitico:** Gemini 2.5 Pro estable (`gemini-2.5-pro`) + responseSchema.
+Uso: diagnosticos, FirmInsight, Revenue Priority, Variable Analogica, analyzeCrossPortfolio,
+comprension profunda de documentos en ingesta del Firm Corpus (Etapa B).
+SIEMPRE con REGLA #0.5 anti-hallucination en el prompt.
+
+**T3 — Estrategico:**
+- Default: Claude Sonnet 4.6 (`claude-sonnet-4-6`) para War Room chat (Strategist, Revenue, Product, Design)
+- Escalado: Claude Opus 4.6 (`claude-opus-4-6`) para Challenger en debate, narrativas MetaProject,
+  docs cliente-facing, proximos pasos criticos donde el costo del error es alto.
+
+**Principio M.2a-PLUS:** Cualquier pipeline que genere TEXTO leido por agentes debe usar T2 con REGLA #0.5,
+NUNCA T1. Flash/Haiku solo para clasificacion estructural.
+
+---
+
+## 16. REGLA #0.5 — Anti-Hallucination
+
+Aplicada en todos los prompts de Etapa B del pipeline de ingesta y en los 5 agentes del War Room.
+Texto canonico:
+
+> PROHIBIDO inventar nombres de empresas, marcas, productos, personas, lugares, cifras o frameworks
+> que NO aparezcan literalmente en el texto fuente. Si una informacion no aparece, devuelve null,
+> array vacio, o UNKNOWN. Es preferible un output corto y literal que uno completo e inventado.
+> La omision es siempre mejor que la invencion.

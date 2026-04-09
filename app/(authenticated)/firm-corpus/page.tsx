@@ -33,6 +33,8 @@ interface CorpusDocument {
   geography: string | null;
   companySize: string | null;
   outcome: string | null;
+  provenance: string;
+  archived: boolean;
   customTags: string[];
   extractedSummary: string | null;
   keyEntities: { companies?: string[]; people?: string[]; sectors?: string[] } | null;
@@ -71,6 +73,13 @@ const DOC_TYPE_CONFIG: Record<string, { label: string; color: string }> = {
   INDUSTRY_RESEARCH: { label: "Investigacion", color: "text-purple-700 bg-purple-50" },
   METHODOLOGY: { label: "Metodologia", color: "text-indigo-700 bg-indigo-50" },
   UNCLASSIFIED: { label: "Sin clasificar", color: "text-gray-600 bg-gray-100" },
+};
+
+const PROVENANCE_CONFIG: Record<string, { label: string; color: string }> = {
+  OWN: { label: "Propio", color: "text-emerald-700 bg-emerald-50" },
+  EXTERNAL: { label: "Externo", color: "text-blue-700 bg-blue-50" },
+  MIXED: { label: "Mixto", color: "text-amber-700 bg-amber-50" },
+  UNKNOWN: { label: "Desconocido", color: "text-gray-600 bg-gray-100" },
 };
 
 const OUTCOME_CONFIG: Record<string, { label: string; color: string }> = {
@@ -403,6 +412,8 @@ export default function FirmCorpusPage() {
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState("");
   const [filterOutcome, setFilterOutcome] = useState("");
+  const [filterProvenance, setFilterProvenance] = useState("");
+  const [showArchived, setShowArchived] = useState(false);
   const [page, setPage] = useState(1);
 
   // Fetch stats
@@ -426,6 +437,8 @@ export default function FirmCorpusPage() {
       const params = new URLSearchParams({ page: String(page), pageSize: "50" });
       if (filterType) params.append("documentType", filterType);
       if (filterOutcome) params.append("outcome", filterOutcome);
+      if (filterProvenance) params.append("provenance", filterProvenance);
+      if (showArchived) params.append("archived", "true");
       if (searchQuery) params.append("search", searchQuery);
 
       const res = await fetch(`/api/firm-corpus/documents?${params.toString()}`);
@@ -438,7 +451,7 @@ export default function FirmCorpusPage() {
     } catch {
       // Silent fail
     }
-  }, [page, filterType, filterOutcome, searchQuery]);
+  }, [page, filterType, filterOutcome, filterProvenance, showArchived, searchQuery]);
 
   // Initial load
   useEffect(() => {
@@ -450,7 +463,7 @@ export default function FirmCorpusPage() {
     if (!loading) {
       fetchDocuments();
     }
-  }, [page, filterType, filterOutcome, searchQuery]);
+  }, [page, filterType, filterOutcome, filterProvenance, showArchived, searchQuery]);
 
   // Poll during sync
   useEffect(() => {
@@ -736,6 +749,27 @@ export default function FirmCorpusPage() {
                   <option key={key} value={key}>{cfg.label}</option>
                 ))}
               </select>
+
+              <select
+                value={filterProvenance}
+                onChange={(e) => { setFilterProvenance(e.target.value); setPage(1); }}
+                className="text-sm bg-transparent border-b border-transparent hover:border-[#5E5E5E]/30 focus:border-[#1A1A1A] outline-none py-1 pr-6 cursor-pointer text-[#5E5E5E]"
+              >
+                <option value="">Toda provenance</option>
+                {Object.entries(PROVENANCE_CONFIG).map(([key, cfg]) => (
+                  <option key={key} value={key}>{cfg.label}</option>
+                ))}
+              </select>
+
+              <label className="flex items-center gap-1.5 text-xs text-[#5E5E5E] cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={showArchived}
+                  onChange={(e) => { setShowArchived(e.target.checked); setPage(1); }}
+                  className="rounded border-gray-300"
+                />
+                Archivados
+              </label>
             </div>
           </div>
 
@@ -760,7 +794,9 @@ export default function FirmCorpusPage() {
                       <th className="px-4 py-3 font-normal hidden md:table-cell">Industria</th>
                       <th className="px-4 py-3 font-normal hidden lg:table-cell">Geografia</th>
                       <th className="px-4 py-3 font-normal hidden md:table-cell">Outcome</th>
+                      <th className="px-4 py-3 font-normal hidden lg:table-cell">Provenance</th>
                       <th className="px-4 py-3 font-normal">Actualizado</th>
+                      <th className="px-4 py-3 font-normal w-8"></th>
                     </tr>
                   </thead>
                   <tbody>
@@ -804,10 +840,35 @@ export default function FirmCorpusPage() {
                               <span className="text-sm text-[#5E5E5E]">—</span>
                             )}
                           </td>
+                          <td className="px-4 py-3 hidden lg:table-cell">
+                            {(() => {
+                              const pCfg = PROVENANCE_CONFIG[doc.provenance] || PROVENANCE_CONFIG.UNKNOWN;
+                              return (
+                                <span className={`text-xs px-2 py-0.5 rounded-full ${pCfg.color}`}>
+                                  {pCfg.label}
+                                </span>
+                              );
+                            })()}
+                          </td>
                           <td className="px-4 py-3">
                             <span className="text-xs text-[#5E5E5E]">
                               {doc.lastProcessedAt ? timeAgo(doc.lastProcessedAt) : "—"}
                             </span>
+                          </td>
+                          <td className="px-4 py-3">
+                            <button
+                              onClick={(e) => {
+                                e.stopPropagation();
+                                if (window.confirm(`Mover "${doc.driveFileName}" a Operational Sources?`)) {
+                                  fetch(`/api/firm-corpus/${doc.id}/move-to-operational`, { method: "POST" })
+                                    .then(() => { fetchStats(); fetchDocuments(); });
+                                }
+                              }}
+                              className="text-xs text-[#5E5E5E] hover:text-[#1A1A1A] opacity-0 group-hover:opacity-100 transition-opacity"
+                              title="Mover a Operational Sources"
+                            >
+                              ⋯
+                            </button>
                           </td>
                         </tr>
                       );
