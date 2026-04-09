@@ -45,6 +45,7 @@ interface CorpusDocument {
 
 interface CorpusStats {
   total: number;
+  failedCount: number;
   byType: { type: string; count: number }[];
   byOutcome: { outcome: string | null; count: number }[];
   lastSyncedAt: string | null;
@@ -521,6 +522,30 @@ export default function FirmCorpusPage() {
     }
   };
 
+  // Reclassify failed
+  const [reclassifying, setReclassifying] = useState(false);
+  const handleReclassifyFailed = async () => {
+    const count = stats?.failedCount || 0;
+    if (!window.confirm(`Re-ejecutar clasificacion de ${count} documentos con error?`)) return;
+    setReclassifying(true);
+    try {
+      const res = await fetch("/api/firm-corpus/reclassify-failed", { method: "POST" });
+      if (res.ok) {
+        const data = await res.json();
+        alert(`Reclasificacion completada: ${data.reclassified} exitosos, ${data.stillFailing} siguen fallando`);
+      } else {
+        const data = await res.json();
+        alert(data.error || "Error al reclasificar");
+      }
+      fetchStats();
+      fetchDocuments();
+    } catch {
+      alert("Error de conexion");
+    } finally {
+      setReclassifying(false);
+    }
+  };
+
   // Search debounce
   const [searchInput, setSearchInput] = useState("");
   useEffect(() => {
@@ -642,6 +667,16 @@ export default function FirmCorpusPage() {
                 >
                   Re-sincronizar completo
                 </button>
+                {(stats?.failedCount ?? 0) > 0 && (
+                  <button
+                    onClick={handleReclassifyFailed}
+                    disabled={reclassifying || syncing}
+                    className="inline-flex items-center gap-2 px-4 py-2 text-sm border border-amber-200 text-amber-700 rounded-md hover:bg-amber-50 transition-colors disabled:opacity-50"
+                  >
+                    <AlertCircle className="h-3.5 w-3.5" />
+                    Reclasificar fallados ({stats?.failedCount})
+                  </button>
+                )}
                 <button
                   onClick={() => setShowFolderPicker(true)}
                   className="inline-flex items-center gap-2 px-3 py-2 text-xs text-[#5E5E5E] hover:text-[#1A1A1A] transition-colors"

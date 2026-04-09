@@ -210,18 +210,7 @@ async function extractFileContent(
 
 // ─── Classification ──────────────────────────────────────────────────────────
 
-async function classifyDocument(
-  fileName: string,
-  rawContent: string
-): Promise<ClassificationResult> {
-  // Truncate content for classification (keep full raw stored separately)
-  const contentForLLM = rawContent.length > 15000
-    ? rawContent.substring(0, 15000) + "\n[... content truncated for classification ...]"
-    : rawContent;
-
-  const response = await callLLM({
-    model: "gemini-flash",
-    systemPrompt: `You are a consulting firm document classifier for Vex&Co, a strategic consulting firm operating in Spain and Latin America.
+const CLASSIFIER_SYSTEM_PROMPT = `You are a consulting firm document classifier for Vex&Co, a strategic consulting firm operating in Spain and Latin America.
 Classify the following document and extract structured metadata.
 
 Rules:
@@ -235,15 +224,10 @@ Rules:
 - companySize: Target company size if mentioned (e.g., "SMB", "Enterprise", "Startup"). Null if not mentioned.
 - outcome: WON/LOST/DORMANT/IN_PROGRESS for proposals/cases. NA for research/methodology.
 - extractedSummary: Max 500 words. Distill the most relevant strategic insights — do NOT just compress the text.
-- keyEntities: Extract mentioned companies, people names, and business sectors.`,
-    userPrompt: `File: ${fileName}\n\nContent:\n${contentForLLM}`,
-    jsonMode: true,
-    responseSchema: CLASSIFICATION_SCHEMA,
-    maxTokens: 2048,
-    temperature: 0.3,
-  });
+- keyEntities: Extract mentioned companies, people names, and business sectors.`;
 
-  const parsed = JSON.parse(response.content);
+function parseClassificationResponse(raw: string): ClassificationResult {
+  const parsed = JSON.parse(raw);
   return {
     documentType: parsed.documentType || "UNCLASSIFIED",
     industry: parsed.industry || null,
@@ -254,6 +238,74 @@ Rules:
     keyEntities: parsed.keyEntities || { companies: [], people: [], sectors: [] },
   };
 }
+
+async function classifyDocument(
+  fileName: string,
+  rawContent: string
+): Promise<ClassificationResult> {
+  const contentForLLM = rawContent.length > 15000
+    ? rawContent.substring(0, 15000) + "\n[... content truncated for classification ...]"
+    : rawContent;
+
+  const userPrompt = `File: ${fileName}\n\nContent:\n${contentForLLM}`;
+
+  // Attempt 1: structured output with responseSchema (should guarantee valid JSON)
+  let rawResponse1 = "";
+  try {
+    const response = await callLLM({
+      model: "gemini-flash",
+      systemPrompt: CLASSIFIER_SYSTEM_PROMPT,
+      userPrompt,
+      jsonMode: true,
+      responseSchema: CLASSIFICATION_SCHEMA,
+      maxTokens: 2048,
+      temperature: 0.2,
+    });
+    rawResponse1 = response.content;
+    return parseClassificationResponse(rawResponse1);
+  } catch (err1: unknown) {
+    const msg1 = err1 instanceof Error ? err1.message : String(err1);
+    console.error(
+      `[corpus-import] PARSE_FAIL attempt 1 for ${fileName}:\n  error: ${msg1}\n  raw_output: ${(rawResponse1 || msg1).substring(0, 2000)}`
+    );
+
+    // Attempt 2: temperature 0, reinforced system prompt
+    let rawResponse2 = "";
+    try {
+      const response2 = await callLLM({
+        model: "gemini-flash",
+        systemPrompt: CLASSIFIER_SYSTEM_PROMPT +
+          "\n\nReturn ONLY the JSON object matching the schema. No markdown, no code fences, no commentary, no prefix, no suffix.",
+        userPrompt,
+        jsonMode: true,
+        responseSchema: CLASSIFICATION_SCHEMA,
+        maxTokens: 2048,
+        temperature: 0,
+      });
+      rawResponse2 = response2.content;
+      return parseClassificationResponse(rawResponse2);
+    } catch (err2: unknown) {
+      const msg2 = err2 instanceof Error ? err2.message : String(err2);
+      console.error(
+        `[corpus-import] PARSE_FAIL attempt 2 for ${fileName}:\n  error: ${msg2}\n  raw_output: ${(rawResponse2 || msg2).substring(0, 2000)}`
+      );
+
+      // Final fallback: return UNCLASSIFIED with error info
+      return {
+        documentType: "UNCLASSIFIED" as CorpusDocumentType,
+        industry: null,
+        geography: null,
+        companySize: null,
+        outcome: null,
+        extractedSummary: `Classification failed after 2 attempts. File: ${fileName}`,
+        keyEntities: { companies: [], people: [], sectors: [] },
+      };
+    }
+  }
+}
+
+// Exported for reclassify-failed endpoint
+export { classifyDocument, sanitizeForPostgres, sanitizeJson, logSanitizationDelta };
 
 // ─── Main Import Function ────────────────────────────────────────────────────
 

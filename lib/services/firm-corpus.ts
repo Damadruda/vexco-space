@@ -68,8 +68,9 @@ export async function getCorpusDocuments(filters: CorpusDocumentFilters = {}) {
 export async function getCorpusStats() {
   const corpus = await getFirmCorpus();
 
-  const [total, byType, byOutcome] = await Promise.all([
+  const [total, failedCount, byType, byOutcome] = await Promise.all([
     prisma.corpusDocument.count({ where: { corpusId: corpus.id } }),
+    prisma.corpusDocument.count({ where: { corpusId: corpus.id, processingError: { not: null } } }),
     prisma.corpusDocument.groupBy({
       by: ["documentType"],
       where: { corpusId: corpus.id },
@@ -84,6 +85,7 @@ export async function getCorpusStats() {
 
   return {
     total,
+    failedCount,
     byType: byType.map((g) => ({ type: g.documentType, count: g._count })),
     byOutcome: byOutcome.map((g) => ({ outcome: g.outcome, count: g._count })),
     lastSyncedAt: corpus.lastSyncedAt,
