@@ -208,13 +208,13 @@ export async function importCorpusFromDrive(
 
     // Clean slate for full mode
     if (mode === "full") {
-      const [delDocs, delOps, delFSD] = await Promise.all([
+      const [delDocs, delOps, delFSD, delFW] = await Promise.all([
         prisma.corpusDocument.deleteMany({ where: { corpusId: corpus.id } }),
         prisma.operationalSource.deleteMany({}),
         prisma.frameworkSourceDocument.deleteMany({}),
-        // NOT deleting Framework records — preserve for future sprints
+        prisma.framework.deleteMany({}),
       ]);
-      console.log(`[corpus-import] Full mode: deleted ${delDocs.count} docs, ${delOps.count} ops, ${delFSD.count} framework links`);
+      console.log(`[corpus-import] Full mode: deleted ${delDocs.count} docs, ${delOps.count} ops, ${delFSD.count} framework links, ${delFW.count} frameworks`);
     }
 
     // Filter for incremental mode

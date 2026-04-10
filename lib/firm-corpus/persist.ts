@@ -148,6 +148,9 @@ export async function persistDocument(
       const safeOriginAuthor = fw.originAuthor ? sanitizeForPostgres(fw.originAuthor) : null;
       const safeHint = fw.componentsHint ? sanitizeForPostgres(fw.componentsHint) : `Framework detectado en: ${safeFileName}`;
 
+      const safeAppContext = fw.applicationContext ? sanitizeForPostgres(fw.applicationContext) : null;
+      const lifecycle = fw.lifecycleStage || "EXTERNAL";
+
       const framework = await tx.framework.upsert({
         where: { slug },
         create: {
@@ -155,8 +158,9 @@ export async function persistDocument(
           slug,
           originSource: safeOriginSource,
           originAuthor: safeOriginAuthor,
-          lifecycleStage: "EXTERNAL",
+          lifecycleStage: lifecycle,
           originalDescription: safeHint,
+          ...(safeAppContext ? { currentVexcoVariant: safeAppContext } : {}),
         },
         update: {}, // Don't overwrite future manual edits
       });

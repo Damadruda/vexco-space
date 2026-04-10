@@ -17,6 +17,8 @@ export interface DetectedFramework {
   originSource: string | null;
   componentsHint: string | null;
   confidence: number;
+  lifecycleStage: "OWN" | "EXTERNAL" | "ADOPTED" | "ADAPTED" | "DERIVED";
+  applicationContext: string | null;
 }
 
 export interface StageBResult {
@@ -60,8 +62,13 @@ const STAGE_B_SCHEMA = {
           originSource: { type: Type.STRING, nullable: true },
           componentsHint: { type: Type.STRING, nullable: true },
           confidence: { type: Type.NUMBER },
+          lifecycleStage: {
+            type: Type.STRING,
+            enum: ["OWN", "EXTERNAL", "ADOPTED", "ADAPTED", "DERIVED"],
+          },
+          applicationContext: { type: Type.STRING, nullable: true },
         },
-        required: ["name", "confidence"],
+        required: ["name", "confidence", "lifecycleStage"],
       },
     },
   },
@@ -99,22 +106,71 @@ Tareas:
 
 2. **keyEntities**: Lista de entidades textualmente presentes. Solo nombres que aparezcan literalmente. Tipo: COMPANY, PERSON, PRODUCT, FRAMEWORK, CONCEPT, LOCATION.
 
-3. **provenance**: Determina quien produjo este documento:
-   - OWN: producido por Vex&Co. Senales: uso de "nosotros/Vex&Co" en primera persona, propuesta firmada por Vex&Co, autoria explicita de Diego Madruda.
-   - EXTERNAL: producido por terceros. Senales: autor distinto, logotipos de otras consultoras/empresas, tono de tercera persona, citas a otros como autoridad.
-   - MIXED: documento de Vex&Co que cita extensivamente frameworks externos como base.
-   - UNKNOWN: no determinable con la informacion disponible.
+## CLASIFICACION DE PROVENANCE
 
-4. **provenanceReasoning**: 1-2 frases explicando POR QUE asignaste esa provenance, citando senales concretas del texto.
+3. **provenance**: Debes asignar uno de estos 4 valores:
+   - OWN: el documento es contenido original creado por Vex&Co (metodologias propias, research propio, case studies de proyectos ejecutados, propuestas comerciales propias, frameworks desarrollados internamente)
+   - EXTERNAL: el documento es contenido de terceros que Vex&Co conserva como referencia (frameworks de otros consultores, reports de industria de terceros, papers academicos, libros, articulos de medios)
+   - MIXED: el documento combina analisis propio de Vex&Co con citas/adaptaciones extensas de fuentes externas identificables
+   - UNKNOWN: no hay senales suficientes para decidir
 
-5. **detectedFrameworks**: Si el documento describe, aplica o referencia frameworks/metodologias estructuradas, listalos. Para cada uno:
-   - name: nombre del framework (ej: "Bow Tie", "4 Fits", "OST", "Full-Funnel B2B Marketing")
+   Sigue estos 3 pasos en orden:
+
+   PASO 1 — Busca senales de AUTORIA EXTERNA explicita:
+   - Menciona un autor, consultora, o empresa distinta de Vex&Co como creador del contenido? (ej: "by McKinsey", "segun Reforge", "Winning by Design establece...")
+   - Tiene estructura de paper academico, articulo de medio, o publicacion de terceros (abstract, bibliografia, citas formales)?
+   - El titulo coincide con un framework o publicacion conocida de terceros?
+   Si hay autoria externa clara → EXTERNAL. Termina aqui.
+
+   PASO 2 — Busca senales de AUTORIA PROPIA de Vex&Co:
+   - Menciona explicitamente a Vex&Co, Diego Madruda, o clientes concretos de Vex&Co como protagonistas del contenido?
+   - Describe un proyecto ejecutado, una propuesta comercial, un hallazgo especifico de un engagement?
+   - Usa primera persona plural ("nosotros", "nuestra metodologia", "nuestro cliente")?
+   Si hay autoria propia clara → OWN. Termina aqui.
+
+   PASO 3 — Sin senales claras de ninguno:
+   - Si el documento mezcla analisis propio con citas extensas identificables → MIXED
+   - Si no hay senales suficientes para decidir → UNKNOWN
+
+   REGLA CRITICA (anti-sesgo OWN):
+   El hecho de que el documento este en el Drive de Consulting de Vex&Co NO es evidencia de autoria propia. Diego guarda referentes externos en ese mismo Drive. La autoria debe inferirse del contenido del documento, NO de su ubicacion.
+
+   REGLA #0.5 — Anti-alucinacion:
+   Si no estas seguro, usa UNKNOWN. Nunca inventes autoria.
+
+4. **provenanceReasoning**: 1-2 frases explicando POR QUE asignaste esa provenance, citando senales concretas del texto y el paso (1, 2 o 3) que determino la decision.
+
+## DETECCION DE FRAMEWORKS
+
+5. **detectedFrameworks**: Un documento SOLO cuenta como framework si cumple TODOS estos criterios:
+
+   a) **Documentacion sustancial**: el documento dedica al menos una seccion completa (no una mencion de paso) a explicar el framework
+   b) **Explicacion del que**: define que es el framework, su proposito, y el problema que resuelve
+   c) **Explicacion del como**: describe los pasos, fases, componentes, o artefactos del framework
+   d) **Aplicabilidad concreta**: incluye ejemplos, plantillas, criterios de uso, o guias de aplicacion
+
+   NO cuenta como framework:
+   - Menciones de paso en un case study ("aplicamos Bow Tie y obtuvimos...")
+   - Referencias en bibliografia o fuentes
+   - Uso del nombre del framework sin explicacion
+   - Listas de metodologias sin desarrollo
+
+   Por cada framework detectado, devuelve:
+   - name: nombre canonico del framework
    - originAuthor: persona/empresa que lo creo, si se menciona en el texto
-   - originSource: empresa/publicacion/libro de origen, si se menciona
+   - originSource: "Vex&Co" si provenance es OWN, o el autor/organizacion si es EXTERNAL
    - componentsHint: breve descripcion de sus etapas/elementos si estan en el texto
-   - confidence: 0..1, que tan seguro estas de que es realmente un framework (no solo una mencion casual)
+   - confidence: 0..1, que tan seguro estas de que el documento documenta sustancialmente este framework (no solo lo menciona). Dado el criterio estricto, solo valores >= 0.7 seran persistidos.
+   - lifecycleStage: uno de estos valores:
+     - EXTERNAL: framework de terceros documentado sin modificacion
+     - OWN: framework creado por Vex&Co desde cero
+     - ADOPTED: framework externo que Vex&Co usa tal cual en su practica
+     - ADAPTED: framework externo que Vex&Co ha modificado para su contexto
+     - DERIVED: framework nuevo de Vex&Co inspirado en uno externo
+   - applicationContext: en que contexto lo usa Vex&Co (si se infiere del texto), o null si no se puede determinar
 
-CRITICO sobre frameworks: si el documento es de un autor externo describiendo su propio framework, ese framework es EXTERNAL a Vex&Co. NO atribuyas frameworks externos a Vex&Co aunque el documento este en el corpus de Vex&Co. La presencia de un documento en el corpus no implica autoria.`;
+   REGLA #0.5 — Anti-alucinacion:
+   Si tienes dudas sobre si algo cuenta como framework documentado, NO lo incluyas. Es mejor perder un verdadero positivo que llenar la base con ruido.`;
 
   const result = await ai.models.generateContent({
     model: "gemini-2.5-pro",
@@ -133,6 +189,10 @@ CRITICO sobre frameworks: si el documento es de un autor externo describiendo su
     keyEntities: parsed.keyEntities || [],
     provenance: parsed.provenance || "UNKNOWN",
     provenanceReasoning: parsed.provenanceReasoning || "",
-    detectedFrameworks: parsed.detectedFrameworks || [],
+    detectedFrameworks: (parsed.detectedFrameworks || []).map((fw: Record<string, unknown>) => ({
+      ...fw,
+      lifecycleStage: fw.lifecycleStage || "EXTERNAL",
+      applicationContext: fw.applicationContext || null,
+    })),
   };
 }
