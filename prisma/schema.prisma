@@ -979,6 +979,11 @@ enum FrameworkUpdateStatus {
   REJECTED
 }
 
+enum FrameworkStatus {
+  ACTIVE
+  DEPRECATED
+}
+
 enum OperationalSourceKind {
   PARTNER_LIST
   CONTACT_LIST
@@ -1025,6 +1030,7 @@ model Framework {
   derivedFromId         String?
   derivedFrom           Framework?               @relation("FrameworkDerivation", fields: [derivedFromId], references: [id])
   derivatives           Framework[]              @relation("FrameworkDerivation")
+  status                FrameworkStatus           @default(ACTIVE)
   createdAt             DateTime                 @default(now())
   updatedAt             DateTime                 @updatedAt
 
