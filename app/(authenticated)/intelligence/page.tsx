@@ -313,14 +313,17 @@ export default function IntelligencePage() {
                       </div>
 
                       <div className="flex flex-wrap gap-1.5 mb-3">
-                        {proposal.componentProjectIds.map((pid) => (
-                          <span key={pid} className="inline-flex items-center rounded-full bg-[#F9F8F6] border border-[#E8E4DE] px-2 py-0.5 text-[10px] text-[#5E5E5E]">
-                            {projectMap[pid] || pid}
-                            {proposal.roles?.[pid] && (
-                              <span className="ml-1 text-[#C5A572]">{proposal.roles[pid]}</span>
-                            )}
-                          </span>
-                        ))}
+                        {proposal.componentProjectIds.map((pid) => {
+                          const isOrphan = !projectMap[pid];
+                          return (
+                            <span key={pid} className={`inline-flex items-center rounded-full px-2 py-0.5 text-[10px] ${isOrphan ? "bg-[#F9F8F6] border border-dashed border-[#E8E4DE] text-[#5E5E5E]/50 italic" : "bg-[#F9F8F6] border border-[#E8E4DE] text-[#5E5E5E]"}`}>
+                              {projectMap[pid] || "Proyecto no disponible"}
+                              {proposal.roles?.[pid] && (
+                                <span className={`ml-1 ${isOrphan ? "text-[#C5A572]/50" : "text-[#C5A572]"}`}>{proposal.roles[pid]}</span>
+                              )}
+                            </span>
+                          );
+                        })}
                       </div>
 
                       <div className="mb-3">
@@ -396,7 +399,7 @@ export default function IntelligencePage() {
                       <div className="flex flex-wrap gap-1.5">
                         {cr.recommendedProjectIds.map((pid) => (
                           <span key={pid} className="inline-flex items-center rounded-full bg-[#F9F8F6] border border-[#E8E4DE] px-2 py-0.5 text-[10px] text-[#5E5E5E]">
-                            {projectMap[pid] || pid}
+                            {projectMap[pid] || "Proyecto no disponible"}
                           </span>
                         ))}
                       </div>
@@ -429,7 +432,7 @@ export default function IntelligencePage() {
                           <div className="flex flex-wrap gap-2 mt-1">
                             {pr.fits.map((f) => (
                               <span key={f.projectId} className="text-xs text-[#5E5E5E]">
-                                {projectMap[f.projectId] || f.projectId}: <span className="text-[#C5A572] font-mono">{f.fitScore}</span>
+                                {projectMap[f.projectId] || "Proyecto no disponible"}: <span className="text-[#C5A572] font-mono">{f.fitScore}</span>
                               </span>
                             ))}
                           </div>
@@ -537,7 +540,7 @@ export default function IntelligencePage() {
                 <div className="flex flex-wrap gap-1.5">
                   {instantiateModal.proposal.componentProjectIds.map((pid) => (
                     <span key={pid} className="inline-flex items-center rounded-full bg-[#F9F8F6] border border-[#E8E4DE] px-2 py-0.5 text-[10px] text-[#5E5E5E]">
-                      {projectMap[pid] || pid}
+                      {projectMap[pid] || "Proyecto no disponible"}
                     </span>
                   ))}
                 </div>

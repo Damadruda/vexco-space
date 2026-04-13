@@ -23,6 +23,14 @@ export async function GET() {
       projectMap[p.id] = p.title;
     }
 
+    // Log orphan projectIds from snapshot for diagnostics
+    const proposals = (latest.metaProjectProposals as Array<{ componentProjectIds?: string[] }>) ?? [];
+    const allPids = proposals.flatMap((p) => p.componentProjectIds ?? []);
+    const orphans = allPids.filter((pid) => !projectMap[pid]);
+    if (orphans.length > 0) {
+      console.warn("[cross-portfolio/latest] projectIds huerfanos en snapshot:", orphans);
+    }
+
     return NextResponse.json({ analysis: latest, projectMap });
   } catch (error) {
     console.error("[CROSS-PORTFOLIO LATEST]", error);
