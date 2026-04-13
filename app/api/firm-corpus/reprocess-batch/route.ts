@@ -1,14 +1,9 @@
 // =============================================================================
-// REPROCESS — Re-run Stage A + B on all narrative corpus documents
-// Soft migration: marks existing frameworks DEPRECATED, re-detected ones become ACTIVE
+// REPROCESS-BATCH — Cursor-paginated re-processing of corpus documents
+// Fixes 504 timeout from /reprocess by processing in batches of 5
 // =============================================================================
-/**
- * @deprecated Use /api/firm-corpus/reprocess-batch instead.
- * This endpoint times out (504) with corpus >5 docs due to Vercel 300s limit.
- * Kept as reference until batch version is validated in production.
- */
 
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { runStageA } from "@/lib/firm-corpus/stage-a-classifier";
 import { runStageB } from "@/lib/firm-corpus/stage-b-comprehension";
@@ -16,6 +11,12 @@ import { sanitizeForPostgres } from "@/lib/firm-corpus/persist";
 import type { Provenance } from "@prisma/client";
 
 export const maxDuration = 300;
+
+const EXCLUDED_MIME_TYPES = [
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "text/csv",
+  "application/vnd.ms-excel",
+];
 
 function slugify(text: string): string {
   return text
@@ -35,49 +36,64 @@ function mapLifecycleStage(
     : "EXTERNAL";
 }
 
-export async function POST() {
+export async function POST(req: NextRequest) {
   try {
-    // PASO 1: Soft migration — mark all current frameworks as DEPRECATED
-    const deprecatedCount = await prisma.framework.updateMany({
-      where: { status: "ACTIVE" },
-      data: { status: "DEPRECATED" },
-    });
+    const body = await req.json().catch(() => ({}));
+    const cursor: string | null = body.cursor ?? null;
+    const batchSize: number = body.batchSize ?? 5;
 
-    console.log(
-      `[reprocess] ${deprecatedCount.count} frameworks marcados DEPRECATED`
-    );
+    // Soft migration ONLY on first batch (cursor is null)
+    let deprecatedCount = 0;
+    if (!cursor) {
+      const result = await prisma.framework.updateMany({
+        where: { status: "ACTIVE" },
+        data: { status: "DEPRECATED" },
+      });
+      deprecatedCount = result.count;
+      console.log(
+        `[reprocess-batch] First batch — ${deprecatedCount} frameworks DEPRECATED`
+      );
+    }
 
-    // PASO 2: Get narrative corpus documents (exclude xlsx/csv)
+    // Fetch batch of narrative documents, cursor-paginated by id ASC
     const docs = await prisma.corpusDocument.findMany({
       where: {
-        mimeType: {
-          notIn: [
-            "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            "text/csv",
-            "application/vnd.ms-excel",
-          ],
-        },
+        mimeType: { notIn: EXCLUDED_MIME_TYPES },
         rawContent: { not: null },
+        ...(cursor ? { id: { gt: cursor } } : {}),
       },
+      orderBy: { id: "asc" },
+      take: batchSize,
     });
 
-    console.log(
-      `[reprocess] Procesando ${docs.length} documentos (xlsx/csv excluidos)`
-    );
+    if (docs.length === 0) {
+      // No more documents — return final stats
+      const activeFrameworks = await prisma.framework.count({
+        where: { status: "ACTIVE" },
+      });
+      const deprecatedRemaining = await prisma.framework.count({
+        where: { status: "DEPRECATED" },
+      });
 
-    const results = {
-      processed: 0,
-      failed: 0,
-      errors: [] as string[],
-    };
+      return NextResponse.json({
+        success: true,
+        processed: 0,
+        failed: 0,
+        nextCursor: null,
+        hasMore: false,
+        message: "No hay mas documentos para procesar",
+        stats: { activeFrameworks, deprecatedRemaining },
+      });
+    }
 
-    // PASO 3: Re-process Stage A + Stage B in series (avoid Gemini rate limits)
+    const results = { processed: 0, failed: 0, errors: [] as string[] };
+
     for (const doc of docs) {
       try {
         const rawContent = doc.rawContent || "";
         if (rawContent.length < 50) {
           console.warn(
-            `[reprocess] Skipping ${doc.driveFileName}: content too short (${rawContent.length} chars)`
+            `[reprocess-batch] Skipping ${doc.driveFileName}: content too short (${rawContent.length} chars)`
           );
           results.failed++;
           results.errors.push(
@@ -92,7 +108,7 @@ export async function POST() {
         // Stage B: Pro comprehension (3-step provenance + strict framework detection)
         const stageB = await runStageB(rawContent, doc.driveFileName, stageA);
 
-        // Update document with new Stage B results
+        // Update document with new results
         await prisma.corpusDocument.update({
           where: { id: doc.id },
           data: {
@@ -108,7 +124,7 @@ export async function POST() {
           },
         });
 
-        // Upsert frameworks detected with confidence >= 0.7
+        // Upsert frameworks with confidence >= 0.7
         for (const fw of stageB.detectedFrameworks) {
           if (fw.confidence < 0.7) continue;
 
@@ -164,40 +180,31 @@ export async function POST() {
         }
 
         console.log(
-          `[reprocess] OK ${doc.driveFileName}: ${stageB.provenance} / ${stageB.detectedFrameworks.filter((f) => f.confidence >= 0.7).length} frameworks`
+          `[reprocess-batch] OK ${doc.driveFileName}: ${stageB.provenance} / ${stageB.detectedFrameworks.filter((f) => f.confidence >= 0.7).length} fw`
         );
         results.processed++;
       } catch (err: unknown) {
         const msg = err instanceof Error ? err.message : String(err);
         results.failed++;
         results.errors.push(`${doc.driveFileName}: ${msg}`);
-        console.error(`[reprocess] FAIL ${doc.driveFileName}: ${msg}`);
+        console.error(`[reprocess-batch] FAIL ${doc.driveFileName}: ${msg}`);
       }
     }
 
-    // PASO 4: Final stats
-    const activeFrameworks = await prisma.framework.count({
-      where: { status: "ACTIVE" },
-    });
-    const deprecatedRemaining = await prisma.framework.count({
-      where: { status: "DEPRECATED" },
-    });
+    const lastDoc = docs[docs.length - 1];
+    const hasMore = docs.length === batchSize;
 
     return NextResponse.json({
       success: true,
       ...results,
-      stats: {
-        activeFrameworks,
-        deprecatedRemaining,
-        message:
-          activeFrameworks >= 8 && activeFrameworks <= 12
-            ? "Framework count en rango esperado (8-12)"
-            : `Framework count fuera de rango: ${activeFrameworks} (esperado 8-12)`,
-      },
+      deprecatedInThisBatch: deprecatedCount,
+      nextCursor: hasMore ? lastDoc.id : null,
+      hasMore,
+      processedDocsInThisBatch: docs.length,
     });
   } catch (error: unknown) {
     const msg = error instanceof Error ? error.message : String(error);
-    console.error(`[reprocess] FATAL: ${msg}`);
+    console.error(`[reprocess-batch] FATAL: ${msg}`);
     return NextResponse.json(
       { success: false, error: msg },
       { status: 500 }
