@@ -1097,3 +1097,32 @@ model OperationalSource {
   @@index([detectedKind])
   @@index([status])
 }
+
+// =============================================================================
+// CORPUS REPROCESS JOB — Background job state for cron-based reprocessing
+// =============================================================================
+
+enum ReprocessJobStatus {
+  PENDING
+  RUNNING
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+model CorpusReprocessJob {
+  id             String             @id @default(cuid())
+  status         ReprocessJobStatus @default(PENDING)
+  cursor         String?
+  totalProcessed Int                @default(0)
+  totalFailed    Int                @default(0)
+  totalBatches   Int                @default(0)
+  errors         Json               @default("[]")
+  startedAt      DateTime           @default(now())
+  lastTickAt     DateTime?
+  completedAt    DateTime?
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@index([status])
+}

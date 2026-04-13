@@ -3,5 +3,11 @@
     "app/api/drive/analyze-folder/route.ts": {
       "maxDuration": 300
     }
-  }
+  },
+  "crons": [
+    {
+      "path": "/api/firm-corpus/reprocess-job/tick",
+      "schedule": "*/2 * * * *"
+    }
+  ]
 }
