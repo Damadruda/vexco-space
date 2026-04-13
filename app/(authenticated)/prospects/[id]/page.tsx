@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, use } from "react";
+import { useState, useEffect } from "react";
 import { Header } from "@/components/ui/header";
 import { ArrowLeft, Trash2, Save } from "lucide-react";
 import Link from "next/link";
@@ -37,8 +37,8 @@ const STAGE_STYLES: Record<string, string> = {
 const STAGES = ["discovery", "qualified", "proposal", "negotiation", "won", "lost"];
 const SOURCES = ["MANUAL", "REFERRAL", "INBOUND", "OUTBOUND", "EVENT", "CHANNEL", "APOLLO", "LINKEDIN", "CORPUS"];
 
-export default function ProspectDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
+export default function ProspectDetailPage({ params }: { params: { id: string } }) {
+  const { id } = params;
   const router = useRouter();
   const [prospect, setProspect] = useState<ProspectDetail | null>(null);
   const [loading, setLoading] = useState(true);

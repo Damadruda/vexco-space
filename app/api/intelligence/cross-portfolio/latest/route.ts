@@ -4,15 +4,26 @@ import { prisma } from "@/lib/db";
 
 export async function GET() {
   try {
-    await getDefaultUserId();
+    const userId = await getDefaultUserId();
     const latest = await prisma.crossPortfolioAnalysis.findFirst({
       where: { status: "completed" },
       orderBy: { createdAt: "desc" },
     });
     if (!latest) {
-      return NextResponse.json({ analysis: null });
+      return NextResponse.json({ analysis: null, projectMap: {} });
     }
-    return NextResponse.json({ analysis: latest });
+
+    // Resolve project names server-side to avoid client-side race conditions
+    const projects = await prisma.project.findMany({
+      where: { userId },
+      select: { id: true, title: true },
+    });
+    const projectMap: Record<string, string> = {};
+    for (const p of projects) {
+      projectMap[p.id] = p.title;
+    }
+
+    return NextResponse.json({ analysis: latest, projectMap });
   } catch (error) {
     console.error("[CROSS-PORTFOLIO LATEST]", error);
     return NextResponse.json(

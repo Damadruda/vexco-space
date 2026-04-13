@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, use } from "react";
+import { useState, useEffect } from "react";
 import { Header } from "@/components/ui/header";
 import { ArrowLeft, Trash2, Save } from "lucide-react";
 import Link from "next/link";
@@ -35,8 +35,8 @@ const TYPE_LABELS: Record<string, string> = {
   individual: "Individual", firm: "Firma", community: "Comunidad", platform: "Plataforma",
 };
 
-export default function ChannelDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
+export default function ChannelDetailPage({ params }: { params: { id: string } }) {
+  const { id } = params;
   const router = useRouter();
   const [channel, setChannel] = useState<ChannelDetail | null>(null);
   const [loading, setLoading] = useState(true);

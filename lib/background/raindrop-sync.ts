@@ -63,6 +63,12 @@ export async function runRaindropSync(
     page++;
   }
 
+  console.log(`[raindrop-sync] Fetched ${allBookmarks.length} bookmarks across ${page + 1} pages`);
+  if (allBookmarks.length > 0) {
+    const dates = allBookmarks.slice(0, 5).map((b) => b.created);
+    console.log(`[raindrop-sync] First 5 dates (newest first):`, dates);
+  }
+
   // ── Batch dedup: fetch all existing items by raindropId in one query ────
   const raindropIds = allBookmarks
     .map((b) => String(b.id))
@@ -140,6 +146,8 @@ export async function runRaindropSync(
       errors++;
     }
   }
+
+  console.log(`[raindrop-sync] Results: ${created} created, ${updated} updated, ${skipped} skipped, ${errors} errors`);
 
   await prisma.userPreferences.update({
     where: { userId },

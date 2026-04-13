@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect, use } from "react";
+import { useState, useEffect } from "react";
 import { Header } from "@/components/ui/header";
 import { ArrowLeft, Check, Circle, Clock, AlertCircle, Trash2 } from "lucide-react";
 import Link from "next/link";
@@ -48,8 +48,8 @@ const STATUS_ICON: Record<string, typeof Check> = {
   pending: Circle,
 };
 
-export default function MetaProjectDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  const { id } = use(params);
+export default function MetaProjectDetailPage({ params }: { params: { id: string } }) {
+  const { id } = params;
   const router = useRouter();
   const [mp, setMp] = useState<MetaProjectDetail | null>(null);
   const [loading, setLoading] = useState(true);

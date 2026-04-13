@@ -99,9 +99,10 @@ export default function IntelligencePage() {
 
       if (aData.analysis) setAnalysis(aData.analysis);
 
-      const pm: ProjectMap = {};
+      // Use server-resolved projectMap from /latest as primary, client-side as fallback
+      const pm: ProjectMap = aData.projectMap ?? {};
       for (const p of pData.projects || pData || []) {
-        pm[p.id] = p.title;
+        if (!pm[p.id]) pm[p.id] = p.title;
       }
       setProjectMap(pm);
 

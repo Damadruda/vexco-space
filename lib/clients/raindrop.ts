@@ -55,6 +55,7 @@ export const raindropClient = {
     const params = new URLSearchParams({
       page: String(page),
       perpage: String(Math.min(perPage, 50)),
+      sort: "-created",
     });
     if (search) params.set("search", search);
 
