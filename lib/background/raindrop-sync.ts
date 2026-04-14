@@ -71,7 +71,7 @@ export async function runRaindropSync(
 
   // ── Batch dedup: fetch all existing items by raindropId in one query ────
   const raindropIds = allBookmarks
-    .map((b) => String(b.id))
+    .map((b) => String(b._id))
     .filter(Boolean);
 
   const existingItems = await prisma.inboxItem.findMany({
@@ -94,7 +94,7 @@ export async function runRaindropSync(
       continue;
     }
 
-    const rdId = String(bookmark.id);
+    const rdId = String(bookmark._id);
     const existing = existingByRaindropId.get(rdId);
 
     if (existing) {
@@ -116,7 +116,7 @@ export async function runRaindropSync(
           });
           updated++;
         } catch (err) {
-          console.error(`[RAINDROP SYNC] Error updating bookmark ${bookmark.id}:`, err);
+          console.error(`[RAINDROP SYNC] Error updating bookmark ${bookmark._id}:`, err);
           errors++;
         }
       } else {
@@ -142,7 +142,7 @@ export async function runRaindropSync(
       newItemIds.push(item.id);
       created++;
     } catch (err) {
-      console.error(`[RAINDROP SYNC] Error creating bookmark ${bookmark.id}:`, err);
+      console.error(`[RAINDROP SYNC] Error creating bookmark ${bookmark._id}:`, err);
       errors++;
     }
   }

@@ -69,7 +69,7 @@ export async function POST() {
     );
 
     // Batch lookup existing items
-    const raindropIds = allBookmarks.map((b) => String(b.id)).filter(Boolean);
+    const raindropIds = allBookmarks.map((b) => String(b._id)).filter(Boolean);
     const existingItems = await prisma.inboxItem.findMany({
       where: { userId, raindropId: { in: raindropIds } },
       select: { id: true, raindropId: true },
@@ -96,7 +96,7 @@ export async function POST() {
         continue;
       }
 
-      const rdId = String(bookmark.id);
+      const rdId = String(bookmark._id);
 
       if (existingSet.has(rdId)) {
         try {

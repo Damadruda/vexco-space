@@ -1,7 +1,7 @@
 const RAINDROP_BASE = "https://api.raindrop.io/rest/v1";
 
 export interface RaindropBookmark {
-  id: number;
+  _id: number;
   title: string;
   excerpt: string;
   link: string;
