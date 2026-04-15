@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { X, Folder, FileText, Loader2, CheckCircle, AlertCircle, Sparkles, Eye, Search, ChevronRight, Home } from "lucide-react";
+import { X, Folder, Loader2, CheckCircle, AlertCircle, Sparkles, Search, ChevronRight, Home } from "lucide-react";
 import { useRouter } from "next/navigation";
 import { signIn, useSession } from "next-auth/react";
 
@@ -24,48 +24,6 @@ interface FolderStats {
   other: number;
 }
 
-interface ProjectStructure {
-  title: string;
-  description: string;
-  category: string;
-  tags: string[];
-  concept: {
-    idea: string;
-    problem: string;
-    solution: string;
-    value: string;
-  };
-  market: {
-    target: string;
-    size: string;
-    trends: string;
-    competitors: string;
-  };
-  model: {
-    revenue: string;
-    costs: string;
-    channels: string;
-    resources: string;
-  };
-  action: {
-    milestones: string;
-    timeline: string;
-    tasks: string;
-    metrics: string;
-  };
-  resourcesPlan: {
-    team: string;
-    tools: string;
-    budget: string;
-    partners: string;
-  };
-  extractedNotes: Array<{ title: string; content: string }>;
-  extractedLinks: Array<{ url: string; title: string; description: string }>;
-  sourceFolderName?: string;
-  totalFilesProcessed?: number;
-  totalFilesInFolder?: number;
-}
-
 interface DriveProjectImporterProps {
   isOpen: boolean;
   onClose: () => void;
@@ -79,14 +37,12 @@ const DEFAULT_ROOT_FOLDER = {
 export function DriveProjectImporter({ isOpen, onClose }: DriveProjectImporterProps) {
   const { data: session } = useSession();
   const router = useRouter();
-  const [step, setStep] = useState<"select" | "analyze" | "preview">("select");
+  const [step, setStep] = useState<"select" | "analyze">("select");
   const [selectedFolder, setSelectedFolder] = useState<DriveFile | null>(null);
   const [folderStats, setFolderStats] = useState<FolderStats | null>(null);
   const [loading, setLoading] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
-  const [creating, setCreating] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [projectStructure, setProjectStructure] = useState<ProjectStructure | null>(null);
   const [files, setFiles] = useState<DriveFile[]>([]);
   const [needsGoogleAuth, setNeedsGoogleAuth] = useState(false);
 
@@ -103,7 +59,6 @@ export function DriveProjectImporter({ isOpen, onClose }: DriveProjectImporterPr
       setStep("select");
       setSelectedFolder(null);
       setFolderStats(null);
-      setProjectStructure(null);
       setFiles([]);
       setError(null);
       setSearchQuery("");
@@ -227,64 +182,34 @@ export function DriveProjectImporter({ isOpen, onClose }: DriveProjectImporterPr
     return result;
   };
 
-  const handleAnalyze = async () => {
-    if (!files || files.length === 0) return;
+  const handleImport = async () => {
+    if (!selectedFolder?.id) return;
 
     setAnalyzing(true);
     setError(null);
 
     try {
-      const response = await fetch("/api/projects/import-from-drive", {
+      const response = await fetch("/api/drive/analyze-folder", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          files,
-          folderName: selectedFolder?.name
-        })
+          folderId: selectedFolder.id,
+          folderName: selectedFolder.name,
+        }),
       });
 
       const data = await response.json();
 
       if (!response.ok) {
-        throw new Error(data.error || "Error al analizar carpeta");
-      }
-
-      setProjectStructure(data.projectStructure);
-      setStep("preview");
-
-    } catch (err) {
-      setError(err instanceof Error ? err.message : "Error al analizar carpeta");
-    } finally {
-      setAnalyzing(false);
-    }
-  };
-
-  const handleCreateProject = async () => {
-    if (!projectStructure) return;
-
-    setCreating(true);
-    setError(null);
-
-    try {
-      const response = await fetch("/api/projects/import-from-drive", {
-        method: "PUT",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ projectStructure })
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(data.error || "Error al crear proyecto");
+        throw new Error(data.error || "Error al importar la carpeta");
       }
 
       router.push(`/project-builder/${data.project.id}`);
       onClose();
-
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Error al crear proyecto");
+      setError(err instanceof Error ? err.message : "Error al importar carpeta");
     } finally {
-      setCreating(false);
+      setAnalyzing(false);
     }
   };
 
@@ -323,24 +248,11 @@ export function DriveProjectImporter({ isOpen, onClose }: DriveProjectImporterPr
             step === "analyze" ? "text-gray-900" : "text-gray-400"
           }`}>
             <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-              step === "preview" ? "bg-green-500 text-white" : step === "analyze" ? "bg-gray-900 text-white" : "bg-gray-200"
+              step === "analyze" ? "bg-gray-900 text-white" : "bg-gray-200"
             }`}>
-              {step === "preview" ? <CheckCircle className="w-5 h-5" /> : "2"}
+              2
             </div>
-            <span className="text-sm font-medium">Analizar</span>
-          </div>
-
-          <div className="w-12 h-px bg-gray-300" />
-
-          <div className={`flex items-center gap-2 ${
-            step === "preview" ? "text-gray-900" : "text-gray-400"
-          }`}>
-            <div className={`w-8 h-8 rounded-full flex items-center justify-center ${
-              step === "preview" ? "bg-gray-900 text-white" : "bg-gray-200"
-            }`}>
-              3
-            </div>
-            <span className="text-sm font-medium">Confirmar</span>
+            <span className="text-sm font-medium">Importar</span>
           </div>
         </div>
 
@@ -501,19 +413,19 @@ export function DriveProjectImporter({ isOpen, onClose }: DriveProjectImporterPr
                     Cambiar carpeta
                   </button>
                   <button
-                    onClick={handleAnalyze}
+                    onClick={handleImport}
                     disabled={analyzing}
                     className="px-6 py-3 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50 flex items-center gap-2"
                   >
                     {analyzing ? (
                       <>
                         <Loader2 className="w-5 h-5 animate-spin" />
-                        Analizando con IA...
+                        Importando carpeta...
                       </>
                     ) : (
                       <>
                         <Sparkles className="w-5 h-5" />
-                        Analizar y Generar Proyecto
+                        Importar carpeta
                       </>
                     )}
                   </button>
@@ -522,101 +434,8 @@ export function DriveProjectImporter({ isOpen, onClose }: DriveProjectImporterPr
             </div>
           )}
 
-          {/* Step 3: Preview */}
-          {step === "preview" && projectStructure && (
-            <div className="space-y-6">
-              <div>
-                <h3 className="font-serif text-lg font-medium text-gray-900 mb-3">Información del Proyecto</h3>
-                <div className="bg-gray-50 rounded-lg p-4 space-y-3">
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Título</label>
-                    <input
-                      type="text"
-                      value={projectStructure.title}
-                      onChange={(e) => setProjectStructure({ ...projectStructure, title: e.target.value })}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-900/20"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm font-medium text-gray-700 mb-1">Descripción</label>
-                    <textarea
-                      value={projectStructure.description}
-                      onChange={(e) => setProjectStructure({ ...projectStructure, description: e.target.value })}
-                      rows={3}
-                      className="w-full px-3 py-2 border border-gray-200 rounded-md focus:outline-none focus:ring-2 focus:ring-gray-900/20"
-                    />
-                  </div>
-                  <div className="flex gap-2">
-                    {projectStructure.tags.map((tag, index) => (
-                      <span key={index} className="px-2 py-1 bg-gray-200 text-gray-700 rounded-full text-xs">
-                        {tag}
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              <div className="flex items-center gap-4 text-sm text-gray-500 bg-blue-50 p-3 rounded-lg">
-                <FileText className="w-4 h-4" />
-                <span>{projectStructure.totalFilesProcessed || 0} archivos procesados de {projectStructure.totalFilesInFolder || 0} totales</span>
-                {projectStructure.extractedNotes && projectStructure.extractedNotes.length > 0 && (
-                  <span>• {projectStructure.extractedNotes.length} notas extraídas</span>
-                )}
-                {projectStructure.extractedLinks && projectStructure.extractedLinks.length > 0 && (
-                  <span>• {projectStructure.extractedLinks.length} links encontrados</span>
-                )}
-              </div>
-
-              <div className="grid md:grid-cols-2 gap-4">
-                <div className="border border-gray-200 rounded-lg p-4">
-                  <h4 className="font-medium text-gray-900 mb-2">01 • Concept</h4>
-                  <p className="text-sm text-gray-600 line-clamp-3">{projectStructure.concept?.idea}</p>
-                </div>
-                <div className="border border-gray-200 rounded-lg p-4">
-                  <h4 className="font-medium text-gray-900 mb-2">02 • Market</h4>
-                  <p className="text-sm text-gray-600 line-clamp-3">{projectStructure.market?.target}</p>
-                </div>
-                <div className="border border-gray-200 rounded-lg p-4">
-                  <h4 className="font-medium text-gray-900 mb-2">03 • Model</h4>
-                  <p className="text-sm text-gray-600 line-clamp-3">{projectStructure.model?.revenue}</p>
-                </div>
-                <div className="border border-gray-200 rounded-lg p-4">
-                  <h4 className="font-medium text-gray-900 mb-2">04 • Action</h4>
-                  <p className="text-sm text-gray-600 line-clamp-3">{projectStructure.action?.milestones}</p>
-                </div>
-              </div>
-            </div>
-          )}
         </div>
 
-        {/* Footer */}
-        {step === "preview" && (
-          <div className="flex items-center justify-between p-6 border-t bg-gray-50">
-            <button
-              onClick={() => setStep("analyze")}
-              className="px-4 py-2 text-gray-700 hover:bg-gray-100 rounded-lg transition-colors"
-            >
-              Volver
-            </button>
-            <button
-              onClick={handleCreateProject}
-              disabled={creating}
-              className="px-6 py-2 bg-gray-900 text-white rounded-lg hover:bg-gray-800 transition-colors disabled:opacity-50 flex items-center gap-2"
-            >
-              {creating ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin" />
-                  Creando...
-                </>
-              ) : (
-                <>
-                  <CheckCircle className="w-4 h-4" />
-                  Crear Proyecto
-                </>
-              )}
-            </button>
-          </div>
-        )}
       </div>
     </div>
   );

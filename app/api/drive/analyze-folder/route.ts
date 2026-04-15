@@ -7,13 +7,14 @@ import { callLLM, callGeminiMultimodal } from "@/lib/clients/llm";
 import mammoth from "mammoth";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 60;
+export const maxDuration = 300;
 
 // Configuration constants
 const CONFIG = {
   MAX_FILE_SIZE_MB: 10,
   MAX_TEXT_LENGTH: 8000,
   MAX_FILES_PER_BATCH: 20,
+  MAX_PDF_SIZE_MB: 20,  // límite de Gemini para PDFs vía inlineData
   SUPPORTED_IMAGE_TYPES: ["image/jpeg", "image/png", "image/gif", "image/webp"],
   SUPPORTED_TEXT_TYPES: [
     "application/vnd.google-apps.document",
@@ -28,7 +29,7 @@ const CONFIG = {
   ],
   // File extensions to ALWAYS process as text (regardless of MIME type)
   // This handles Google Drive reporting .json/.md/.html as application/octet-stream
-  TEXT_EXTENSIONS: [".json", ".md", ".html", ".pdf", ".txt", ".csv", ".markdown", ".docx"],
+  TEXT_EXTENSIONS: [".json", ".md", ".html", ".txt", ".csv", ".markdown", ".docx"],
   // UX/UI Expert Mode folder ID
   EXPERT_MODE_FOLDER_ID: "1ekDx8PsLfS2Dgn4C7qMTYRcx_yDti2Lh",
 
@@ -83,7 +84,7 @@ interface DriveFile {
 
 interface ProcessedFile {
   name: string;
-  type: "image" | "text" | "skipped";
+  type: "image" | "text" | "pdf" | "skipped";
   content?: Part;
   error?: string;
 }
@@ -224,8 +225,14 @@ function filterAndPrioritizeFiles(
 
     if (file.mimeType === "application/vnd.google-apps.folder") continue;
 
+    // Imágenes en business mode: incluir como medium priority (assets visuales del proyecto)
     if (isImageFileByExtension(file.name) || file.mimeType.startsWith("image/")) {
-      excluded.push({ name: file.name, reason: "imagen" });
+      const fileSize = parseInt(file.size || "0");
+      if (fileSize > CONFIG.MAX_FILE_SIZE_MB * 1024 * 1024) {
+        excluded.push({ name: file.name, reason: `imagen > ${CONFIG.MAX_FILE_SIZE_MB}MB` });
+        continue;
+      }
+      medium.push(file);
       continue;
     }
 
@@ -378,6 +385,47 @@ async function processImageFile(
 }
 
 /**
+ * Download PDF as Base64 inlineData for Gemini multimodal.
+ * Gemini 2.5 Pro acepta PDFs nativos hasta 20MB y procesa texto + layout + imágenes embebidas.
+ */
+async function processPdfFile(
+  file: DriveFile,
+  accessToken: string
+): Promise<ProcessedFile> {
+  try {
+    const fileSize = parseInt(file.size || "0");
+    if (fileSize > CONFIG.MAX_PDF_SIZE_MB * 1024 * 1024) {
+      return { name: file.name, type: "skipped", error: `PDF > ${CONFIG.MAX_PDF_SIZE_MB}MB` };
+    }
+
+    const response = await fetch(
+      `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`,
+      { headers: { Authorization: `Bearer ${accessToken}` } }
+    );
+
+    if (!response.ok) {
+      return { name: file.name, type: "skipped", error: `HTTP ${response.status}` };
+    }
+
+    const buffer = await response.arrayBuffer();
+    const base64Data = Buffer.from(buffer).toString("base64");
+
+    return {
+      name: file.name,
+      type: "pdf",
+      content: {
+        inlineData: {
+          data: base64Data,
+          mimeType: "application/pdf",
+        },
+      },
+    };
+  } catch (error: any) {
+    return { name: file.name, type: "skipped", error: error.message };
+  }
+}
+
+/**
  * Extract text content from documents (Google Docs, text files, etc.)
  */
 async function processTextFile(
@@ -474,6 +522,14 @@ async function processFilesInBatches(
         const isTextByExt = isTextFileByExtension(file.name);
         const isImageByExt = isImageFileByExtension(file.name);
         
+        // PRIORITY 0.5: PDFs vía multimodal inlineData (no como texto)
+        if (
+          file.name.toLowerCase().endsWith(".pdf") ||
+          file.mimeType === "application/pdf"
+        ) {
+          return processPdfFile(file, accessToken);
+        }
+
         // PRIORITY 1: Extension-based detection for text files (.json, .md, .html)
         // This OVERRIDES MIME type - even if Google reports application/octet-stream
         if (isTextByExt) {
@@ -515,6 +571,7 @@ async function processFilesInBatches(
         totalProcessed++;
         if (result.type === "image") analysis.images++;
         if (result.type === "text") analysis.documents++;
+        if (result.type === "pdf") analysis.documents++;
       }
       if (result.error) {
         analysis.errors.push(`${result.name}: ${result.error}`);
@@ -752,36 +809,42 @@ export async function POST(request: Request) {
       console.log(`[DRIVE_IMPORT] Archivos seleccionados:`, textFiles.map(f => f.name).slice(0, 10).join(", "), textFiles.length > 10 ? `... y ${textFiles.length - 10} más` : "");
     }
 
-    // 4. DESCARGAR texto de cada archivo
-    const textContents: string[] = [];
-    const processedNames: string[] = [];
-    const ignoredFiles: { name: string; reason: string }[] = [];
-
-    for (const file of textFiles) {
-      const processed = await processTextFile(file, accessToken);
-      if (processed.type === "text" && processed.content && "text" in processed.content) {
-        textContents.push((processed.content as { text: string }).text);
-        processedNames.push(file.name);
-      } else {
-        ignoredFiles.push({ name: file.name, reason: processed.error ?? "tipo no soportado" });
-      }
-    }
+    // 4. PROCESAR archivos vía multimodal (texto + imágenes + PDFs)
+    const { parts, analysis: batchAnalysis } = await processFilesInBatches(
+      textFiles,
+      accessToken,
+      CONFIG.MAX_FILES_PER_BATCH
+    );
 
     const downloadTime = ((Date.now() - startTime) / 1000).toFixed(1);
-    console.log(`[DRIVE_IMPORT] Descarga: ${downloadTime}s`);
-    console.log(`[DRIVE_IMPORT] Modo: ${projectType.toUpperCase()} | Procesados (${processedNames.length}): ${processedNames.slice(0, 5).join(", ")}${processedNames.length > 5 ? `... +${processedNames.length - 5}` : ""}`);
-    console.log(`[DRIVE_IMPORT] Ignorados por filtro inteligente: ${smartExcluded.length} | Ignorados por error de descarga: ${ignoredFiles.length}`);
+    console.log(
+      `[DRIVE_IMPORT] Procesado: ${downloadTime}s | ` +
+      `${batchAnalysis.processedFiles}/${textFiles.length} archivos ` +
+      `(${batchAnalysis.documents} docs, ${batchAnalysis.images} imágenes)`
+    );
+    console.log(`[DRIVE_IMPORT] Errores de descarga: ${batchAnalysis.errors.length}`);
 
-    if (textContents.length === 0) {
+    if (parts.length === 0) {
       return NextResponse.json({
-        error: `No se pudo extraer contenido de los archivos. Carpeta ID: ${folderId}`
+        error: `No se pudo procesar ningún archivo. Carpeta ID: ${folderId}`,
+        details: batchAnalysis.errors.slice(0, 5).join("; "),
       }, { status: 400 });
     }
 
-    // 5. SAFETY CHECK — si ya llevamos >45s, crear proyecto mínimo
+    // Lista de nombres procesados (para metadata + DriveDocSummary loop)
+    const processedFileNames = textFiles
+      .filter((f) => !batchAnalysis.errors.some(e => e.startsWith(f.name)))
+      .map(f => f.name);
+
+    const ignoredFiles = batchAnalysis.errors.map(e => {
+      const [name, ...rest] = e.split(": ");
+      return { name, reason: rest.join(": ") };
+    });
+
+    // 5. SAFETY CHECK — si llevamos >240s, crear proyecto mínimo
     const elapsedBeforeAI = parseFloat(((Date.now() - startTime) / 1000).toFixed(1));
-    if (elapsedBeforeAI > 45) {
-      console.warn(`[DRIVE_IMPORT] ⚠️ ${elapsedBeforeAI}s — creando proyecto mínimo`);
+    if (elapsedBeforeAI > 240) {
+      console.warn(`[DRIVE_IMPORT] ⚠️ ${elapsedBeforeAI}s — creando proyecto mínimo sin análisis AI`);
 
       const project = existingProjectId
         ? await prisma.project.update({
@@ -791,7 +854,7 @@ export async function POST(request: Request) {
         : await prisma.project.create({
             data: {
               title: folderName,
-              description: `Importado desde Drive. ${allFiles.length} archivos, ${textContents.length} procesados. Análisis pendiente por timeout.`,
+              description: `Importado desde Drive. ${allFiles.length} archivos, ${parts.length} procesados. Análisis pendiente por timeout.`,
               status: "active",
               projectType: "idea",
               category: "Google Drive Import",
@@ -808,29 +871,30 @@ export async function POST(request: Request) {
         project,
         stats: {
           totalFiles: allFiles.length,
-          processedFiles: textContents.length,
+          processedFiles: parts.length,
           duration: `${((Date.now() - startTime) / 1000).toFixed(2)}s`,
           warning: "Análisis AI omitido por tiempo. Re-importa para completar.",
-          files: { processed: processedNames, ignored: ignoredFiles },
+          files: { processed: processedFileNames, ignored: ignoredFiles },
         },
       });
     }
 
-    // 6. ANÁLISIS AI — concatenar texto + single call a Flash
-    const allText = textContents.join("\n\n");
-    // Truncar a 30000 chars para que Flash lo procese rápido
-    const truncatedText = allText.length > 30000
-      ? allText.substring(0, 30000) + "\n\n[... contenido truncado ...]"
-      : allText;
-
+    // 6. ANÁLISIS AI MULTIMODAL — Gemini 2.5 Pro ve texto + imágenes + PDFs nativamente
     let parsedResponse: any = {};
     let patternsExtracted: ExtractedPattern[] = [];
+    let documentsClassified: Array<{ fileName: string; assetRole: string; visualDescription: string }> = [];
 
     if (isExpertMode) {
-      // EXPERT MODE — extracción de patrones UX/UI
+      // EXPERT MODE — extracción de patrones UX/UI (texto-only por ahora)
+      const textOnlyParts = parts.filter(p => "text" in p);
+      const truncatedText = textOnlyParts
+        .map(p => ("text" in p ? p.text : ""))
+        .join("\n\n")
+        .substring(0, 30000);
+
       const expertPrompt = `Eres un experto en UX/UI Design Systems analizando recursos del proyecto "${folderName}".
 
-Tienes acceso al contenido de ${textContents.length} documentos.
+Tienes acceso al contenido de ${textOnlyParts.length} documentos.
 
 MISIÓN: Extraer TODOS los patrones de diseño visual y herramientas de implementación.
 
@@ -865,12 +929,12 @@ Tu respuesta DEBE ser ÚNICAMENTE un objeto JSON válido (sin markdown, sin back
         console.error("[DRIVE_IMPORT] Error en Expert Mode:", e.message);
       }
 
-      // PM analysis para Expert Mode
+      // PM analysis para Expert Mode (también texto-only por ahora)
       try {
         const pmResult = await callLLM({
           model: "gemini-flash",
           systemPrompt: `Eres un PM analizando recursos UX/UI del proyecto "${folderName}". Responde SOLO con JSON válido.`,
-          userPrompt: `Contenido de ${textContents.length} documentos:\n\n${truncatedText.substring(0, 15000)}\n\nJSON requerido:
+          userPrompt: `Contenido de ${textOnlyParts.length} documentos:\n\n${truncatedText.substring(0, 15000)}\n\nJSON requerido:
 {
   "concept": "Descripción de los recursos UX/UI encontrados",
   "targetMarket": "Quién usaría estos recursos",
@@ -889,43 +953,62 @@ Tu respuesta DEBE ser ÚNICAMENTE un objeto JSON válido (sin markdown, sin back
       }
 
     } else {
-      // STANDARD MODE — análisis PM con contenido real de los documentos
-      const analysisPrompt = `Analiza el siguiente contenido del proyecto "${folderName}" y genera un análisis estratégico.
+      // STANDARD MODE — análisis multimodal con texto + imágenes + PDFs
+      const fileListForPrompt = textFiles
+        .map((f, i) => `${i + 1}. ${f.name} (${f.mimeType})`)
+        .join("\n");
 
-CONTENIDO DE ${textContents.length} DOCUMENTOS DEL PROYECTO:
+      const analysisPrompt = `Analiza los siguientes archivos del proyecto "${folderName}" y genera un análisis estratégico estructurado.
 
-${truncatedText}
+ARCHIVOS DISPONIBLES (${textFiles.length} total):
+${fileListForPrompt}
 
 INSTRUCCIONES:
-- Basa tu análisis EXCLUSIVAMENTE en el contenido proporcionado
-- NO inventes información que no esté en los documentos
-- Si no hay suficiente información para un campo, escribe "Información no disponible en los documentos"
-- Responde ÚNICAMENTE con JSON válido (sin markdown, sin backticks)
+- Tienes acceso multimodal: lees texto, ves imágenes y procesas PDFs nativamente.
+- Basa tu análisis EXCLUSIVAMENTE en el contenido proporcionado.
+- NO inventes información que no esté en los archivos.
+- Si no hay info para un campo, escribe "Información no disponible en los archivos".
+- Para CADA archivo procesado, clasifica su rol como asset (assetRole) y describe brevemente qué contiene (visualDescription).
 
+REGLA #0.5 ANTI-HALUCINACIÓN: si los archivos no contienen información sobre un campo, NO lo inventes. Indica explícitamente la ausencia.
+
+Responde ÚNICAMENTE con JSON válido:
 {
-  "concept": "Qué es este proyecto según los documentos. Problema que resuelve, solución propuesta. Max 2000 chars.",
-  "targetMarket": "Público objetivo según lo descrito en los documentos. Max 2000 chars.",
-  "metrics": "KPIs o métricas mencionadas en los documentos. Max 2000 chars.",
-  "actionPlan": "Próximos pasos o plan descrito en los documentos. Max 2000 chars.",
+  "concept": "Qué es este proyecto según los archivos. Problema y solución. Max 2000 chars.",
+  "targetMarket": "Público objetivo según los archivos. Max 2000 chars.",
+  "metrics": "KPIs o métricas mencionadas. Max 2000 chars.",
+  "actionPlan": "Próximos pasos descritos. Max 2000 chars.",
   "resources": "Recursos, tecnologías o herramientas mencionadas. Max 2000 chars.",
-  "description": "Resumen ejecutivo basado en los documentos. Max 2000 chars."
+  "description": "Resumen ejecutivo. Max 2000 chars.",
+  "documents": [
+    {
+      "fileName": "nombre exacto del archivo procesado",
+      "assetRole": "logo|brand_asset|mockup|screenshot|reference|content|data|technical_spec|other",
+      "visualDescription": "Descripción concreta de qué contiene el archivo (1-2 frases). Para imágenes: describe lo que se ve. Para docs: describe el contenido principal."
+    }
+  ]
 }`;
 
       try {
-        const result = await callLLM({
-          model: "gemini-flash",
-          systemPrompt: "",
-          userPrompt: analysisPrompt,
-          jsonMode: true,
-          temperature: 0.3,
-          maxTokens: 2048,
-        });
+        const result = await callGeminiMultimodal(
+          "",
+          analysisPrompt,
+          parts,
+          true,
+          4096,
+          0.3
+        );
         parsedResponse = JSON.parse(result.content);
-        console.log(`[DRIVE_IMPORT] Análisis AI completado. Campos: ${Object.keys(parsedResponse).join(", ")}`);
+        documentsClassified = parsedResponse.documents || [];
+        console.log(
+          `[DRIVE_IMPORT] Multimodal análisis OK. ` +
+          `Campos: ${Object.keys(parsedResponse).join(", ")}. ` +
+          `Documentos clasificados: ${documentsClassified.length}`
+        );
       } catch (e: any) {
-        console.error("[DRIVE_IMPORT] Error parseando análisis:", e.message);
+        console.error("[DRIVE_IMPORT] Error parseando análisis multimodal:", e.message);
         parsedResponse = {
-          concept: `Proyecto importado: ${folderName}. ${textContents.length} documentos procesados.`,
+          concept: `Proyecto importado: ${folderName}. ${parts.length} archivos procesados.`,
           description: `Importación automática de ${allFiles.length} archivos desde Google Drive.`,
         };
       }
@@ -941,7 +1024,7 @@ INSTRUCCIONES:
     const targetMarket = truncate(parsedResponse.targetMarket);
     const metrics = truncate(parsedResponse.metrics);
     const actionPlan = truncate(parsedResponse.actionPlan);
-    const resources = truncate(parsedResponse.resources) || `${allFiles.length} archivos, ${textContents.length} procesados`;
+    const resources = truncate(parsedResponse.resources) || `${allFiles.length} archivos, ${parts.length} procesados`;
     const description = truncate(parsedResponse.description) || `Proyecto importado desde Drive: ${folderName}`;
 
     // 8. GUARDAR PROYECTO
@@ -991,10 +1074,16 @@ INSTRUCCIONES:
       patternStats = await processAndSavePatterns(patternsExtracted, project.id);
     }
 
-    // 10. GUARDAR DriveDocSummary — metadata sin AI (resúmenes AI = Sprint H async)
+    // 10. GUARDAR DriveDocSummary con assetRole + visualDescription clasificados por Gemini
     let docsSaved = 0;
+    const classificationByName = new Map(
+      documentsClassified.map(d => [d.fileName, d])
+    );
+
     for (const file of textFiles) {
       try {
+        const classification = classificationByName.get(file.name);
+
         await prisma.driveDocSummary.upsert({
           where: {
             projectId_driveFileId: {
@@ -1002,15 +1091,23 @@ INSTRUCCIONES:
               driveFileId: file.id,
             },
           },
-          update: { fileName: file.name },
+          update: {
+            fileName: file.name,
+            ...(classification?.assetRole ? { assetRole: classification.assetRole } : {}),
+            ...(classification?.visualDescription ? { visualDescription: classification.visualDescription } : {}),
+          },
           create: {
             projectId: project.id,
             driveFileId: file.id,
             fileName: file.name,
             fileType: inferFileType(file.name, file.mimeType),
-            summary: `Documento importado: ${file.name}`,
+            summary: classification?.visualDescription
+              ? classification.visualDescription
+              : `Documento importado: ${file.name}`,
             keyInsights: [],
             category: null,
+            assetRole: classification?.assetRole ?? null,
+            visualDescription: classification?.visualDescription ?? null,
           },
         });
         docsSaved++;
@@ -1029,14 +1126,14 @@ INSTRUCCIONES:
       expertMode: isExpertMode,
       stats: {
         totalFiles: allFiles.length,
-        processedFiles: textContents.length,
+        processedFiles: batchAnalysis.processedFiles,
         projectType,
-        documents: textContents.length,
-        images: 0,
+        documents: batchAnalysis.documents,
+        images: batchAnalysis.images,
         docSummaries: docsSaved,
         duration: `${duration}s`,
         files: {
-          processed: processedNames,
+          processed: processedFileNames,
           ignored: ignoredFiles,
           smartExcluded: smartExcluded.slice(0, 20),
         },
