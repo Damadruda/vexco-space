@@ -101,6 +101,49 @@ function resolveMention(text: string): Expert | null {
 
 // ─── Document generation helpers ────────────────────────────────────────────
 
+/**
+ * Limpia el contenido de una respuesta del agente para exportación a documento.
+ * Elimina:
+ * - Todo lo que esté después del marcador <!-- INTERNAL --> (metadata interna)
+ * - Bloques <!-- AGENT_ASSIGNMENTS_JSON -->...<!-- /AGENT_ASSIGNMENTS_JSON -->
+ * - Cualquier otro comentario HTML <!-- ... -->
+ * - Tags [FIRM INSIGHT: tipo=...] (y su contenido hasta el siguiente salto de línea doble)
+ * - Asteriscos huérfanos y secuencias `**` que quedan sin cerrar
+ */
+function sanitizeForDocument(content: string): string {
+  let clean = content;
+
+  // 1. Corte duro por marcador <!-- INTERNAL -->: todo lo que sigue es metadata
+  const internalMarkerIdx = clean.indexOf("<!-- INTERNAL -->");
+  if (internalMarkerIdx !== -1) {
+    clean = clean.slice(0, internalMarkerIdx);
+  }
+
+  // 2. Eliminar bloque AGENT_ASSIGNMENTS_JSON completo (por si no había marcador)
+  clean = clean.replace(
+    /<!-- AGENT_ASSIGNMENTS_JSON -->[\s\S]*?<!-- \/AGENT_ASSIGNMENTS_JSON -->/g,
+    ""
+  );
+
+  // 3. Eliminar cualquier otro comentario HTML residual
+  clean = clean.replace(/<!--[\s\S]*?-->/g, "");
+
+  // 4. Eliminar tags [FIRM INSIGHT: ...] hasta el siguiente doble salto o fin
+  //    Mantiene el contenido del insight fuera del entregable de cliente.
+  clean = clean.replace(/\[FIRM INSIGHT:[^\]]*\][\s\S]*?(?=\n\n|$)/g, "");
+
+  // 5. Normalizar asteriscos: eliminar `**` no pareados al final de líneas
+  //    (ocurre cuando el modelo corta un bold abierto).
+  clean = clean.replace(/\*\*\s*$/gm, "");
+  //    Eliminar asteriscos sueltos al inicio/fin de línea que no abren/cierran nada.
+  clean = clean.replace(/^\s*\*\s*$/gm, "");
+
+  // 6. Colapsar 3+ líneas en blanco seguidas a máximo 2
+  clean = clean.replace(/\n{3,}/g, "\n\n");
+
+  return clean.trim();
+}
+
 function hasStructuredContent(content: string): boolean {
   // ## headings
   if ((content.match(/^## /gm) || []).length >= 3) return true;
@@ -645,7 +688,8 @@ export function ConsultantsThread({
     setGeneratingDoc(true);
     setShowFormatPicker(null);
     try {
-      const sections = parseMessageToSections(content);
+      const cleanContent = sanitizeForDocument(content);
+      const sections = parseMessageToSections(cleanContent);
       const res = await fetch("/api/documents/generate", {
         method: "POST",
         headers: { "Content-Type": "application/json" },

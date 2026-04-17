@@ -17,11 +17,17 @@ function escapeHtml(text: string): string {
 
 // FIX 1: Process markdown bold/italic into HTML tags.
 // Escapes HTML first on plain-text segments, then converts markdown.
+// Bold usa [^*] para no invadir italics. Asteriscos huérfanos se eliminan.
 function processMarkdown(text: string): string {
   const escaped = escapeHtml(text);
   return escaped
-    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")  // bold first
-    .replace(/\*(.+?)\*/g, "<em>$1</em>");              // then italic
+    // Bold: ** ... ** (non-greedy, no anidado con otros **)
+    .replace(/\*\*([^*]+?)\*\*/g, "<strong>$1</strong>")
+    // Italic: * ... * (no invadir ** que ya fue procesado)
+    .replace(/(?<!\*)\*([^*\n]+?)\*(?!\*)/g, "<em>$1</em>")
+    // Limpiar asteriscos huérfanos residuales que no forman parte de bold/italic
+    .replace(/\*{2,}/g, "")
+    .replace(/(?<!\w)\*(?!\w)/g, "");
 }
 
 function buildHtmlDocument(

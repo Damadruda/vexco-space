@@ -164,7 +164,11 @@ REGLAS:
 - Un proyecto al 20% de avance pero a 2 pasos de facturar DEBE tener score más alto que uno al 80% de avance pero a 6 meses de facturar.
 
 FORMATO DE SALIDA PARA DOCUMENTOS:
-Cuando generes reportes, briefs o contenido estructurado, usa SIEMPRE formato markdown con ## para cada sección. Ejemplo: ## Análisis de Mercado. Esto permite que el Lab ofrezca exportar el contenido como documento descargable.`,
+Cuando generes reportes, briefs o contenido estructurado, usa SIEMPRE formato markdown con ## para cada sección. Ejemplo: ## Análisis de Mercado. Esto permite que el Lab ofrezca exportar el contenido como documento descargable.
+
+SEPARACIÓN ENTREGABLE vs METADATA INTERNA:
+Cuando termines tu entregable (el contenido que el usuario leerá o exportará), emite en una línea aparte el marcador: <!-- INTERNAL -->
+Después de ese marcador puedes incluir metadata interna: tags [FIRM INSIGHT: ...], bloques de Revenue Priority en formato estructurado, JSON de agent assignments, o cualquier señal para el Lab. TODO lo que esté DESPUÉS del marcador será excluido al exportar el contenido a PDF/DOCX/PPTX. Si no tienes metadata que emitir, no emitas el marcador — no es obligatorio.`,
     outputType: "analysis",
     skills: ["research"],
     usesRaindrop: false,
@@ -210,7 +214,11 @@ Toda respuesta termina con EXACTAMENTE UNA acción:
 Tono: directo, ejecutivo. Oraciones cortas. Sin buzzwords.
 
 FORMATO DE SALIDA PARA DOCUMENTOS:
-Cuando generes reportes, briefs o contenido estructurado, usa SIEMPRE formato markdown con ## para cada sección. Ejemplo: ## Análisis de Mercado. Esto permite que el Lab ofrezca exportar el contenido como documento descargable.`,
+Cuando generes reportes, briefs o contenido estructurado, usa SIEMPRE formato markdown con ## para cada sección. Ejemplo: ## Análisis de Mercado. Esto permite que el Lab ofrezca exportar el contenido como documento descargable.
+
+SEPARACIÓN ENTREGABLE vs METADATA INTERNA:
+Cuando termines tu entregable (el contenido que el usuario leerá o exportará), emite en una línea aparte el marcador: <!-- INTERNAL -->
+Después de ese marcador puedes incluir metadata interna: tags [FIRM INSIGHT: ...], bloques de Revenue Priority en formato estructurado, o cualquier señal para el Lab. TODO lo que esté DESPUÉS del marcador será excluido al exportar el contenido a PDF/DOCX/PPTX. Si no tienes metadata que emitir, no emitas el marcador — no es obligatorio.`,
     outputType: "recommendation",
     skills: ["research", "inspiration"],
     usesRaindrop: true,
@@ -253,7 +261,11 @@ Patrones UX probados, flujos de usuario, wireframes conceptuales (descripción t
 Tono: directo, práctico. Sin jerga innecesaria.
 
 FORMATO DE SALIDA PARA DOCUMENTOS:
-Cuando generes reportes, briefs o contenido estructurado, usa SIEMPRE formato markdown con ## para cada sección. Ejemplo: ## Análisis de Mercado. Esto permite que el Lab ofrezca exportar el contenido como documento descargable.`,
+Cuando generes reportes, briefs o contenido estructurado, usa SIEMPRE formato markdown con ## para cada sección. Ejemplo: ## Análisis de Mercado. Esto permite que el Lab ofrezca exportar el contenido como documento descargable.
+
+SEPARACIÓN ENTREGABLE vs METADATA INTERNA:
+Cuando termines tu entregable (el contenido que el usuario leerá o exportará), emite en una línea aparte el marcador: <!-- INTERNAL -->
+Después de ese marcador puedes incluir metadata interna: tags [FIRM INSIGHT: ...] o cualquier señal para el Lab. TODO lo que esté DESPUÉS del marcador será excluido al exportar el contenido a PDF/DOCX/PPTX. Si no tienes metadata que emitir, no emitas el marcador — no es obligatorio.`,
     outputType: "recommendation",
     skills: ["research", "inspiration"],
     usesRaindrop: true,
@@ -335,7 +347,11 @@ Si el hallazgo es particularmente potente o aplicable a otros proyectos, márcal
 Ejemplo: "[FIRM INSIGHT: tipo=contrarian_moat] En consultoría B2B con tickets altos, el entregable con diseño editorial (Quiet Luxury) funciona como proof of quality antes de que el cliente vea resultados. Es el equivalente al lobby de un hotel de lujo."
 
 FORMATO DE SALIDA PARA DOCUMENTOS:
-Cuando generes reportes, briefs o contenido estructurado, usa SIEMPRE formato markdown con ## para cada sección. Ejemplo: ## Análisis de Mercado. Esto permite que el Lab ofrezca exportar el contenido como documento descargable.`,
+Cuando generes reportes, briefs o contenido estructurado, usa SIEMPRE formato markdown con ## para cada sección. Ejemplo: ## Análisis de Mercado. Esto permite que el Lab ofrezca exportar el contenido como documento descargable.
+
+SEPARACIÓN ENTREGABLE vs METADATA INTERNA:
+Cuando termines tu entregable (el contenido que el usuario leerá o exportará), emite en una línea aparte el marcador: <!-- INTERNAL -->
+Después de ese marcador puedes incluir metadata interna: tags [FIRM INSIGHT: tipo=contrarian_moat] o [FIRM INSIGHT: tipo=error], o cualquier señal para el Lab. TODO lo que esté DESPUÉS del marcador será excluido al exportar el contenido a PDF/DOCX/PPTX. Si no tienes metadata que emitir, no emitas el marcador — no es obligatorio.`,
     outputType: "risk_assessment",
     skills: ["research"],
     usesRaindrop: false,
@@ -446,7 +462,11 @@ REGLAS COMUNES:
 IDs de agente válidos para colaboración: strategist, revenue, redteam, infrastructure.
 
 FORMATO DE SALIDA PARA DOCUMENTOS:
-Cuando generes reportes, briefs o contenido estructurado, usa SIEMPRE formato markdown con ## para cada sección. Ejemplo: ## Análisis de Mercado. Esto permite que el Lab ofrezca exportar el contenido como documento descargable.`,
+Cuando generes reportes, briefs o contenido estructurado, usa SIEMPRE formato markdown con ## para cada sección. Ejemplo: ## Análisis de Mercado. Esto permite que el Lab ofrezca exportar el contenido como documento descargable.
+
+SEPARACIÓN ENTREGABLE vs METADATA INTERNA:
+Cuando termines tu entregable (el contenido que el usuario leerá o exportará), emite en una línea aparte el marcador: <!-- INTERNAL -->
+Después de ese marcador puedes incluir metadata interna o cualquier señal para el Lab. TODO lo que esté DESPUÉS del marcador será excluido al exportar el contenido a PDF/DOCX/PPTX. Si no tienes metadata que emitir, no emitas el marcador — no es obligatorio.`,
     outputType: "recommendation",
     skills: ["research"],
     usesRaindrop: true,

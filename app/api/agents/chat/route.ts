@@ -551,11 +551,18 @@ export async function POST(request: NextRequest) {
           "Responde en español a menos que el usuario escriba en otro idioma.",
         ];
 
-    // For the strategist: append JSON block instruction so we can parse assigned agents
+    // For the strategist: append JSON block instruction so we can parse assigned agents.
+    // IMPORTANTE: el bloque JSON debe ir DESPUÉS del marcador <!-- INTERNAL --> para que
+    // el sanitizer de export lo excluya del PDF/DOCX/PPTX (ver sanitizeForDocument en
+    // components/expert-panel/consultants-thread.tsx).
     const strategistJsonInstruction = isStrategist
       ? `
 
-AL FINAL de tu respuesta (después de ## VALIDACIÓN), añade EXACTAMENTE este bloque con los agentes que seleccionaste:
+AL FINAL de tu respuesta (después de ## VALIDACIÓN), estructura tu output así:
+
+1. Termina tu entregable normalmente (última sección que vea el usuario).
+2. Emite en una línea aparte el marcador: <!-- INTERNAL -->
+3. Inmediatamente después del marcador, añade EXACTAMENTE este bloque con los agentes que seleccionaste:
 
 <!-- AGENT_ASSIGNMENTS_JSON -->
 [
@@ -570,7 +577,9 @@ AL FINAL de tu respuesta (después de ## VALIDACIÓN), añade EXACTAMENTE este b
 
 IDs de agente válidos: revenue, redteam, infrastructure, design.
 Nombres: revenue = Revenue & Growth, redteam = Challenger, infrastructure = Product & Tech, design = Design & Experience.
-Selecciona 1-3 agentes. El strategist NO se asigna a sí mismo. Ordena por prioridad (1 = activar primero).`
+Selecciona 1-3 agentes. El strategist NO se asigna a sí mismo. Ordena por prioridad (1 = activar primero).
+
+El marcador <!-- INTERNAL --> es OBLIGATORIO cuando emitas el bloque de agent assignments: sin él, el JSON aparecerá en el documento exportado del cliente.`
       : "";
 
     const systemPrompt = [
