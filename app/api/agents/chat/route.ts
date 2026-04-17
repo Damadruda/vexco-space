@@ -212,6 +212,66 @@ async function buildProjectContext(memory: Record<string, unknown>, projectId?: 
     }
   }
 
+  // ─── Project type detection (service vs product based on ProspectFit) ───
+  // Si el proyecto tiene prospects vinculados, es un SERVICIO A CLIENTE y los agentes
+  // deben razonar en ese marco (no en modo go-to-market de producto). Bloque directivo
+  // que se inyecta al inicio del contexto para máxima visibilidad.
+  let projectTypeBlock = "";
+  if (projectId) {
+    try {
+      const prospectFits = await prisma.prospectFit.findMany({
+        where: { projectId },
+        include: {
+          prospect: {
+            select: {
+              name: true,
+              company: true,
+              stage: true,
+              status: true,
+              estimatedDealValue: true,
+              currency: true,
+            },
+          },
+        },
+        orderBy: [{ isPrimary: "desc" }, { fitScore: "desc" }],
+        take: 5,
+      });
+
+      if (prospectFits.length > 0) {
+        const prospectLines = prospectFits
+          .map((pf) => {
+            const p = pf.prospect;
+            const companyPart = p.company ? ` (${p.company})` : "";
+            const statusPart = p.status !== "ACTIVE" ? ` · status: ${p.status}` : "";
+            const dealPart =
+              p.estimatedDealValue && p.estimatedDealValue > 0
+                ? ` · deal: ${p.estimatedDealValue.toLocaleString()} ${p.currency}`
+                : "";
+            const primaryMark = pf.isPrimary ? " [primary]" : "";
+            return `  - ${p.name}${companyPart} — stage: ${p.stage} · fit: ${pf.fitScore}/100${dealPart}${statusPart}${primaryMark}`;
+          })
+          .join("\n");
+
+        projectTypeBlock = `── TIPO DE PROYECTO (detección automática por ProspectFit) ──
+CLASIFICACIÓN: SERVICIO PARA CLIENTE
+
+Prospects vinculados (${prospectFits.length}):
+${prospectLines}
+
+IMPLICACIONES OPERATIVAS (obligatorias para todos los agentes):
+- Revenue = factura al cliente por el servicio prestado. NO es monetización de producto en mercado abierto.
+- Enfoca recomendaciones en: pricing del servicio, alcance del entregable, gestión de la relación cliente, upsell de servicios complementarios, cierre del prospect vinculado.
+- Revenue Priority se mide por proximidad al cierre/facturación del cliente listado arriba, NO por adquisición de audiencia o lanzamiento público.
+- NO apliques por defecto: TAM/SAM/SOM, growth loops de adquisición masiva, estrategia de contenido para audiencia amplia, captación de sponsors, sales funnel de producto, métricas de retención de usuarios.
+- SÍ aplica: estructura de propuesta comercial, pricing tiered del servicio, entregables por fase, escalado de honorarios por alcance, riesgos de dependencia de un solo cliente.
+- EXCEPCIÓN: si el usuario pide explícitamente escalar o productizar el servicio, aplica lógica híbrida (servicio actual → producto futuro). Aun así, el foco presente sigue siendo el cliente vinculado.
+────────────────────────────────────────────────────────────`;
+      }
+    } catch {
+      // continue without project type context — no rompas el flujo del agente
+    }
+  }
+
   // ─── REAL COUNTS BLOCK (Sprint K5.2 anti-hallucination) ───
   let verifiedCountsBlock = "";
   if (projectId) {
@@ -245,6 +305,7 @@ async function buildProjectContext(memory: Record<string, unknown>, projectId?: 
 
   return [
     "CONTEXTO DEL PROYECTO:",
+    projectTypeBlock || "",
     `- Nombre: ${project.title ?? "Sin título"}`,
     `- Descripción: ${project.description ?? "Sin descripción"}`,
     `- Status: ${project.status ?? "Desconocido"}`,
