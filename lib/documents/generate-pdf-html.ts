@@ -25,9 +25,12 @@ function processMarkdown(text: string): string {
     .replace(/\*\*([^*]+?)\*\*/g, "<strong>$1</strong>")
     // Italic: * ... * (no invadir ** que ya fue procesado)
     .replace(/(?<!\*)\*([^*\n]+?)\*(?!\*)/g, "<em>$1</em>")
-    // Limpiar asteriscos huérfanos residuales que no forman parte de bold/italic
+    // Limpiar asteriscos huérfanos residuales que no forman parte de bold/italic.
+    // El lookbehind (?<!\w) protege asteriscos pegados a palabras (ej. CAC*LTV).
+    // Se eliminó el lookahead (?!\w) porque \w incluye dígitos, y bloqueaba
+    // la limpieza de patrones tipo `*1. Texto` (asterisco al inicio pegado a dígito).
     .replace(/\*{2,}/g, "")
-    .replace(/(?<!\w)\*(?!\w)/g, "");
+    .replace(/(?<!\w)\*/g, "");
 }
 
 function buildHtmlDocument(
