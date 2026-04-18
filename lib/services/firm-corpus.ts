@@ -74,23 +74,28 @@ export async function getCorpusDocuments(filters: CorpusDocumentFilters = {}) {
 export async function getCorpusStats() {
   const corpus = await getFirmCorpus();
 
-  const [total, failedCount, byType, byOutcome] = await Promise.all([
-    prisma.corpusDocument.count({ where: { corpusId: corpus.id } }),
-    prisma.corpusDocument.count({ where: { corpusId: corpus.id, processingError: { not: null } } }),
+  // Base where: documentos activos del corpus (no archivados)
+  const activeWhere = { corpusId: corpus.id, archived: false };
+
+  const [total, archivedCount, failedCount, byType, byOutcome] = await Promise.all([
+    prisma.corpusDocument.count({ where: activeWhere }),
+    prisma.corpusDocument.count({ where: { corpusId: corpus.id, archived: true } }),
+    prisma.corpusDocument.count({ where: { ...activeWhere, processingError: { not: null } } }),
     prisma.corpusDocument.groupBy({
       by: ["documentType"],
-      where: { corpusId: corpus.id },
+      where: activeWhere,
       _count: true,
     }),
     prisma.corpusDocument.groupBy({
       by: ["outcome"],
-      where: { corpusId: corpus.id },
+      where: activeWhere,
       _count: true,
     }),
   ]);
 
   return {
     total,
+    archivedCount,
     failedCount,
     byType: byType.map((g) => ({ type: g.documentType, count: g._count })),
     byOutcome: byOutcome.map((g) => ({ outcome: g.outcome, count: g._count })),
