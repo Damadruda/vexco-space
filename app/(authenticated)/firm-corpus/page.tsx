@@ -35,6 +35,8 @@ interface CorpusDocument {
   outcome: string | null;
   provenance: string;
   archived: boolean;
+  reviewedAt: string | null;
+  reviewedBy: string | null;
   customTags: string[];
   extractedSummary: string | null;
   keyEntities: { companies?: string[]; people?: string[]; sectors?: string[] } | null;
@@ -414,7 +416,13 @@ export default function FirmCorpusPage() {
   const [filterOutcome, setFilterOutcome] = useState("");
   const [filterProvenance, setFilterProvenance] = useState("");
   const [showArchived, setShowArchived] = useState(false);
+  const [filterReviewed, setFilterReviewed] = useState<"all" | "pending" | "reviewed">("pending");
   const [page, setPage] = useState(1);
+
+  // Curation selection + batch state
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [batchLoading, setBatchLoading] = useState(false);
+  const [batchError, setBatchError] = useState<string | null>(null);
 
   // Fetch stats
   const fetchStats = useCallback(async () => {
@@ -439,6 +447,8 @@ export default function FirmCorpusPage() {
       if (filterOutcome) params.append("outcome", filterOutcome);
       if (filterProvenance) params.append("provenance", filterProvenance);
       if (showArchived) params.append("archived", "true");
+      if (filterReviewed === "pending") params.append("reviewed", "false");
+      else if (filterReviewed === "reviewed") params.append("reviewed", "true");
       if (searchQuery) params.append("search", searchQuery);
 
       const res = await fetch(`/api/firm-corpus/documents?${params.toString()}`);
@@ -451,7 +461,7 @@ export default function FirmCorpusPage() {
     } catch {
       // Silent fail
     }
-  }, [page, filterType, filterOutcome, filterProvenance, showArchived, searchQuery]);
+  }, [page, filterType, filterOutcome, filterProvenance, showArchived, filterReviewed, searchQuery]);
 
   // Initial load
   useEffect(() => {
@@ -463,7 +473,7 @@ export default function FirmCorpusPage() {
     if (!loading) {
       fetchDocuments();
     }
-  }, [page, filterType, filterOutcome, filterProvenance, showArchived, searchQuery]);
+  }, [page, filterType, filterOutcome, filterProvenance, showArchived, filterReviewed, searchQuery]);
 
   // Poll during sync
   useEffect(() => {
@@ -568,6 +578,92 @@ export default function FirmCorpusPage() {
     }, 400);
     return () => clearTimeout(timer);
   }, [searchInput]);
+
+  // Selection helpers
+  const allVisibleIds = documents.map((d) => d.id);
+  const allSelected =
+    allVisibleIds.length > 0 && allVisibleIds.every((id) => selectedIds.has(id));
+  const someSelected = allVisibleIds.some((id) => selectedIds.has(id));
+
+  function toggleSelectAll() {
+    if (allSelected) {
+      setSelectedIds(new Set());
+    } else {
+      setSelectedIds(new Set(allVisibleIds));
+    }
+  }
+
+  function toggleOne(id: string) {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  // Batch actions
+  async function runBatchAction(
+    action: "archive" | "unarchive" | "mark_reviewed" | "unmark_reviewed"
+  ) {
+    if (selectedIds.size === 0) return;
+    setBatchLoading(true);
+    setBatchError(null);
+    try {
+      const res = await fetch("/api/firm-corpus/documents/batch-action", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          action,
+          documentIds: Array.from(selectedIds),
+        }),
+      });
+      const data = await res.json();
+      if (!data.success) throw new Error(data.error || "Accion fallida");
+      setSelectedIds(new Set());
+      await fetchDocuments();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setBatchError(msg);
+    } finally {
+      setBatchLoading(false);
+    }
+  }
+
+  async function runMoveToOperational() {
+    if (selectedIds.size === 0) return;
+    const ids = Array.from(selectedIds);
+    const confirmed = window.confirm(
+      `Mover ${ids.length} documento(s) a Operational Sources? Esta accion convierte los documentos en registros operacionales (para HubSpot/Apollo/Notion futuro). Los documentos originales quedan archivados.`
+    );
+    if (!confirmed) return;
+
+    setBatchLoading(true);
+    setBatchError(null);
+    let succeeded = 0;
+    let failed = 0;
+    try {
+      // Serial: el endpoint es por-id, y el tamano realista es <50
+      for (const id of ids) {
+        try {
+          const res = await fetch(`/api/firm-corpus/${id}/move-to-operational`, {
+            method: "POST",
+          });
+          if (res.ok) succeeded++;
+          else failed++;
+        } catch {
+          failed++;
+        }
+      }
+      if (failed > 0) {
+        setBatchError(`Movidos: ${succeeded}. Fallidos: ${failed}.`);
+      }
+      setSelectedIds(new Set());
+      await Promise.all([fetchStats(), fetchDocuments()]);
+    } finally {
+      setBatchLoading(false);
+    }
+  }
 
   if (loading) {
     return (
@@ -713,6 +809,34 @@ export default function FirmCorpusPage() {
 
         {/* ── Documents Table ────────────────────────────────────────── */}
         <div className="rounded-lg bg-white border border-gray-100">
+          {/* Review tabs (curation triage) */}
+          <div className="px-4 py-3 border-b border-gray-100 flex items-center gap-1 text-sm">
+            {[
+              { key: "pending" as const, label: "Pendientes de revisar" },
+              { key: "reviewed" as const, label: "Revisados" },
+              { key: "all" as const, label: "Todos" },
+            ].map((tab) => {
+              const active = filterReviewed === tab.key;
+              return (
+                <button
+                  key={tab.key}
+                  onClick={() => {
+                    setFilterReviewed(tab.key);
+                    setPage(1);
+                    setSelectedIds(new Set());
+                  }}
+                  className={`px-3 py-1.5 rounded-md transition-colors ${
+                    active
+                      ? "bg-[#1A1A1A] text-white"
+                      : "text-[#5E5E5E] hover:bg-[#F9F8F6]"
+                  }`}
+                >
+                  {tab.label}
+                </button>
+              );
+            })}
+          </div>
+
           {/* Toolbar */}
           <div className="p-4 border-b border-gray-100 flex flex-wrap items-center gap-3">
             <div className="relative flex-1 min-w-[200px]">
@@ -730,7 +854,7 @@ export default function FirmCorpusPage() {
               <Filter className="h-3.5 w-3.5 text-[#5E5E5E]" />
               <select
                 value={filterType}
-                onChange={(e) => { setFilterType(e.target.value); setPage(1); }}
+                onChange={(e) => { setFilterType(e.target.value); setPage(1); setSelectedIds(new Set()); }}
                 className="text-sm bg-transparent border-b border-transparent hover:border-[#5E5E5E]/30 focus:border-[#1A1A1A] outline-none py-1 pr-6 cursor-pointer text-[#5E5E5E]"
               >
                 <option value="">Todos los tipos</option>
@@ -741,7 +865,7 @@ export default function FirmCorpusPage() {
 
               <select
                 value={filterOutcome}
-                onChange={(e) => { setFilterOutcome(e.target.value); setPage(1); }}
+                onChange={(e) => { setFilterOutcome(e.target.value); setPage(1); setSelectedIds(new Set()); }}
                 className="text-sm bg-transparent border-b border-transparent hover:border-[#5E5E5E]/30 focus:border-[#1A1A1A] outline-none py-1 pr-6 cursor-pointer text-[#5E5E5E]"
               >
                 <option value="">Todos los outcomes</option>
@@ -752,7 +876,7 @@ export default function FirmCorpusPage() {
 
               <select
                 value={filterProvenance}
-                onChange={(e) => { setFilterProvenance(e.target.value); setPage(1); }}
+                onChange={(e) => { setFilterProvenance(e.target.value); setPage(1); setSelectedIds(new Set()); }}
                 className="text-sm bg-transparent border-b border-transparent hover:border-[#5E5E5E]/30 focus:border-[#1A1A1A] outline-none py-1 pr-6 cursor-pointer text-[#5E5E5E]"
               >
                 <option value="">Toda provenance</option>
@@ -765,7 +889,7 @@ export default function FirmCorpusPage() {
                 <input
                   type="checkbox"
                   checked={showArchived}
-                  onChange={(e) => { setShowArchived(e.target.checked); setPage(1); }}
+                  onChange={(e) => { setShowArchived(e.target.checked); setPage(1); setSelectedIds(new Set()); }}
                   className="rounded border-gray-300"
                 />
                 Archivados
@@ -773,14 +897,87 @@ export default function FirmCorpusPage() {
             </div>
           </div>
 
+          {/* Batch action bar (visible when rows are selected) */}
+          {selectedIds.size > 0 && (
+            <div className="border-b border-gray-100 bg-[#FBF9F4] px-4 py-3 flex flex-wrap items-center justify-between gap-4">
+              <div className="text-sm text-[#1A1A1A]">
+                <span className="font-medium">{selectedIds.size}</span>{" "}
+                {selectedIds.size === 1 ? "documento seleccionado" : "documentos seleccionados"}
+              </div>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  onClick={() => runBatchAction("mark_reviewed")}
+                  disabled={batchLoading}
+                  className="text-xs px-3 py-1.5 rounded-md bg-white border border-gray-200 hover:border-[#1A1A1A] hover:text-[#1A1A1A] text-[#5E5E5E] transition-colors disabled:opacity-50"
+                >
+                  Marcar como revisado
+                </button>
+                <button
+                  onClick={() => runBatchAction("unmark_reviewed")}
+                  disabled={batchLoading}
+                  className="text-xs px-3 py-1.5 rounded-md bg-white border border-gray-200 hover:border-[#5E5E5E] text-[#5E5E5E] transition-colors disabled:opacity-50"
+                >
+                  Quitar revisado
+                </button>
+                <button
+                  onClick={runMoveToOperational}
+                  disabled={batchLoading}
+                  className="text-xs px-3 py-1.5 rounded-md bg-white border border-gray-200 hover:border-[#1A1A1A] hover:text-[#1A1A1A] text-[#5E5E5E] transition-colors disabled:opacity-50"
+                >
+                  Mover a Operational
+                </button>
+                <button
+                  onClick={() => runBatchAction("archive")}
+                  disabled={batchLoading}
+                  className="text-xs px-3 py-1.5 rounded-md bg-white border border-red-200 text-red-600 hover:bg-red-50 transition-colors disabled:opacity-50"
+                >
+                  Archivar
+                </button>
+                {showArchived && (
+                  <button
+                    onClick={() => runBatchAction("unarchive")}
+                    disabled={batchLoading}
+                    className="text-xs px-3 py-1.5 rounded-md bg-white border border-gray-200 hover:border-[#1A1A1A] text-[#5E5E5E] transition-colors disabled:opacity-50"
+                  >
+                    Desarchivar
+                  </button>
+                )}
+                <button
+                  onClick={() => setSelectedIds(new Set())}
+                  disabled={batchLoading}
+                  className="text-xs px-2 py-1.5 text-[#5E5E5E] hover:text-[#1A1A1A] transition-colors"
+                >
+                  Deseleccionar
+                </button>
+              </div>
+            </div>
+          )}
+
+          {batchError && (
+            <div className="border-b border-red-100 bg-red-50 px-4 py-2 text-sm text-red-700 flex items-center justify-between">
+              <span>{batchError}</span>
+              <button
+                onClick={() => setBatchError(null)}
+                className="ml-2 text-red-500 hover:text-red-700"
+                aria-label="Cerrar"
+              >
+                ×
+              </button>
+            </div>
+          )}
+
           {/* Table */}
           {documents.length === 0 ? (
             <div className="py-16 text-center">
               <Library className="mx-auto h-10 w-10 text-gray-300 mb-3" />
               <p className="text-sm text-[#5E5E5E]">
-                {stats?.driveFolderId
-                  ? "No hay documentos aun. Sincroniza para importar."
-                  : "Vincula una carpeta de Drive para comenzar."}
+                {!stats?.driveFolderId
+                  ? "Vincula una carpeta de Drive para comenzar."
+                  : filterReviewed === "pending"
+                  ? "No hay documentos pendientes de revisar. Todo el corpus esta curado."
+                  : filterReviewed === "reviewed"
+                  ? "Aun no has revisado ningun documento."
+                  : "No hay documentos. Sincroniza para importar."}
               </p>
             </div>
           ) : (
@@ -789,6 +986,19 @@ export default function FirmCorpusPage() {
                 <table className="w-full">
                   <thead>
                     <tr className="text-left text-xs text-[#5E5E5E] uppercase tracking-wider border-b border-gray-100">
+                      <th className="px-4 py-3 font-normal w-8">
+                        <input
+                          type="checkbox"
+                          checked={allSelected}
+                          ref={(el) => {
+                            if (el) el.indeterminate = !allSelected && someSelected;
+                          }}
+                          onChange={toggleSelectAll}
+                          onClick={(e) => e.stopPropagation()}
+                          className="rounded border-gray-300 cursor-pointer"
+                          aria-label="Seleccionar todos"
+                        />
+                      </th>
                       <th className="px-4 py-3 font-normal">Nombre</th>
                       <th className="px-4 py-3 font-normal">Tipo</th>
                       <th className="px-4 py-3 font-normal hidden md:table-cell">Industria</th>
@@ -809,15 +1019,41 @@ export default function FirmCorpusPage() {
                           onClick={() => setSelectedDoc(doc)}
                           className="border-b border-gray-50 hover:bg-[#F9F8F6] cursor-pointer transition-colors"
                         >
+                          <td
+                            className="px-4 py-3 w-8"
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            <input
+                              type="checkbox"
+                              checked={selectedIds.has(doc.id)}
+                              onChange={() => toggleOne(doc.id)}
+                              className="rounded border-gray-300 cursor-pointer"
+                              aria-label={`Seleccionar ${doc.driveFileName}`}
+                            />
+                          </td>
                           <td className="px-4 py-3">
-                            <div className="flex items-center gap-2">
-                              <FileText className="h-4 w-4 text-[#5E5E5E] flex-shrink-0" />
-                              <span className="text-sm text-[#1A1A1A] truncate max-w-[280px]">
-                                {doc.driveFileName}
-                              </span>
-                              {doc.processingError && (
-                                <AlertCircle className="h-3.5 w-3.5 text-red-500 flex-shrink-0" />
-                              )}
+                            <div className="flex items-start gap-2">
+                              <FileText className="h-4 w-4 text-[#5E5E5E] flex-shrink-0 mt-0.5" />
+                              <div className="min-w-0 flex-1">
+                                <div className="flex items-center gap-2">
+                                  <span className="text-sm text-[#1A1A1A] truncate max-w-[320px]">
+                                    {doc.driveFileName}
+                                  </span>
+                                  {doc.processingError && (
+                                    <AlertCircle className="h-3.5 w-3.5 text-red-500 flex-shrink-0" />
+                                  )}
+                                  {doc.reviewedAt && (
+                                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-50 text-emerald-700 flex-shrink-0">
+                                      Revisado
+                                    </span>
+                                  )}
+                                </div>
+                                {doc.extractedSummary && (
+                                  <p className="text-xs text-[#5E5E5E] mt-1 line-clamp-2 max-w-[480px]">
+                                    {doc.extractedSummary}
+                                  </p>
+                                )}
+                              </div>
                             </div>
                           </td>
                           <td className="px-4 py-3">
