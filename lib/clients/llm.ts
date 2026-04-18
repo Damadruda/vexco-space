@@ -145,11 +145,28 @@ async function callClaude(
 
 // ─── Perplexity Sonar ─────────────────────────────────────────────────────────
 
-async function callPerplexity(
+export interface PerplexityOptions {
+  temperature?: number;
+  model?: "sonar-pro" | "sonar";
+  responseSchema?: Record<string, unknown>;
+}
+
+export interface PerplexityResult {
+  content: string;
+  citations?: Array<{ url: string; title: string }>;
+  usage?: { prompt_tokens: number; completion_tokens: number; total_tokens: number };
+}
+
+export async function callPerplexity(
   systemPrompt: string,
   userPrompt: string,
-  temperature?: number
-): Promise<{ content: string }> {
+  options?: PerplexityOptions
+): Promise<PerplexityResult> {
+  const temperature = options?.temperature;
+  const responseSchema = options?.responseSchema;
+  // JSON schema output is only reliable on sonar-pro
+  const model = responseSchema ? "sonar-pro" : (options?.model ?? "sonar-pro");
+
   const apiKey = process.env.PERPLEXITY_API_KEY;
   if (!apiKey) {
     console.warn("[LLM] PERPLEXITY_API_KEY no configurada — fallback a Gemini Flash");
@@ -157,7 +174,22 @@ async function callPerplexity(
   }
 
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 25_000);
+  const timeout = setTimeout(() => controller.abort(), 60_000);
+
+  const body: Record<string, unknown> = {
+    model,
+    messages: [
+      { role: "system", content: systemPrompt },
+      { role: "user", content: userPrompt },
+    ],
+    temperature: temperature ?? 0.7,
+  };
+  if (responseSchema) {
+    body.response_format = {
+      type: "json_schema",
+      json_schema: { schema: responseSchema, strict: true },
+    };
+  }
 
   let res: Response;
   try {
@@ -167,14 +199,7 @@ async function callPerplexity(
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
       },
-      body: JSON.stringify({
-        model: "sonar-pro",
-        messages: [
-          { role: "system", content: systemPrompt },
-          { role: "user", content: userPrompt },
-        ],
-        temperature: temperature ?? 0.7,
-      }),
+      body: JSON.stringify(body),
       signal: controller.signal,
     });
   } catch (fetchErr) {
@@ -185,15 +210,53 @@ async function callPerplexity(
   }
 
   if (!res.ok) {
-    console.warn(`[LLM] Perplexity error ${res.status} — fallback a Gemini Flash`);
+    const errText = await res.text().catch(() => "");
+    console.warn(`[LLM] Perplexity error ${res.status} — fallback a Gemini Flash. Body: ${errText.slice(0, 500)}`);
     return callGemini(systemPrompt, userPrompt, false, undefined, temperature);
   }
 
   const data = (await res.json()) as {
-    choices: Array<{ message: { content: string } }>;
+    choices?: Array<{ message?: { content?: string } }>;
+    citations?: Array<unknown>;
+    usage?: { prompt_tokens?: number; completion_tokens?: number; total_tokens?: number };
   };
 
-  return { content: data.choices[0]?.message?.content ?? "" };
+  const content = data.choices?.[0]?.message?.content ?? "";
+
+  // Normalize citations. Perplexity may return:
+  //   - an array of URL strings (classic Sonar)
+  //   - or an array of { url, title } (newer variants)
+  let citations: Array<{ url: string; title: string }> | undefined;
+  if (Array.isArray(data.citations) && data.citations.length > 0) {
+    citations = data.citations
+      .map((c): { url: string; title: string } | null => {
+        if (typeof c === "string") return { url: c, title: c };
+        if (c && typeof c === "object") {
+          const obj = c as Record<string, unknown>;
+          const url = typeof obj.url === "string" ? obj.url : null;
+          if (!url) return null;
+          const title = typeof obj.title === "string" ? obj.title : url;
+          return { url, title };
+        }
+        return null;
+      })
+      .filter((c): c is { url: string; title: string } => c !== null);
+    if (citations.length === 0) citations = undefined;
+  }
+
+  const usage =
+    data.usage &&
+    typeof data.usage.prompt_tokens === "number" &&
+    typeof data.usage.completion_tokens === "number" &&
+    typeof data.usage.total_tokens === "number"
+      ? {
+          prompt_tokens: data.usage.prompt_tokens,
+          completion_tokens: data.usage.completion_tokens,
+          total_tokens: data.usage.total_tokens,
+        }
+      : undefined;
+
+  return { content, citations, usage };
 }
 
 // ─── Gemini Multimodal (for Drive folder analysis with images) ────────────────
@@ -292,7 +355,7 @@ export async function callLLM(request: LLMRequest): Promise<LLMResponse> {
     realModel = apiKey ? "claude-sonnet-4-20250514" : "gemini-3.1-pro-preview (fallback)";
   } else if (model === "perplexity-sonar") {
     const apiKey = process.env.PERPLEXITY_API_KEY;
-    const res = await callPerplexity(systemPrompt, userPrompt, temperature);
+    const res = await callPerplexity(systemPrompt, userPrompt, { temperature });
     content = res.content;
     realModel = apiKey ? "sonar-pro" : "gemini-3-flash-preview (fallback)";
   } else if (model === "gemini-pro") {

@@ -2,12 +2,19 @@
   "functions": {
     "app/api/drive/analyze-folder/route.ts": {
       "maxDuration": 300
+    },
+    "app/api/market-intelligence/tick/route.ts": {
+      "maxDuration": 90
     }
   },
   "crons": [
     {
       "path": "/api/firm-corpus/reprocess-job/tick",
       "schedule": "*/2 * * * *"
+    },
+    {
+      "path": "/api/market-intelligence/tick",
+      "schedule": "0 5 * * 1"
     }
   ]
 }

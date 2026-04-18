@@ -1128,3 +1128,60 @@ model CorpusReprocessJob {
 
   @@index([status])
 }
+
+// =============================================================================
+// MARKET INTELLIGENCE PIPELINE (MIP) — Sub-entrega 1A
+// =============================================================================
+
+enum MarketBriefType {
+  COMMERCIAL_RADAR
+  CONSULTING_MARKET
+  INTERNATIONALIZATION
+  PRICING_BENCHMARK
+  REGULATORY_ALERT
+}
+
+enum ProjectQueryType {
+  COMPETITIVE_LANDSCAPE
+  TAM_SAM_SOM
+  PRICING_REFERENCE
+  REGULATORY_CONTEXT
+  CUSTOM
+}
+
+model MarketIntelligenceTemplate {
+  id             String          @id @default(cuid())
+  name           String
+  briefType      MarketBriefType
+  schedule       String
+  sectorTags     String[]
+  geographyTags  String[]
+  systemPrompt   String          @db.Text
+  userPrompt     String          @db.Text
+  responseSchema Json
+  isActive       Boolean         @default(true)
+  lastRunAt      DateTime?
+  createdAt      DateTime        @default(now())
+  updatedAt      DateTime        @updatedAt
+
+  briefs         MarketIntelligenceBrief[]
+
+  @@index([isActive])
+}
+
+model MarketIntelligenceBrief {
+  id             String          @id @default(cuid())
+  templateId     String
+  template       MarketIntelligenceTemplate @relation(fields: [templateId], references: [id], onDelete: Cascade)
+  briefType      MarketBriefType
+  publishedAt    DateTime        @default(now())
+  structuredData Json
+  rawNarrative   String?         @db.Text
+  sectorTags     String[]
+  geographyTags  String[]
+  tokenCost      Int?
+  createdAt      DateTime        @default(now())
+
+  @@index([templateId, publishedAt])
+  @@index([briefType, publishedAt])
+}
