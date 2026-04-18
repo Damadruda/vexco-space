@@ -30,6 +30,7 @@ export interface CorpusDocumentFilters {
   outcome?: string;
   provenance?: string;
   archived?: boolean;
+  reviewed?: boolean;
   search?: string;
   page?: number;
   pageSize?: number;
@@ -37,7 +38,7 @@ export interface CorpusDocumentFilters {
 
 export async function getCorpusDocuments(filters: CorpusDocumentFilters = {}) {
   const corpus = await getFirmCorpus();
-  const { documentType, industry, outcome, provenance, archived = false, search, page = 1, pageSize = 50 } = filters;
+  const { documentType, industry, outcome, provenance, archived = false, reviewed, search, page = 1, pageSize = 50 } = filters;
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const where: any = { corpusId: corpus.id, archived };
@@ -46,6 +47,8 @@ export async function getCorpusDocuments(filters: CorpusDocumentFilters = {}) {
   if (industry) where.industry = industry;
   if (outcome) where.outcome = outcome;
   if (provenance) where.provenance = provenance;
+  if (reviewed === true) where.reviewedAt = { not: null };
+  else if (reviewed === false) where.reviewedAt = null;
   if (search) {
     where.OR = [
       { driveFileName: { contains: search, mode: "insensitive" } },

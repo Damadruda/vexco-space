@@ -938,6 +938,8 @@ model CorpusDocument {
   outcome          CorpusOutcome?
   provenance       Provenance         @default(UNKNOWN)
   archived         Boolean            @default(false)
+  reviewedAt       DateTime?
+  reviewedBy       String?
   customTags       String[]           @default([])
   extractedSummary String?            @db.Text
   keyEntities      Json?              // [{ name, type: COMPANY|PERSON|PRODUCT|FRAMEWORK|CONCEPT|LOCATION }]

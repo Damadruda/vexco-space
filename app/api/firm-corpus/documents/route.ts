@@ -24,6 +24,13 @@ export async function GET(request: NextRequest) {
     const outcome = params.get("outcome") || undefined;
     const provenance = params.get("provenance") || undefined;
     const archived = params.get("archived") === "true";
+    const reviewedParam = params.get("reviewed");
+    const reviewed =
+      reviewedParam === "true"
+        ? true
+        : reviewedParam === "false"
+        ? false
+        : undefined;
     const search = params.get("search") || undefined;
     const page = parseInt(params.get("page") || "1", 10);
     const pageSize = Math.min(parseInt(params.get("pageSize") || "50", 10), 100);
@@ -34,6 +41,7 @@ export async function GET(request: NextRequest) {
       outcome,
       provenance,
       archived,
+      reviewed,
       search,
       page,
       pageSize,
