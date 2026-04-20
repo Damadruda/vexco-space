@@ -20,10 +20,17 @@ async function handle(request: NextRequest) {
   const force = url.searchParams.get("force") === "true";
   const onlyTemplateId = url.searchParams.get("templateId");
 
-  // Auth dual:
-  //   - Vercel Cron: header x-vercel-cron=1
+  // Auth triple:
+  //   - Vercel Cron (nuevo, recomendado): Authorization: Bearer <CRON_SECRET>
+  //   - Vercel Cron (legacy fallback): header x-vercel-cron=1
   //   - Manual: sesión NextAuth válida
-  const isCron = request.headers.get("x-vercel-cron") === "1";
+  const authHeader = request.headers.get("authorization");
+  const cronSecret = process.env.CRON_SECRET;
+  const isBearerCron =
+    !!cronSecret && authHeader === `Bearer ${cronSecret}`;
+  const isLegacyCron = request.headers.get("x-vercel-cron") === "1";
+  const isCron = isBearerCron || isLegacyCron;
+
   if (!isCron) {
     const session = await getServerSession(authOptions);
     if (!session?.user) {
