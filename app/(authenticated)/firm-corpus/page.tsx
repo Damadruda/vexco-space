@@ -258,6 +258,10 @@ export default function FirmCorpusPage() {
   const [batchLoading, setBatchLoading] = useState(false);
   const [batchError, setBatchError] = useState<string | null>(null);
 
+  // Reprocess (per-row Stage A+B re-run)
+  const [reprocessingIds, setReprocessingIds] = useState<Set<string>>(new Set());
+  const [reprocessError, setReprocessError] = useState<string | null>(null);
+
   // Fetch stats
   const fetchStats = useCallback(async () => {
     try {
@@ -367,6 +371,32 @@ export default function FirmCorpusPage() {
       setBatchError(msg);
     } finally {
       setBatchLoading(false);
+    }
+  }
+
+  async function handleReprocess(docId: string) {
+    setReprocessingIds((prev) => new Set(prev).add(docId));
+    setReprocessError(null);
+    try {
+      const res = await fetch(`/api/firm-corpus/${docId}/reprocess`, {
+        method: "POST",
+        credentials: "include",
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json.error || `HTTP ${res.status}`);
+      }
+      await fetchDocuments();
+      await fetchStats();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setReprocessError(`Error reprocesando: ${msg}`);
+    } finally {
+      setReprocessingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(docId);
+        return next;
+      });
     }
   }
 
@@ -611,6 +641,19 @@ export default function FirmCorpusPage() {
             </div>
           )}
 
+          {reprocessError && (
+            <div className="border-b border-amber-100 bg-amber-50 px-4 py-2 text-sm text-amber-700 flex items-center justify-between">
+              <span>{reprocessError}</span>
+              <button
+                onClick={() => setReprocessError(null)}
+                className="ml-2 text-amber-500 hover:text-amber-700"
+                aria-label="Cerrar"
+              >
+                ×
+              </button>
+            </div>
+          )}
+
           {/* Table */}
           {documents.length === 0 ? (
             <div className="py-16 text-center">
@@ -734,20 +777,29 @@ export default function FirmCorpusPage() {
                               {doc.lastProcessedAt ? timeAgo(doc.lastProcessedAt) : "—"}
                             </span>
                           </td>
-                          <td className="px-4 py-3">
-                            <button
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                if (window.confirm(`Mover "${doc.driveFileName}" a Operational Sources?`)) {
-                                  fetch(`/api/firm-corpus/${doc.id}/move-to-operational`, { method: "POST" })
-                                    .then(() => { fetchStats(); fetchDocuments(); });
-                                }
-                              }}
-                              className="text-xs text-[#5E5E5E] hover:text-[#1A1A1A] opacity-0 group-hover:opacity-100 transition-opacity"
-                              title="Mover a Operational Sources"
-                            >
-                              ⋯
-                            </button>
+                          <td className="px-4 py-3" onClick={(e) => e.stopPropagation()}>
+                            <div className="flex items-center gap-1.5 justify-end">
+                              <button
+                                onClick={() => handleReprocess(doc.id)}
+                                disabled={reprocessingIds.has(doc.id)}
+                                className="text-[10px] px-2 py-0.5 rounded border border-gray-200 text-[#5E5E5E] hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed transition-colors"
+                                title="Re-ejecutar Stage A + Stage B sobre este documento"
+                              >
+                                {reprocessingIds.has(doc.id) ? "Reprocesando..." : "Reprocesar"}
+                              </button>
+                              <button
+                                onClick={() => {
+                                  if (window.confirm(`Mover "${doc.driveFileName}" a Operational Sources?`)) {
+                                    fetch(`/api/firm-corpus/${doc.id}/move-to-operational`, { method: "POST" })
+                                      .then(() => { fetchStats(); fetchDocuments(); });
+                                  }
+                                }}
+                                className="text-xs text-[#5E5E5E] hover:text-[#1A1A1A] transition-colors"
+                                title="Mover a Operational Sources"
+                              >
+                                ⋯
+                              </button>
+                            </div>
                           </td>
                         </tr>
                       );

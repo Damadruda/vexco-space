@@ -10,6 +10,7 @@ import { routeFile } from "@/lib/firm-corpus/file-router";
 import { runStageA } from "@/lib/firm-corpus/stage-a-classifier";
 import { runStageB } from "@/lib/firm-corpus/stage-b-comprehension";
 import { persistDocument, persistOperationalSource, sanitizeForPostgres } from "@/lib/firm-corpus/persist";
+import { callGeminiMultimodal } from "@/lib/clients/llm";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -102,8 +103,75 @@ async function listFolderRecursively(
 // Binary file extensions that need special handling (not plain text)
 const BINARY_EXTENSIONS = new Set(["docx", "doc", "xlsx", "xls", "pptx"]);
 
+// PDFs usan inlineData en Gemini multimodal. Límite API: 20MB por archivo.
+const MAX_PDF_SIZE_BYTES = 20 * 1024 * 1024;
+
 function getFileExtension(fileName: string): string {
   return (fileName.toLowerCase().match(/\.([^.]+)$/)?.[1] || "");
+}
+
+/**
+ * Extrae texto literal de un PDF via Gemini multimodal.
+ * Patrón adoptado de app/api/drive/analyze-folder/route.ts:processPdfFile.
+ */
+async function extractPdfTextViaGemini(
+  file: DriveFileRef,
+  accessToken: string
+): Promise<string> {
+  const downloadUrl = `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`;
+  const response = await fetch(downloadUrl, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status} descargando PDF ${file.name}`);
+  }
+
+  const arrayBuffer = await response.arrayBuffer();
+  const size = arrayBuffer.byteLength;
+
+  if (size > MAX_PDF_SIZE_BYTES) {
+    throw new Error(
+      `PDF ${file.name} supera 20MB (${(size / 1024 / 1024).toFixed(1)}MB). No procesable via inlineData.`
+    );
+  }
+  if (size < 100) {
+    throw new Error(`PDF ${file.name} sospechosamente pequeño (${size} bytes)`);
+  }
+
+  const base64Data = Buffer.from(arrayBuffer).toString("base64");
+
+  const systemPrompt =
+    "Eres un extractor de texto. Tu única tarea es transcribir literalmente el contenido textual de un documento, sin resumir, sin parafrasear, sin interpretar. Preservá estructura (títulos, secciones, bullets) usando saltos de línea y marcadores markdown mínimos si ayudan a la fidelidad del contenido. No agregues introducción ni comentarios.";
+
+  const userPrompt = `Extraé el texto completo del siguiente PDF: "${file.name}". Si el PDF tiene tablas, transcribilas como listas o texto separado por pipes. Si tiene gráficos, describí brevemente entre corchetes qué muestran (ej. [Gráfico: Evolución mercado 2020-2024]). Devolvé solo el texto extraído, sin envolturas ni explicaciones meta.`;
+
+  const { content } = await callGeminiMultimodal(
+    systemPrompt,
+    userPrompt,
+    [
+      {
+        inlineData: {
+          data: base64Data,
+          mimeType: "application/pdf",
+        },
+      },
+    ],
+    false,
+    undefined,
+    0.1
+  );
+
+  const text = content?.trim() ?? "";
+  if (!text || text.length < 50) {
+    throw new Error(
+      `Gemini extrajo muy poco texto del PDF ${file.name} (${text.length} chars). Posible PDF escaneado sin OCR o protegido.`
+    );
+  }
+
+  console.log(
+    `[extract-pdf-multimodal] ${file.name}: extracted ${text.length} chars via Gemini inlineData (source PDF: ${(size / 1024).toFixed(0)}KB)`
+  );
+  return sanitizeForPostgres(text);
 }
 
 export async function extractFileContent(
@@ -163,7 +231,12 @@ export async function extractFileContent(
     return sanitizeForPostgres(buffer.toString("utf-8"));
   }
 
-  // Text files (pdf, md, txt, html, json, csv, etc): download as text
+  // PDF: extract text via Gemini multimodal (inlineData)
+  if (ext === "pdf" || file.mimeType === "application/pdf") {
+    return extractPdfTextViaGemini(file, accessToken);
+  }
+
+  // Text files (md, txt, html, json, csv, etc): download as text
   const response = await fetch(downloadUrl, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });

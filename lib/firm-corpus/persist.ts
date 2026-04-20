@@ -85,6 +85,8 @@ export async function persistDocument(
     ? safeRaw.substring(0, MAX_RAW) + "\n[... content truncated at 1MB ...]"
     : safeRaw;
 
+  // Nota: no incluimos `archived` aquí. Create usa el default false del schema;
+  // update preserva la curación humana previa (reprocess no debe desarchivar).
   const docData = {
     driveFileName: safeFileName,
     driveFileUrl,
@@ -94,7 +96,6 @@ export async function persistDocument(
     geography: safeGeography,
     outcome: mapOutcome(stageA.outcome),
     provenance: stageB.provenance as Provenance,
-    archived: false,
     extractedSummary: safeSummary,
     keyEntities: safeEntities,
     rawContent: storedContent,
