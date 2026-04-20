@@ -87,13 +87,21 @@ export async function GET(
             orderBy: { createdAt: "desc" },
             select: {
               id: true,
+              driveFileId: true,
               fileName: true,
               fileType: true,
               summary: true,
               category: true,
             },
           })
-          .catch(() => []),
+          .catch(() => [] as Array<{
+            id: string;
+            driveFileId: string;
+            fileName: string;
+            fileType: string;
+            summary: string;
+            category: string | null;
+          }>),
 
         prisma.documentGeneration
           .findMany({
@@ -139,12 +147,37 @@ export async function GET(
     }
     const warRoomInsights = Array.from(agentMap.values());
 
+    // CORPUS-3: enriquecer driveDocs con su estado de promoción al Firm Corpus
+    const driveFileIds = driveDocs.map((d) => d.driveFileId);
+    const corpusStatusMap = new Map<
+      string,
+      "pending_review" | "reviewed" | "archived"
+    >();
+    if (driveFileIds.length > 0) {
+      const corpusDocs = await prisma.corpusDocument
+        .findMany({
+          where: { driveFileId: { in: driveFileIds } },
+          select: { driveFileId: true, reviewedAt: true, archived: true },
+        })
+        .catch(() => [] as Array<{ driveFileId: string; reviewedAt: Date | null; archived: boolean }>);
+      for (const cd of corpusDocs) {
+        if (cd.archived) corpusStatusMap.set(cd.driveFileId, "archived");
+        else if (cd.reviewedAt) corpusStatusMap.set(cd.driveFileId, "reviewed");
+        else corpusStatusMap.set(cd.driveFileId, "pending_review");
+      }
+    }
+
+    const driveDocsEnriched = driveDocs.map((d) => ({
+      ...d,
+      corpusStatus: corpusStatusMap.get(d.driveFileId) ?? ("not_promoted" as const),
+    }));
+
     return NextResponse.json({
       project,
       taskStats,
       warRoomInsights,
       inboxItems,
-      driveDocs,
+      driveDocs: driveDocsEnriched,
       documents,
     });
   } catch (error) {

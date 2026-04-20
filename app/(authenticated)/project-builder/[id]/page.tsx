@@ -49,10 +49,12 @@ interface ProjectSummary {
   }>;
   driveDocs: Array<{
     id: string;
+    driveFileId: string;
     fileName: string;
     fileType: string;
     summary: string;
     category: string | null;
+    corpusStatus: "not_promoted" | "pending_review" | "reviewed" | "archived";
   }>;
   documents: Array<{
     id: string;
@@ -129,6 +131,8 @@ export default function ProjectOverviewPage() {
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
   const [selectedDocIds, setSelectedDocIds] = useState<Set<string>>(new Set());
+  const [promotingIds, setPromotingIds] = useState<Set<string>>(new Set());
+  const [promoteError, setPromoteError] = useState<string | null>(null);
 
   useEffect(() => {
     if (!params?.id) return;
@@ -156,6 +160,38 @@ export default function ProjectOverviewPage() {
       alert("Error al desvincular archivos. Inténtalo de nuevo.");
     } finally {
       setActionLoading(false);
+    }
+  };
+
+  const handlePromoteToCorpus = async (driveFileId: string) => {
+    setPromotingIds((prev) => new Set(prev).add(driveFileId));
+    setPromoteError(null);
+    try {
+      const res = await fetch("/api/firm-corpus/promote-from-project", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ driveFileId, projectId: params?.id }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        if (res.status === 409 && json.error === "already_in_corpus") {
+          setPromoteError(
+            `Ya estaba en el corpus (${json.reviewed ? "revisado" : "pendiente"}).`
+          );
+        } else {
+          throw new Error(json.error || `HTTP ${res.status}`);
+        }
+      }
+      window.location.reload();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setPromoteError(msg);
+    } finally {
+      setPromotingIds((prev) => {
+        const next = new Set(prev);
+        next.delete(driveFileId);
+        return next;
+      });
     }
   };
 
@@ -452,20 +488,58 @@ export default function ProjectOverviewPage() {
               Documentos
             </h2>
             <div className="space-y-2">
-              {driveDocs.map((doc) => (
-                <div key={doc.id} className="flex items-center gap-3 text-sm">
-                  <FolderOpen className="h-3.5 w-3.5 text-[#6B6B6B] shrink-0" />
-                  <span className="text-[#1A1A1A] truncate flex-1">{doc.fileName}</span>
-                  <span className="border border-[#E8E4DE] text-[10px] px-1.5 py-0.5 rounded text-[#6B6B6B]">
-                    {doc.fileType}
-                  </span>
-                  {doc.category && (
+              {driveDocs.map((doc) => {
+                const isPromoting = promotingIds.has(doc.driveFileId);
+                const statusLabel =
+                  doc.corpusStatus === "reviewed"
+                    ? "En Corpus · Revisado"
+                    : doc.corpusStatus === "pending_review"
+                    ? "En Corpus · Pendiente"
+                    : doc.corpusStatus === "archived"
+                    ? "En Corpus · Archivado"
+                    : null;
+
+                return (
+                  <div key={doc.id} className="flex items-center gap-3 text-sm">
+                    <FolderOpen className="h-3.5 w-3.5 text-[#6B6B6B] shrink-0" />
+                    <span className="text-[#1A1A1A] truncate flex-1">{doc.fileName}</span>
                     <span className="border border-[#E8E4DE] text-[10px] px-1.5 py-0.5 rounded text-[#6B6B6B]">
-                      {doc.category}
+                      {doc.fileType}
                     </span>
-                  )}
-                </div>
-              ))}
+                    {doc.category && (
+                      <span className="border border-[#E8E4DE] text-[10px] px-1.5 py-0.5 rounded text-[#6B6B6B]">
+                        {doc.category}
+                      </span>
+                    )}
+                    {statusLabel ? (
+                      <span
+                        className={`text-[10px] px-2 py-0.5 rounded border shrink-0 ${
+                          doc.corpusStatus === "reviewed"
+                            ? "text-emerald-700 bg-emerald-50 border-emerald-200"
+                            : doc.corpusStatus === "archived"
+                            ? "text-gray-500 bg-gray-50 border-gray-200"
+                            : "text-amber-700 bg-amber-50 border-amber-200"
+                        }`}
+                      >
+                        {statusLabel}
+                      </span>
+                    ) : (
+                      <button
+                        onClick={() => handlePromoteToCorpus(doc.driveFileId)}
+                        disabled={isPromoting}
+                        className="text-[10px] px-2 py-0.5 rounded border border-[#C5A572] text-[#8B7355] hover:bg-[#FBF8F3] disabled:opacity-40 disabled:cursor-not-allowed transition-colors shrink-0"
+                      >
+                        {isPromoting ? "Promoviendo..." : "Promover al Corpus"}
+                      </button>
+                    )}
+                  </div>
+                );
+              })}
+              {promoteError && (
+                <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded px-3 py-2 mt-2">
+                  {promoteError}
+                </p>
+              )}
               {documents.map((doc) => (
                 <div key={doc.id} className="flex items-center gap-3 text-sm">
                   <FileText className="h-3.5 w-3.5 text-[#B8860B] shrink-0" />

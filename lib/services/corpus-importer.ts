@@ -385,3 +385,46 @@ export async function importCorpusFromDrive(
     throw error;
   }
 }
+
+// ─── CORPUS-3: Single-file promotion ─────────────────────────────────────────
+// Llamado por /api/firm-corpus/promote-from-project. Reutiliza Stage A + B +
+// persistDocument sobre un archivo puntual. No toca FirmCorpus sync state.
+
+export async function promoteSingleFile(
+  file: DriveFileRef,
+  accessToken: string,
+  corpusId: string
+): Promise<{ corpusDocumentId: string; routed: "narrative" | "operational" }> {
+  const routing = routeFile(file.name, file.mimeType);
+
+  if (routing.kind === "operational") {
+    const op = await persistOperationalSource(file, routing.detectedKind);
+    console.log(`[promote-single] OPERATIONAL ${file.name} -> ${routing.detectedKind}`);
+    return { corpusDocumentId: op.id, routed: "operational" };
+  }
+
+  const rawContentUnsafe = await extractFileContent(file, accessToken);
+  const rawContent = sanitizeForPostgres(rawContentUnsafe);
+
+  let stageA;
+  try {
+    stageA = await runStageA(rawContent, file.name);
+  } catch (err: unknown) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[promote-single] STAGE_A_FAIL ${file.name}: ${msg}`);
+    stageA = {
+      documentType: "UNCLASSIFIED" as const,
+      industry: null,
+      geography: null,
+      outcome: null,
+    };
+  }
+
+  const stageB = await runStageB(rawContent, file.name, stageA);
+  const doc = await persistDocument(file, rawContent, stageA, stageB, corpusId);
+
+  console.log(
+    `[promote-single] NARRATIVE ${file.name} -> ${stageA.documentType} / ${stageB.provenance}`
+  );
+  return { corpusDocumentId: doc.id, routed: "narrative" };
+}

@@ -4,21 +4,15 @@ import { useState, useEffect, useCallback } from "react";
 import { Header } from "@/components/ui/header";
 import {
   Library,
-  FolderSync,
   Search,
   Filter,
   ChevronLeft,
   ChevronRight,
   ExternalLink,
   X,
-  Folder,
-  ArrowLeft,
-  Loader2,
   AlertCircle,
   FileText,
-  RefreshCw,
 } from "lucide-react";
-import { signIn } from "next-auth/react";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -50,19 +44,9 @@ interface CorpusDocument {
 interface CorpusStats {
   total: number;
   failedCount: number;
+  archivedCount?: number;
   byType: { type: string; count: number }[];
   byOutcome: { outcome: string | null; count: number }[];
-  lastSyncedAt: string | null;
-  syncStatus: string;
-  syncProgress: { processed: number; total: number; currentBatch: number } | null;
-  driveFolderId: string | null;
-  driveFolderUrl: string | null;
-}
-
-interface DriveFolder {
-  id: string;
-  name: string;
-  mimeType: string;
 }
 
 // ─── Constants ───────────────────────────────────────────────────────────────
@@ -101,154 +85,6 @@ function timeAgo(dateStr: string): string {
   const days = Math.floor(hours / 24);
   if (days < 7) return `hace ${days}d`;
   return new Date(dateStr).toLocaleDateString("es-ES", { day: "numeric", month: "short" });
-}
-
-// ─── Drive Folder Picker (inline) ───────────────────────────────────────────
-
-function DriveFolderPicker({
-  onSelect,
-  onCancel,
-}: {
-  onSelect: (folderId: string, folderName: string) => void;
-  onCancel: () => void;
-}) {
-  const [folders, setFolders] = useState<DriveFolder[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [needsAuth, setNeedsAuth] = useState(false);
-  const [parentStack, setParentStack] = useState<{ id: string; name: string }[]>([]);
-  const [search, setSearch] = useState("");
-
-  const currentParentId = parentStack.length > 0 ? parentStack[parentStack.length - 1].id : "";
-
-  const fetchFolders = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const params = new URLSearchParams({
-        mimeType: "application/vnd.google-apps.folder",
-      });
-      if (currentParentId) params.append("parentId", currentParentId);
-      if (search) params.append("query", search);
-
-      const res = await fetch(`/api/drive?${params.toString()}`);
-      const data = await res.json();
-
-      if (!res.ok) {
-        if (res.status === 401 || data.needsGoogleAuth) {
-          setNeedsAuth(true);
-          return;
-        }
-        setError(data.error || "Error loading folders");
-        return;
-      }
-
-      setFolders(data.files || []);
-    } catch {
-      setError("Connection error");
-    } finally {
-      setLoading(false);
-    }
-  }, [currentParentId, search]);
-
-  useEffect(() => {
-    fetchFolders();
-  }, [fetchFolders]);
-
-  if (needsAuth) {
-    return (
-      <div className="rounded-lg border border-dashed border-gray-300 p-8 text-center">
-        <AlertCircle className="mx-auto h-8 w-8 text-gray-400 mb-3" />
-        <p className="text-sm text-[#5E5E5E] mb-4">Conecta tu cuenta de Google para acceder a Drive</p>
-        <button
-          onClick={() => signIn("google", { callbackUrl: "/firm-corpus" })}
-          className="ql-btn-primary"
-        >
-          Conectar Google Drive
-        </button>
-      </div>
-    );
-  }
-
-  return (
-    <div className="space-y-3">
-      <div className="flex items-center gap-2">
-        {parentStack.length > 0 && (
-          <button
-            onClick={() => setParentStack((s) => s.slice(0, -1))}
-            className="p-1.5 rounded hover:bg-gray-100 transition-colors"
-          >
-            <ArrowLeft className="h-4 w-4 text-[#5E5E5E]" />
-          </button>
-        )}
-        <div className="flex-1 relative">
-          <Search className="absolute left-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2 text-gray-400" />
-          <input
-            type="text"
-            placeholder="Buscar carpeta..."
-            value={search}
-            onChange={(e) => setSearch(e.target.value)}
-            className="w-full bg-transparent border-b border-transparent hover:border-[#5E5E5E]/30 focus:border-[#1A1A1A] outline-none py-2 pl-9 pr-3 text-sm"
-          />
-        </div>
-      </div>
-
-      {parentStack.length > 0 && (
-        <div className="text-xs text-[#5E5E5E] truncate">
-          {parentStack.map((p) => p.name).join(" / ")}
-        </div>
-      )}
-
-      {loading ? (
-        <div className="flex items-center justify-center py-8">
-          <Loader2 className="h-5 w-5 animate-spin text-[#5E5E5E]" />
-        </div>
-      ) : error ? (
-        <p className="text-sm text-red-600 py-4 text-center">{error}</p>
-      ) : folders.length === 0 ? (
-        <p className="text-sm text-[#5E5E5E] py-4 text-center">No hay carpetas aqui</p>
-      ) : (
-        <div className="max-h-60 overflow-y-auto space-y-1">
-          {folders.map((folder) => (
-            <div
-              key={folder.id}
-              className="flex items-center gap-3 p-2.5 rounded-md hover:bg-[#F9F8F6] cursor-pointer group transition-colors"
-              onClick={() => setParentStack((s) => [...s, { id: folder.id, name: folder.name }])}
-            >
-              <Folder className="h-4 w-4 text-amber-500 flex-shrink-0" />
-              <span className="text-sm text-[#1A1A1A] flex-1 truncate">{folder.name}</span>
-              <button
-                onClick={(e) => {
-                  e.stopPropagation();
-                  onSelect(folder.id, folder.name);
-                }}
-                className="opacity-0 group-hover:opacity-100 text-xs px-2.5 py-1 rounded bg-[#1A1A1A] text-white transition-opacity"
-              >
-                Vincular
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
-
-      <div className="flex justify-between items-center pt-2 border-t border-gray-100">
-        {parentStack.length > 0 && (
-          <button
-            onClick={() => {
-              const current = parentStack[parentStack.length - 1];
-              onSelect(current.id, current.name);
-            }}
-            className="text-xs px-3 py-1.5 rounded bg-[#1A1A1A] text-white hover:bg-[#333] transition-colors"
-          >
-            Vincular carpeta actual
-          </button>
-        )}
-        <button onClick={onCancel} className="text-xs text-[#5E5E5E] hover:text-[#1A1A1A] ml-auto">
-          Cancelar
-        </button>
-      </div>
-    </div>
-  );
 }
 
 // ─── Document Detail Drawer ─────────────────────────────────────────────────
@@ -406,8 +242,6 @@ export default function FirmCorpusPage() {
   const [totalDocs, setTotalDocs] = useState(0);
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
-  const [syncing, setSyncing] = useState(false);
-  const [showFolderPicker, setShowFolderPicker] = useState(false);
   const [selectedDoc, setSelectedDoc] = useState<CorpusDocument | null>(null);
 
   // Filters
@@ -474,100 +308,6 @@ export default function FirmCorpusPage() {
       fetchDocuments();
     }
   }, [page, filterType, filterOutcome, filterProvenance, showArchived, filterReviewed, searchQuery]);
-
-  // Poll during sync
-  useEffect(() => {
-    if (!syncing) return;
-    const interval = setInterval(async () => {
-      const res = await fetch("/api/firm-corpus/status");
-      if (res.ok) {
-        const data = await res.json();
-        setStats((prev) => (prev ? { ...prev, ...data } : prev));
-        if (data.syncStatus !== "running") {
-          setSyncing(false);
-          fetchStats();
-          fetchDocuments();
-        }
-      }
-    }, 3000);
-    return () => clearInterval(interval);
-  }, [syncing]);
-
-  // Link Drive folder
-  const handleLinkFolder = async (folderId: string, folderName: string) => {
-    setShowFolderPicker(false);
-    try {
-      await fetch("/api/firm-corpus", {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          driveFolderId: folderId,
-          driveFolderUrl: `https://drive.google.com/drive/folders/${folderId}`,
-          description: `Linked to Drive folder: ${folderName}`,
-        }),
-      });
-      fetchStats();
-    } catch {
-      // Handle error
-    }
-  };
-
-  // Trigger sync
-  const handleSync = async (mode: "full" | "incremental" = "incremental") => {
-    setSyncing(true);
-    try {
-      const res = await fetch("/api/firm-corpus/import", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          driveFolderId: stats?.driveFolderId,
-          mode,
-        }),
-      });
-
-      if (!res.ok) {
-        const data = await res.json();
-        if (data.syncStatus === "running") {
-          // Already running, just poll
-          return;
-        }
-        setSyncing(false);
-        alert(data.error || "Error al sincronizar");
-        return;
-      }
-
-      // Import completed (for small folders, may complete within the request)
-      setSyncing(false);
-      fetchStats();
-      fetchDocuments();
-    } catch {
-      setSyncing(false);
-    }
-  };
-
-  // Reclassify failed
-  const [reclassifying, setReclassifying] = useState(false);
-  const handleReclassifyFailed = async () => {
-    const count = stats?.failedCount || 0;
-    if (!window.confirm(`Re-ejecutar clasificacion de ${count} documentos con error?`)) return;
-    setReclassifying(true);
-    try {
-      const res = await fetch("/api/firm-corpus/reclassify-failed", { method: "POST" });
-      if (res.ok) {
-        const data = await res.json();
-        alert(`Reclasificacion completada: ${data.reclassified} exitosos, ${data.stillFailing} siguen fallando`);
-      } else {
-        const data = await res.json();
-        alert(data.error || "Error al reclasificar");
-      }
-      fetchStats();
-      fetchDocuments();
-    } catch {
-      alert("Error de conexion");
-    } finally {
-      setReclassifying(false);
-    }
-  };
 
   // Search debounce
   const [searchInput, setSearchInput] = useState("");
@@ -676,28 +416,23 @@ export default function FirmCorpusPage() {
     );
   }
 
-  const syncProgress = stats?.syncProgress as { processed: number; total: number; currentBatch: number } | null;
-
   return (
     <div className="ql-page">
       <Header title="Firm Corpus" subtitle="Case-book transversal de Vex&Co" />
 
       <div className="p-8 space-y-8">
-        {/* ── Sync Card ──────────────────────────────────────────────── */}
+        {/* ── Header Stats ──────────────────────────────────────────── */}
         <div className="rounded-lg bg-white p-6 border border-gray-100">
           <div className="flex items-start justify-between">
             <div>
-              <h3 className="font-serif text-lg text-[#1A1A1A]">Sincronizacion</h3>
+              <h3 className="font-serif text-lg text-[#1A1A1A]">Firm Corpus</h3>
               <p className="text-sm text-[#5E5E5E] mt-1">
-                {stats?.driveFolderId
-                  ? `Vinculado a Google Drive`
-                  : "Sin carpeta vinculada"}
+                Conocimiento transversal promovido desde proyectos
               </p>
             </div>
-            <FolderSync className="h-5 w-5 text-[#5E5E5E]" />
+            <Library className="h-5 w-5 text-[#5E5E5E]" />
           </div>
 
-          {/* Stats row */}
           {stats && stats.total > 0 && (
             <div className="flex flex-wrap gap-4 mt-4">
               <div className="text-center">
@@ -713,96 +448,6 @@ export default function FirmCorpusPage() {
                   </div>
                 );
               })}
-            </div>
-          )}
-
-          {/* Last synced */}
-          {stats?.lastSyncedAt && (
-            <p className="text-xs text-[#5E5E5E] mt-3">
-              Ultima sincronizacion: {timeAgo(stats.lastSyncedAt)}
-            </p>
-          )}
-
-          {/* Sync progress */}
-          {syncing && syncProgress && (
-            <div className="mt-4">
-              <div className="flex items-center gap-2 mb-2">
-                <Loader2 className="h-4 w-4 animate-spin text-[#5E5E5E]" />
-                <span className="text-sm text-[#5E5E5E]">
-                  Procesando... {syncProgress.processed}/{syncProgress.total} documentos
-                </span>
-              </div>
-              <div className="w-full bg-gray-100 rounded-full h-1.5">
-                <div
-                  className="bg-[#1A1A1A] h-1.5 rounded-full transition-all duration-500"
-                  style={{
-                    width: syncProgress.total > 0
-                      ? `${(syncProgress.processed / syncProgress.total) * 100}%`
-                      : "0%",
-                  }}
-                />
-              </div>
-            </div>
-          )}
-
-          {/* Actions */}
-          <div className="flex flex-wrap gap-3 mt-5">
-            {!stats?.driveFolderId ? (
-              <button
-                onClick={() => setShowFolderPicker(true)}
-                className="inline-flex items-center gap-2 px-4 py-2 text-sm bg-[#1A1A1A] text-white rounded-md hover:bg-[#333] transition-colors"
-              >
-                <Folder className="h-3.5 w-3.5" />
-                Vincular carpeta de Drive
-              </button>
-            ) : (
-              <>
-                <button
-                  onClick={() => handleSync("incremental")}
-                  disabled={syncing}
-                  className="inline-flex items-center gap-2 px-4 py-2 text-sm bg-[#1A1A1A] text-white rounded-md hover:bg-[#333] transition-colors disabled:opacity-50"
-                >
-                  <RefreshCw className={`h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} />
-                  Sincronizar
-                </button>
-                <button
-                  onClick={() => {
-                    if (window.confirm("Esto borrara todos los documentos procesados y volvera a importarlos desde Drive. ¿Continuar?")) {
-                      handleSync("full");
-                    }
-                  }}
-                  disabled={syncing}
-                  className="inline-flex items-center gap-2 px-4 py-2 text-sm border border-gray-200 text-[#5E5E5E] rounded-md hover:bg-gray-50 transition-colors disabled:opacity-50"
-                >
-                  Re-sincronizar completo
-                </button>
-                {(stats?.failedCount ?? 0) > 0 && (
-                  <button
-                    onClick={handleReclassifyFailed}
-                    disabled={reclassifying || syncing}
-                    className="inline-flex items-center gap-2 px-4 py-2 text-sm border border-amber-200 text-amber-700 rounded-md hover:bg-amber-50 transition-colors disabled:opacity-50"
-                  >
-                    <AlertCircle className="h-3.5 w-3.5" />
-                    Reclasificar fallados ({stats?.failedCount})
-                  </button>
-                )}
-                <button
-                  onClick={() => setShowFolderPicker(true)}
-                  className="inline-flex items-center gap-2 px-3 py-2 text-xs text-[#5E5E5E] hover:text-[#1A1A1A] transition-colors"
-                >
-                  Cambiar carpeta
-                </button>
-              </>
-            )}
-          </div>
-
-          {/* Folder Picker */}
-          {showFolderPicker && (
-            <div className="mt-4 p-4 rounded-lg border border-gray-200 bg-[#F9F8F6]">
-              <DriveFolderPicker
-                onSelect={handleLinkFolder}
-                onCancel={() => setShowFolderPicker(false)}
-              />
             </div>
           )}
         </div>
@@ -971,13 +616,11 @@ export default function FirmCorpusPage() {
             <div className="py-16 text-center">
               <Library className="mx-auto h-10 w-10 text-gray-300 mb-3" />
               <p className="text-sm text-[#5E5E5E]">
-                {!stats?.driveFolderId
-                  ? "Vincula una carpeta de Drive para comenzar."
-                  : filterReviewed === "pending"
-                  ? "No hay documentos pendientes de revisar. Todo el corpus esta curado."
+                {filterReviewed === "pending"
+                  ? "No hay documentos pendientes. Promueve archivos desde tus proyectos para alimentar el corpus."
                   : filterReviewed === "reviewed"
-                  ? "Aun no has revisado ningun documento."
-                  : "No hay documentos. Sincroniza para importar."}
+                  ? "Aún no has revisado ningún documento."
+                  : "El corpus está vacío. Promueve archivos desde tus proyectos."}
               </p>
             </div>
           ) : (

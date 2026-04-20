@@ -99,19 +99,12 @@ export async function getCorpusStats() {
     failedCount,
     byType: byType.map((g) => ({ type: g.documentType, count: g._count })),
     byOutcome: byOutcome.map((g) => ({ outcome: g.outcome, count: g._count })),
-    lastSyncedAt: corpus.lastSyncedAt,
-    syncStatus: corpus.syncStatus,
-    syncProgress: corpus.syncProgress,
-    driveFolderId: corpus.driveFolderId,
-    driveFolderUrl: corpus.driveFolderUrl,
   };
 }
 
 // ─── Update Corpus Config ────────────────────────────────────────────────────
 
 export async function updateCorpusConfig(data: {
-  driveFolderId?: string;
-  driveFolderUrl?: string;
   description?: string;
 }) {
   const corpus = await getFirmCorpus();
