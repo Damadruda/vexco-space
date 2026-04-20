@@ -12,7 +12,7 @@ import { getFirmCorpus } from "@/lib/services/firm-corpus";
 import { promoteSingleFile } from "@/lib/services/corpus-importer";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 120;
+export const maxDuration = 300;
 
 interface DriveFileMeta {
   id: string;
