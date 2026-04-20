@@ -111,8 +111,9 @@ function getFileExtension(fileName: string): string {
 }
 
 /**
- * Extrae texto literal de un PDF via Gemini multimodal.
- * Patrón adoptado de app/api/drive/analyze-folder/route.ts:processPdfFile.
+ * Extrae un dossier estructurado de un PDF via Gemini multimodal (Flash directo).
+ * Alta densidad informativa, no transcripción literal: secciones markdown,
+ * cifras exactas, entidades nombradas, citas textuales breves. Feedea Stage A/B.
  */
 async function extractPdfTextViaGemini(
   file: DriveFileRef,
@@ -141,9 +142,9 @@ async function extractPdfTextViaGemini(
   const base64Data = Buffer.from(arrayBuffer).toString("base64");
 
   const systemPrompt =
-    "Eres un extractor de texto. Tu única tarea es transcribir literalmente el contenido textual de un documento, sin resumir, sin parafrasear, sin interpretar. Preservá estructura (títulos, secciones, bullets) usando saltos de línea y marcadores markdown mínimos si ayudan a la fidelidad del contenido. No agregues introducción ni comentarios.";
+    "Eres un analista que prepara un dossier rico de un documento PDF para que otro analista lo clasifique después. Extraé el contenido clave del PDF en texto estructurado: organizá por secciones con subtítulos en markdown (##), preservá cifras exactas, nombres de empresas/personas/instituciones, fechas, y citas textuales breves (entre comillas). NO hagas transcripción literal página por página: condensá el contenido manteniendo alta densidad informativa. Máximo 3000 palabras totales. Escribí en el idioma original del documento.";
 
-  const userPrompt = `Extraé el texto completo del siguiente PDF: "${file.name}". Si el PDF tiene tablas, transcribilas como listas o texto separado por pipes. Si tiene gráficos, describí brevemente entre corchetes qué muestran (ej. [Gráfico: Evolución mercado 2020-2024]). Devolvé solo el texto extraído, sin envolturas ni explicaciones meta.`;
+  const userPrompt = `Prepará el dossier del PDF: "${file.name}". Secciones sugeridas: ## Contexto y propósito, ## Hallazgos cuantitativos, ## Actores y entidades mencionados, ## Metodología o fuentes, ## Conclusiones o recomendaciones. Omití secciones que no apliquen. Empezá directamente con los subtítulos, sin introducción meta.`;
 
   const { content } = await callGeminiMultimodal(
     systemPrompt,
@@ -156,9 +157,10 @@ async function extractPdfTextViaGemini(
         },
       },
     ],
-    false,
-    undefined,
-    0.1
+    false,              // jsonMode
+    4096,               // maxTokens — crítico, sin esto Gemini se cuelga
+    0.2,                // temperature baja para fidelidad
+    "gemini-3-flash-preview" // Flash directo, Pro es overkill para extraction
   );
 
   const text = content?.trim() ?? "";
