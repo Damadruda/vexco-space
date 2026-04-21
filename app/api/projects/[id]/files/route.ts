@@ -78,8 +78,13 @@ export async function GET(
 
     return NextResponse.json({ files: withDownloadUrls });
   } catch (error) {
-    console.error('[PROJECT FILES GET] Error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    const message = error instanceof Error ? error.message : String(error);
+    const stack = error instanceof Error ? error.stack : undefined;
+    console.error('[PROJECT FILES GET] Error:', message, stack);
+    return NextResponse.json(
+      { error: message, stack },
+      { status: 500 }
+    );
   }
 }
 
@@ -156,7 +161,12 @@ export async function POST(
 
     return NextResponse.json({ file }, { status: 201 });
   } catch (error) {
-    console.error('[PROJECT FILES POST] Error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    const message = error instanceof Error ? error.message : String(error);
+    const stack = error instanceof Error ? error.stack : undefined;
+    console.error('[PROJECT FILES POST] Error:', message, stack);
+    return NextResponse.json(
+      { error: message, stack },
+      { status: 500 }
+    );
   }
 }

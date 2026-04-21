@@ -58,7 +58,12 @@ export async function DELETE(
 
     return NextResponse.json({ success: true });
   } catch (error) {
-    console.error('[PROJECT FILES DELETE] Error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    const message = error instanceof Error ? error.message : String(error);
+    const stack = error instanceof Error ? error.stack : undefined;
+    console.error('[PROJECT FILES DELETE] Error:', message, stack);
+    return NextResponse.json(
+      { error: message, stack },
+      { status: 500 }
+    );
   }
 }

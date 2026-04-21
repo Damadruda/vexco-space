@@ -103,7 +103,12 @@ export async function POST(
       expiresIn: 300,
     });
   } catch (error) {
-    console.error('[PROJECT FILES PRESIGNED] Error:', error);
-    return NextResponse.json({ error: 'Internal server error' }, { status: 500 });
+    const message = error instanceof Error ? error.message : String(error);
+    const stack = error instanceof Error ? error.stack : undefined;
+    console.error('[PROJECT FILES PRESIGNED] Error:', message, stack);
+    return NextResponse.json(
+      { error: message, stack },
+      { status: 500 }
+    );
   }
 }
