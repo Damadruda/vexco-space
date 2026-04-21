@@ -14,15 +14,6 @@ import {
 
 export const dynamic = 'force-dynamic';
 
-function buildProjectFileKey(projectId: string, safeName: string): string {
-  const { folderPrefix } = getBucketConfig();
-  const normalizedPrefix = folderPrefix.endsWith('/') || folderPrefix === ''
-    ? folderPrefix
-    : `${folderPrefix}/`;
-  const uuid = crypto.randomUUID();
-  return `${normalizedPrefix}project-files/${projectId}/${uuid}-${safeName}`;
-}
-
 export async function POST(
   request: NextRequest,
   { params }: { params: { id: string } }
@@ -79,13 +70,13 @@ export async function POST(
       );
     }
 
-    const safeName = sanitizeFileName(fileName);
-    if (safeName.length === 0) {
+    const safeFileName = sanitizeFileName(fileName);
+    if (safeFileName.length === 0) {
       return NextResponse.json({ error: 'Invalid fileName' }, { status: 400 });
     }
 
-    const fileKey = buildProjectFileKey(project.id, safeName);
-    const { bucketName } = getBucketConfig();
+    const { bucketName, folderPrefix } = getBucketConfig();
+    const fileKey = `${folderPrefix}project-files/${project.id}/${crypto.randomUUID()}-${safeFileName}`;
     const s3 = createS3Client();
 
     const command = new PutObjectCommand({

@@ -14,10 +14,7 @@ export const dynamic = 'force-dynamic';
 
 function expectedKeyPrefix(projectId: string): string {
   const { folderPrefix } = getBucketConfig();
-  const normalizedPrefix = folderPrefix.endsWith('/') || folderPrefix === ''
-    ? folderPrefix
-    : `${folderPrefix}/`;
-  return `${normalizedPrefix}project-files/${projectId}/`;
+  return `${folderPrefix}project-files/${projectId}/`;
 }
 
 async function requireProject(projectId: string, email: string) {
