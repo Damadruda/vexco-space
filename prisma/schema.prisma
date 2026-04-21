@@ -225,12 +225,34 @@ model Project {
   metaProjectComponents MetaProjectComponent[]
   // Sprint M.2a-PLUS — Frameworks
   frameworks            FrameworkProject[]
+  // Sprint Upload-A — Local files
+  files                 ProjectFile[]
 
   @@index([userId])
   @@index([status])
   @@index([projectType])
   @@index([conceptStatus])
   @@index([trackType])
+}
+
+// =============================================================================
+// SPRINT UPLOAD-A — PROJECT FILES (local uploads, storage + visibility)
+// QA: S3-backed user uploads per project. No Stage A/B processing.
+// =============================================================================
+
+model ProjectFile {
+  id         String   @id @default(cuid())
+  projectId  String
+  fileName   String
+  fileKey    String   @unique
+  fileSize   Int
+  mimeType   String
+  uploadedAt DateTime @default(now())
+
+  project    Project  @relation(fields: [projectId], references: [id], onDelete: Cascade)
+
+  @@index([projectId])
+  @@index([uploadedAt])
 }
 
 // =============================================================================

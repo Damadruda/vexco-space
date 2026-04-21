@@ -3,7 +3,8 @@
 import { useState, useEffect } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
-import { Swords, FileText, Inbox, ArrowRight, FolderOpen } from "lucide-react";
+import { Swords, FileText, Inbox, ArrowRight, FolderOpen, Paperclip } from "lucide-react";
+import { ProjectFileUploader } from "@/components/project-file-uploader";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -556,6 +557,18 @@ export default function ProjectOverviewPage() {
             </div>
           </div>
         )}
+
+        {/* ── SECTION 6b: Archivos del proyecto ───────────────────── */}
+        <div className="bg-white border border-[#E8E4DE] rounded-lg p-5">
+          <h2
+            className="text-lg font-semibold text-[#1A1A1A] border-b border-[#E8E4DE] pb-2 mb-4"
+            style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+          >
+            <Paperclip className="inline h-4 w-4 mr-2 text-[#6B6B6B]" />
+            Archivos del proyecto
+          </h2>
+          <ProjectFileUploader projectId={project.id} />
+        </div>
 
         {/* ── SECTION 7: Acciones del proyecto (Zona peligrosa) ───── */}
         <section className="mt-12 pt-8 border-t border-[#E8E4DE]">
