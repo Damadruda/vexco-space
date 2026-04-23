@@ -48,3 +48,6 @@ prisma/dev.db-journal
 # env
 .env.production
 .env.development
+
+# local sprint checkpoints
+checkpoint-*.md

@@ -53,6 +53,8 @@ model User {
   channels     Channel[]
   prospects    Prospect[]
   metaProjects MetaProject[]
+  // Sprint Inbox Intelligence — few-shot calibration
+  inboxCorrections InboxCorrection[]
 }
 
 model Account {
@@ -548,6 +550,23 @@ model AnalysisResult {
   processingTimeMs Int?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
+}
+
+// Sprint Inbox Intelligence — Correcciones acumuladas
+// Feed few-shot calibration al Stage A classifier.
+// Denormalizado: sobrevive al borrado del InboxItem fuente.
+model InboxCorrection {
+  id          String   @id @default(cuid())
+  userId      String
+  user        User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+  itemTitle   String
+  itemSummary String   @db.Text
+  itemTags    String[] @default([])
+  oldCategory String
+  newCategory String
+  createdAt   DateTime @default(now())
+
+  @@index([userId, createdAt(sort: Desc)])
 }
 
 // KnowledgeBase — Curated content/knowledge management

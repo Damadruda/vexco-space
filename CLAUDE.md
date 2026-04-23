@@ -250,6 +250,55 @@ Disparado por Vercel cron los lunes 05:00 UTC (ver `vercel.json`). Template A es
 
 ---
 
+## 8.5 Inbox Pipeline (M.2a-PLUS aplicado)
+
+### 8.5.1 Función
+
+Capturar contenido curado (Raindrop, manual), analizarlo, clasificarlo, y inyectarlo a los agentes del War Room vía tres canales (items vinculados, cross-project trend/discovery, inspiration skill). El Inbox es infraestructura — si falla o alucina, contamina los prompts de todos los agentes.
+
+### 8.5.2 Pipeline en dos etapas
+
+```
+Item capturado (Raindrop sync o manual)
+   ↓
+POST /api/inbox/[id]/analyze
+   ├─ Jina extraction si sourceUrl + rawContent < 500 chars
+   ├─ Stage A: runInboxStageA() [Flash + enums + few-shot de correcciones usuario]
+   │   → { category, relevanceScore, sentiment, language }
+   ├─ Stage B: runInboxStageB() [Pro + responseSchema + REGLA #0.5]
+   │   → { summary, keyInsights, suggestedTags }
+   └─ persistir en AnalysisResult, status = "processed"
+```
+
+Módulos:
+
+- `lib/inbox/stage-a-classifier.ts` — Flash 2.5, temperature 0.1, responseSchema estricto. Criterios duros para category (default agresivo a `noise`). Recibe few-shot de últimas 25 correcciones del usuario.
+- `lib/inbox/stage-b-analyzer.ts` — Pro 2.5, temperature 0.2, REGLA #0.5 explícita. Genera summary (2-3 oraciones C-Level), keyInsights (3-5 concretos), suggestedTags.
+- `lib/inbox/corrections.ts` — `getRecentCorrections()` para few-shot, `recordCorrection()` al recategorizar.
+
+### 8.5.3 Bucle de aprendizaje
+
+Cuando el usuario cambia manualmente la categoría de un item (`PATCH /api/inbox/[id]/recategorize`), se guarda un registro en el modelo `InboxCorrection` con título, summary y tags denormalizados + `oldCategory` + `newCategory`. Los próximos Stage A classifications inyectan las últimas 25 correcciones como few-shot examples, calibrando la clasificación sin fine-tuning ni costo adicional.
+
+### 8.5.4 Batch reprocessing
+
+`POST /api/inbox/reprocess-batch { limit: 20, onlyProcessed: true }` re-corre el pipeline completo sobre items ya procesados (típicamente para limpiar análisis viejos de Flash single-shot). Procesa en chunks de 5 en paralelo con `Promise.allSettled`. `maxDuration 300s` permite hasta 50 items por call.
+
+### 8.5.5 Cómo se consume en el War Room
+
+Ver sección 6 (`buildAgentPrompt`) — el Inbox alimenta los prompts por tres vías:
+
+1. Items con `category=project` vinculados al proyecto actual.
+2. Items con `category in [trend, discovery]` y `relevanceScore >= 0.5` sin `projectId` — visibles cross-portfolio.
+3. Inspiration skill — dispara búsqueda por keywords cuando el Supervisor lo decide (solo agentes con `usesRaindrop=true`).
+
+### 8.5.6 Deuda técnica conocida
+
+- `lib/background/raindrop-sync.ts` todavía usa el prompt single-shot viejo con Flash. No pasa por el nuevo pipeline. Pendiente sprint "Raindrop Sync Alignment" para alinearlo.
+- `/api/inbox/re-evaluate-noise` (re-evaluación de noise cuando se crea proyecto nuevo) sigue usando `callLLM` con gemini-flash. No crítico pero convendría alinearlo también en un sprint posterior.
+
+---
+
 ## 9. Upload de archivos (Upload-A)
 
 ### 9.1 Arquitectura
@@ -509,11 +558,13 @@ git checkout main && git merge <branch> --no-ff -m "Merge: <descripción>" && gi
 | CORPUS-2 (UI curación) | ✅ Completo |
 | CORPUS-3 (promoción autónoma) | ✅ Completo (migración aplicada 20 abril) |
 | MIP 1A (Template A) | ✅ Completo, cron activo lunes 05:00 UTC |
+| Sprint Inbox Intelligence Upgrade | ✅ Completo 23 abril (Stage A + B, corrections few-shot, batch reprocess) |
 | Siembra del corpus | 🔜 Siguiente paso (4-6 docs manual) |
 | M.2b (inyección corpus en prompts) | ⏸️ Bloqueado por corpus vacío |
 | Items 22-24 (client-ready export) | ⏸️ Mega-prompt diseñado no aplicado |
 | MIP 1B + 1C (Templates B, C) | ⏸️ Pendiente |
 | Sprint LLM-Realignment | ⏸️ Backlog (alinear código `lib/clients/llm.ts` y callers directos a política: Sonnet 4.6, Opus 4.6, Gemini 2.5 Pro stable, Gemini 2.5 Flash, Haiku 4.5) |
+| Sprint Raindrop Sync Alignment | ⏸️ Backlog (alinear `lib/background/raindrop-sync.ts` al nuevo pipeline del Inbox) |
 | Mecanismo de revisión periódica de modelos LLM | ⏸️ Backlog (definir frecuencia + criterio de evaluación + benchmark reutilizable para decidir upgrades) |
 | Sprint L (A2A workflows) | ⏸️ Backlog (prereq Sprint N) |
 | Sprint N (Raindrop auto-improvement) | ⏸️ Backlog |

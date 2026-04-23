@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDefaultUserId } from "@/lib/get-default-user";
 import { prisma } from "@/lib/db";
+import { recordCorrection } from "@/lib/inbox/corrections";
 
 export const dynamic = "force-dynamic";
 
@@ -9,7 +10,7 @@ export async function PATCH(
   { params }: { params: { id: string } }
 ) {
   try {
-    await getDefaultUserId();
+    const userId = await getDefaultUserId();
     const body = await request.json();
     const { category } = body as { category: string };
 
@@ -20,19 +21,33 @@ export async function PATCH(
       );
     }
 
-    const analysis = await prisma.analysisResult.findFirst({
-      where: { inboxItem: { id: params.id } },
+    const item = await prisma.inboxItem.findFirst({
+      where: { id: params.id, userId },
+      include: { analysis: true },
     });
 
-    if (!analysis) {
+    if (!item || !item.analysis) {
       return NextResponse.json(
         { error: "Item no tiene análisis" },
         { status: 404 }
       );
     }
 
+    const oldCategory = item.analysis.category || "noise";
+
+    if (oldCategory !== category) {
+      await recordCorrection(
+        userId,
+        item.sourceTitle ?? item.rawContent.slice(0, 200),
+        item.analysis.summary ?? "",
+        item.analysis.suggestedTags ?? [],
+        oldCategory,
+        category
+      );
+    }
+
     const updated = await prisma.analysisResult.update({
-      where: { id: analysis.id },
+      where: { id: item.analysis.id },
       data: { category },
     });
 
