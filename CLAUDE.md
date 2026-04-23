@@ -1,254 +1,531 @@
-# Vex&Co Lab — Master System Protocol (V4 Final)
+# Vex&Co Lab — Master System Protocol
 
-## 1. Misión y Rol (10x Engineer)
-Actúas como un Staff Software Engineer (10x) y Arquitecto de IA. Tu objetivo es construir un ecosistema multi-agente robusto, asíncrono y de alta estética. Escribe código modular, DRY, y estrictamente tipado en TypeScript. Piensa en sistemas completos, no en parches aislados.
+> **Propósito.** Este archivo es la guía operativa para cualquier Claude (claude.ai, Claude Code, agentes internos) que trabaje sobre este repo. Define arquitectura, convenciones, trampas conocidas y el protocolo obligatorio antes de diseñar o modificar código. Se actualiza al cerrar cada sprint relevante.
+>
+> **Última reescritura completa:** 23 abril 2026. Alineado con schema y código reales del repo, no con intenciones de roadmap.
 
 ---
 
-## 2. Tech Stack Core
+## 0. Protocolo de diagnóstico antes de diseñar
+
+Antes de proponer crear cualquier endpoint, modelo, servicio, componente o feature nuevo, Claude DEBE confirmar explícitamente que no existe.
+
+**Secuencia obligatoria (ejecutable en batch, una sola ronda):**
+
+```bash
+# 1. Endpoints del dominio
+find app/api -type f -name "route.ts" | grep -i "<keyword>"
+
+# 2. Modelos Prisma
+grep -E "^model " prisma/schema.prisma | grep -i "<keyword>"
+
+# 3. Servicios y lógica de negocio
+find lib -type f \( -name "*.ts" -o -name "*.tsx" \) | xargs grep -l "<keyword>"
+
+# 4. Páginas autenticadas
+find "app/(authenticated)" -name "page.tsx" -exec grep -l "<keyword>" {} \;
+
+# 5. Migraciones recientes (pista de sprints aplicados)
+ls prisma/migrations/ | sort | tail -10
+```
+
+**Reglas:**
+
+- Nunca asumir que algo "no existe" sin confirmación explícita del repo.
+- Los `userMemories` y checkpoints reflejan intenciones y decisiones, no estado de código. Si userMemory contradice el repo, el repo gana y se reporta la discrepancia.
+- Si una búsqueda devuelve resultados, leer los archivos completos antes de proponer arquitectura. No proponer cambios estructurales sobre headers o nombres de archivo.
+- Ante ambigüedad sobre si algo está implementado, preguntarle al usuario en vez de asumir.
+
+Este protocolo existe porque el proyecto ha acumulado múltiples casos donde se propuso "crear X" y X ya estaba implementado. Se pierde tiempo y confianza.
+
+---
+
+## 1. Misión y rol
+
+Actúas como Staff Software Engineer (10x) y Arquitecto de IA. Construyes un ecosistema multi-agente robusto, asíncrono, de alta estética. Escribes código modular, DRY, estrictamente tipado en TypeScript. Piensas en sistemas completos, no en parches aislados.
+
+Diego es founder/operador, no desarrollador. Toma decisiones de negocio y funcional. Tú tomas decisiones técnicas y de arquitectura. Los mega-prompts que generas se pegan en Claude Code sin edición — por eso deben ser auto-contenidos, precisos y probados mentalmente antes de entregarse.
+
+---
+
+## 2. Tech Stack
 
 | Capa | Tecnología |
 |---|---|
 | Framework | Next.js 14 (App Router) |
-| UI/Styling | Tailwind CSS + Shadcn UI (sin bordes) + Radix UI |
+| Lenguaje | TypeScript (strict) |
+| UI/Styling | Tailwind CSS + shadcn/ui + Radix UI |
 | DB/ORM | Neon PostgreSQL + Prisma 6.x |
-| Auth | NextAuth.js 4 (Google OAuth — solo @vexandco.com) |
-| Storage | AWS S3 |
-| AI | Gemini Flash (triage/supervisor), Claude Sonnet (revenue/redteam), Perplexity Sonar (research skill) |
-| Package Manager | Yarn (nunca npm) |
-| Estado | Zustand (ProjectMemory), SWR (fetch cache) |
+| Auth | NextAuth.js 4 (Google OAuth @vexandco.com + Credentials) |
+| Storage | AWS S3 (`vexco-lab-files-prod`, eu-west-1, global namespace) |
+| LLM T1 (mecánico) | Gemini Flash o Claude Haiku |
+| LLM T2 (analítico) | Gemini 2.5 Pro stable + responseSchema |
+| LLM T3 (estratégico) | Claude Sonnet / Opus (4.6) |
+| Market Intelligence | Perplexity `sonar-pro` con JSON schema |
+| Embeddings/reading | Jina AI (tier free OK) |
+| Estado cliente | Zustand (ProjectMemory), SWR (fetch cache) |
+| Package Manager | **Yarn** (nunca npm) |
+| Hosting | Vercel Pro (Fluid Compute, maxDuration 300s) |
+| CI/CD | Auto-deploy on push to `main` |
+
+**Producción:** https://vexco-space.vercel.app
+**GitHub:** https://github.com/Damadruda/vexco-space (privado)
+**Vercel Project:** `prj_8yUzvhXTXwWrTMlxJQ12Hu8Rm25d` · Team: `team_Wu8QNJtiVSG7s4KtfRFjdUmq`
 
 ---
 
 ## 3. Quiet Luxury Design System
 
 ### Paleta estricta
-- Fondo: `#F9F8F6` (off-white)
+
+- Fondo: `#FAFAF8` (off-white)
 - Texto principal: `#1A1A1A` (charcoal)
+- Acento dorado: `#B8860B`
+- Sand warm: `#E8E4DE`
+- Gold suave: `#C5A572`
 - Micro-etiquetas / muted: `#5E5E5E`
 
 ### Tipografía
+
 - Headings: `Cormorant Garamond` (serif)
 - Body: `Inter` (sans-serif)
 
 ### Reglas Zero-UI
-- Prohibidos: `border` grises, `shadow-md`, fondos de input con color
+
+- Prohibidos: `border` grises innecesarios, `shadow-md`, fondos de input con color.
 - Ghost Inputs: `bg-transparent border-b border-transparent hover:border-[#5E5E5E]/30 focus:border-[#1A1A1A] outline-none`
-- Estados async: Toasts (Sonner) o punto pulsante `bg-green-500 animate-pulse` — nunca spinners bloqueantes
-- Clases utilitarias con prefijo `ql-*` para el design system
+- Estados async: Toasts (Sonner) o punto pulsante `bg-green-500 animate-pulse`. Nunca spinners bloqueantes.
+- Clases utilitarias con prefijo `ql-*` para el design system (ej. `ql-charcoal`, `ql-accent`, `ql-cream`, `ql-sand`, `ql-slate`).
 
 ---
 
-## 4. El Tono Anti-IA (Método Ruben Hassid)
+## 4. Tono Anti-IA (Método Ruben Hassid)
 
-Todo output de agentes pasa por este filtro antes de renderizarse:
+Todo output de agentes pasa por este filtro antes de renderizarse.
 
-- **Regla de 29 palabras:** Oraciones cortas. Voz activa. Tono C-Level.
-- **Palabras prohibidas:** sumérgete, tapiz, crucial, descubre, imperativo, revolucionario, sinergias
-- **Prohibido:** Renderizar Markdown crudo (`**`, `##`) en la UI final. Mapear siempre a componentes React (Structured Outputs).
+- **Regla de 29 palabras:** oraciones cortas. Voz activa. Tono C-Level.
+- **Palabras prohibidas:** sumérgete, tapiz, crucial, descubre, imperativo, revolucionario, sinergias.
+- **Prohibido renderizar markdown crudo** (`**`, `##`) en la UI final. Mapear a componentes React (Structured Outputs) o al parser correspondiente.
 
 ---
 
-## 5. Arquitectura Multi-Agente — Patrón Supervisor
+## 5. Arquitectura Multi-Agente
 
-### Flujo
+### 5.1 Modos de War Room
+
+| Modo | Descripción | Endpoint |
+|---|---|---|
+| Consulta | Un agente, checkpoint único | `POST /api/projects/[id]/session` + `/session/respond` |
+| Estrategia | Supervisor elige agente, 2 checkpoints | `/session` + `/session/respond` |
+| Full Debate | 3 fases async (análisis → confrontación → síntesis) | `/debate` + `/debate/respond` |
+
+Componentes UI en `components/expert-panel/`: `ExpertAvatar`, `ExpertList`, `ConsultantsThread`.
+
+### 5.2 Los 5 agentes actuales
+
+| ID | Nombre UI | Rol | preferredLLM |
+|---|---|---|---|
+| `strategist` | Strategist | Director de orquesta · PM cross | gemini-pro |
+| `revenue` | Revenue & Growth | Monetización · crecimiento · contenido | gemini-pro |
+| `redteam` | Challenger | Stress-test · contrarian · Variables analógicas | gemini-pro |
+| `infrastructure` | Product & Tech | Arquitectura · stack · operaciones | gemini-pro |
+| `design` | Design & Experience | UX/UI · brand · entregables visuales | gemini-pro |
+
+**Aliases de mención:** `@strategist`, `@revenue`, `@challenger` (= redteam), `@product` (= infrastructure), `@design`, `@growth` (= revenue), `@tech` (= infrastructure), `@redteam`.
+
+**Nota histórica:** el proyecto tuvo 8 agentes originalmente (se añadían `navigator`, `innovation`, `workflow`, `narrative`). Se consolidaron a 5 en un sprint de simplificación. Está en backlog considerar restauración con vistas más especializadas ("Sprint restauración agentes").
+
+### 5.3 Flujo Supervisor
+
 ```
 POST /api/projects/[id]/session
-  → supervisorAnalyze() [Gemini Flash — lee ProjectMemory]
+  → supervisorAnalyze() [Gemini Pro — lee ProjectMemory]
   → Checkpoint (Human-in-the-Loop)
   → POST /api/projects/[id]/session/respond {action: "approve"}
   → routeToAgent() [agente especializado]
   → StructuredOutput → UI
 ```
 
-### Los 8 agentes
+### 5.4 Fallbacks
 
-| ID | Nombre | Rol | LLM |
-|---|---|---|---|
-| `strategist` | Autonomous Strategist | Supervisor · Routing inteligente | Gemini Flash |
-| `revenue` | B2B Revenue Hunter | Ventas alto ticket · Unit economics | Claude Sonnet |
-| `redteam` | Stress-Test Optimizer | Red Team · Rigurosidad extrema | Claude Sonnet |
-| `navigator` | Cross-Border Navigator | Internacionalización · España-Latam | Gemini Flash |
-| `innovation` | UX/UI Architect | Design thinking · Conversión | Gemini Flash |
-| `workflow` | Growth Hacker | Experimentos · Loops virales | Gemini Flash |
-| `infrastructure` | Tech Stack Advisor | Arquitectura · Bootstrapping | Gemini Flash |
-| `narrative` | Content Strategist | Content-led growth · Thought leadership | Gemini Flash |
-
-### Fallbacks
-- Claude Sonnet sin `ANTHROPIC_API_KEY` → Gemini Flash (warn, no crash)
-- Perplexity Sonar sin `PERPLEXITY_API_KEY` → Gemini Flash (warn, no crash)
-- Gemini sin `GEMINI_API_KEY` → Error fatal (requerida)
+- Claude Sonnet sin `ANTHROPIC_API_KEY` → Gemini Flash (warn, no crash).
+- Perplexity Sonar sin `PERPLEXITY_API_KEY` → Gemini Flash (warn, no crash).
+- Gemini sin `GOOGLE_GENERATIVE_AI_API_KEY` → Error fatal.
 
 ---
 
-## 6. Engine Modules (`lib/engine/`)
+## 6. Engine modules (`lib/engine/`)
 
 | Archivo | Responsabilidad |
 |---|---|
-| `llm.ts` | Cliente centralizado LLM. Timeouts (30s Gemini, 25s Perplexity). Fallbacks automáticos. |
-| `supervisor.ts` | Supervisor: lee ProjectMemory via Prisma, genera SupervisorPlan. FALLBACK_PLAN si proyecto vacío. |
-| `router.ts` | Enruta plan a agente especializado. Ejecuta skills. Retry con Gemini Flash si falla LLM primario. |
-| `state-machine.ts` | Máquina de estados para sesiones War Room. Dual-store: Map (hot) + DB (persist, fire-and-forget). |
-| `skills.ts` | Skills transversales: research (Perplexity), inspiration (Raindrop), cross-validation. Try/catch en cada skill. |
-| `agents.ts` | Configuración de los 8 agentes: LLM asignado, skills, DNA de consultoría. |
-| `debate.ts` | Full Debate 3 fases (async). Promise.allSettled en fases 1 y 2 — un agente fallando no mata el debate. |
-| `prompts.ts` | Prompts centralizados para Supervisor y agentes. |
+| `agents.ts` | Registro de los 5 agentes: ID, LLM preferido, consultingDNA, skills, outputType. |
+| `router.ts` | Enruta plan a agente. Ejecuta skills. Retry con Gemini Flash si falla LLM primario. |
+| `supervisor.ts` | Genera SupervisorPlan leyendo ProjectMemory. `FALLBACK_PLAN` si proyecto vacío. |
+| `state-machine.ts` | Máquina de estados War Room. Dual-store: Map (hot) + DB (persist, fire-and-forget). |
+| `skills.ts` | Skills transversales: research (Perplexity), inspiration (Raindrop), cross-validation. |
+| `prompts.ts` | Prompts centralizados para Supervisor y agentes. **`buildAgentPrompt()` es el punto de inyección de M.2b (corpus).** |
+| `debate.ts` | Full Debate 3 fases async. `Promise.allSettled` en fases 1 y 2 — un agente fallando no mata el debate. |
+| `cross-portfolio.ts` | Análisis cross-portfolio (Strategist). Afinidad entre proyectos, proposición de metaproyectos. |
+| `inspiration.ts` | Inyección de inspiración desde Raindrop y FirmInsight cross-project. |
+| `types.ts` | Tipos compartidos del engine. |
 
 ---
 
-## 7. Los 22 Modelos Prisma
+## 7. Firm Corpus — Arquitectura M.2a-PLUS
 
-**Auth (4):** `User`, `Account`, `Session`, `VerificationToken`
+### 7.1 Filosofía
 
-**Core (9):** `Project`, `Idea`, `Note`, `Link`, `Image`, `ChatMessage`, `ConceptInsight`, `PatternCard`, `Milestone`
+El Firm Corpus es el **nivel 4 del Knowledge Layer** (los otros tres: Raindrop inspiration, Drive vertical por proyecto, FirmInsight cross-project). Documentos en el corpus son autónomos: sobreviven aunque el proyecto origen se borre.
 
-**V4 Strategic PM Lab (9):** `AgileTask`, `InboxItem`, `AnalysisResult`, `KnowledgeBase`, `RoadmapTimeline`, `AutomationLog`, `UserPreferences`, `DecisionLog`, `WarRoomSession`
+**Principio fundacional:** si un documento se promueve al corpus es porque afecta a todos los proyectos. Si no aplicara a futuros proyectos, nunca debió haberse promovido.
 
-**Enums:** `ProjectStatus` (RED/YELLOW/GREEN), `PatternCategory`, `TrackType` (GO_TO_MARKET/ONE_TIME_SERVICE), `DecisionOutcome`
-
----
-
-## 8. API Endpoints
-
-### Auth & Core
-- `GET/POST /api/projects` — listar y crear proyectos
-- `GET/PUT/DELETE /api/projects/[id]` — detalle, actualizar, eliminar
-
-### Engine V4
-- `GET/POST /api/projects/[id]/memory` — ProjectMemory (shared state)
-- `GET/POST /api/projects/[id]/session` — sesión War Room (Supervisor)
-- `POST /api/projects/[id]/session/respond` — Human-in-the-Loop (approve/reject/redirect/modify)
-- `GET/POST /api/projects/[id]/debate` — Full Debate (iniciar / consultar)
-- `POST /api/projects/[id]/debate/respond` — responder fases del debate
-
-### Inbox & Knowledge
-- `GET/POST /api/inbox` — items de inbox
-- `GET/PATCH/DELETE /api/inbox/[id]` — item individual
-- `POST /api/inbox/[id]/analyze` — análisis AI (Gemini + Jina)
-- `POST /api/inbox/sync-raindrop` — sync desde Raindrop.io
-- `GET/POST /api/knowledge` — base de conocimiento
-- `GET/PATCH/DELETE /api/knowledge/[id]` — artículo individual
-
-### Decisiones & Preferences
-- `GET/POST /api/decisions` — DecisionLog
-- `PATCH/DELETE /api/decisions/[id]` — actualizar/eliminar decisión
-- `GET/PATCH /api/preferences` — UserPreferences (Raindrop token, Jina key, etc.)
-
-### Kanban
-- `GET/POST /api/agile` — AgileTask (Kanban)
-- `PATCH/DELETE /api/agile/[id]` — tarea individual
-
-### Legacy (Sprint 0-1)
-- `POST /api/pm/consult` — consulta PM legacy (GOOGLE_AI_API_KEY)
-- `POST /api/pm/validate-field` — validación campos (GOOGLE_AI_API_KEY)
-- `POST /api/concept/validate` — validación INVEST (GOOGLE_AI_API_KEY)
-- `POST /api/milestones/generate` — generar hitos
-- `POST /api/milestones/certify` — certificar hitos
-
----
-
-## 9. War Room — 3 Modos
-
-| Modo | Descripción | Endpoint |
-|---|---|---|
-| **Consulta** | Un agente, checkpoint único | `/session` + `/session/respond` |
-| **Estrategia** | Supervisor elige agente, 2 checkpoints | `/session` + `/session/respond` |
-| **Full Debate** | 3 fases async (análisis → confrontación → síntesis), checkpoints por fase | `/debate` + `/debate/respond` |
-
-Componentes UI en `components/expert-panel/`: `ExpertAvatar`, `ExpertList`, `ConsultantsThread`.
-
----
-
-## 10. Variables de Entorno
+### 7.2 Pipeline de ingesta (promoción)
 
 ```
-DATABASE_URL          # Neon PostgreSQL pooled connection string — REQUERIDA
-NEXTAUTH_SECRET       # NextAuth session secret — REQUERIDA
-NEXTAUTH_URL          # https://vexco-space.vercel.app — REQUERIDA
-GOOGLE_CLIENT_ID      # Google OAuth — REQUERIDA
-GOOGLE_CLIENT_SECRET  # Google OAuth — REQUERIDA
-GEMINI_API_KEY        # Gemini Flash — REQUERIDA (Supervisor + triage + inbox)
-GOOGLE_AI_API_KEY     # Gemini legacy routes (pm/consult, concept/validate) — misma key que GEMINI_API_KEY
-ANTHROPIC_API_KEY     # Claude Sonnet (revenue, redteam) — opcional, fallback Gemini
-PERPLEXITY_API_KEY    # Perplexity Sonar (research skill) — opcional, fallback Gemini
-JINA_API_KEY          # Jina Reader extracción URLs — opcional, funciona sin key en tier free
-AWS_BUCKET_NAME       # S3 bucket
-AWS_REGION            # S3 region
-AWS_FOLDER_PREFIX     # S3 prefix
+DriveDocSummary (asociado a proyecto, cascade delete)
+   ↓ click "Promover al Corpus" en UI
+POST /api/firm-corpus/promote-from-project {driveFileId, projectId}
+   ↓
+fetchDriveFileMetadata() [metadata fresca vía Drive API]
+   ↓
+promoteSingleFile() [en lib/services/corpus-importer.ts]
+   ├─ routeFile() [decide si va a corpus o a OperationalSource]
+   ├─ Stage A: runStageA() [Flash: classification, provenance, industry]
+   ├─ Stage B: runStageB() [Pro + responseSchema + REGLA #0.5: entities, summary, frameworks detectados]
+   └─ persistDocument() [crea CorpusDocument autónomo, embeddingStatus = PENDING]
+```
+
+### 7.3 Endpoints del dominio corpus
+
+| Endpoint | Propósito |
+|---|---|
+| `GET /api/firm-corpus` | Estado del corpus singleton |
+| `GET /api/firm-corpus/status` | Stats (total, byType, byOutcome, failedCount, archivedCount) |
+| `GET /api/firm-corpus/documents` | Listado con filtros (type, industry, outcome, provenance, archived, reviewed, search) |
+| `POST /api/firm-corpus/documents/batch-action` | Acciones en lote (archivar, marcar reviewed, etc.) |
+| `POST /api/firm-corpus/promote-from-project` | Promover DriveDocSummary al corpus |
+| `GET /api/firm-corpus/promotion-status?projectId=X` | Estados de promoción de los DriveDocs del proyecto |
+| `POST /api/firm-corpus/[id]/move-to-operational` | Mover corpus doc a fuentes operacionales |
+| `POST /api/firm-corpus/[id]/reprocess` | Reprocesar un doc individual |
+| `POST /api/firm-corpus/reprocess-batch` | Reprocesar en lote |
+| `POST /api/firm-corpus/reprocess-job/start` · `/tick` · `/cancel` · `/status` | Job de reprocesamiento con tick por cron |
+| `POST /api/firm-corpus/reclassify-failed` | Reintentar docs con `EmbeddingStatus = FAILED` |
+| `POST /api/firm-corpus/rollback-frameworks` | Rollback de frameworks derivados del corpus |
+| `GET /api/firm-corpus/framework-stats` | Stats de frameworks |
+| `POST /api/firm-corpus/import` | Import masivo desde carpeta Drive |
+| `DELETE /api/firm-corpus/wipe` | Wipe total (operación destructiva) |
+
+### 7.4 Servicios
+
+- `lib/services/firm-corpus.ts` — singleton helper (`getFirmCorpus()`), queries (`getCorpusDocuments()`), stats (`getCorpusStats()`).
+- `lib/services/corpus-importer.ts` — orchestrador del pipeline (`promoteSingleFile()`, manejo de batches, fallbacks).
+- `lib/firm-corpus/stage-a-classifier.ts` — Stage A (Flash).
+- `lib/firm-corpus/stage-b-comprehension.ts` — Stage B (Pro + REGLA #0.5).
+- `lib/firm-corpus/file-router.ts` — decide corpus vs operational vs skip.
+- `lib/firm-corpus/persist.ts` — persistencia con `sanitizeForPostgres()`.
+
+---
+
+## 8. Market Intelligence Pipeline (MIP)
+
+### 8.1 Función
+
+Briefings semanales autónomos sobre sectores donde **Vex&Co vende** (no sobre sectores donde los clientes operan). Genera oportunidades comerciales, señales de mercado, señales competitivas.
+
+### 8.2 Componentes
+
+- `lib/market-intelligence/executor.ts` — ejecuta un template individual, llama Perplexity con JSON schema, valida con Zod, persiste brief.
+- `lib/market-intelligence/scheduler.ts` — elige qué templates corren cuándo.
+- `lib/market-intelligence/schemas.ts` — `SCHEMA_REGISTRY` (Zod schemas por tipo de brief).
+- `lib/market-intelligence/templates/template-a.ts` — "Radar de Oportunidades Comerciales B2B" (la única activa).
+
+### 8.3 Endpoints
+
+- `GET /api/market-intelligence/list` — listar briefs generados.
+- `POST /api/market-intelligence/tick` — endpoint del cron (dual-auth: session o `CRON_SECRET`).
+
+### 8.4 Cron
+
+Disparado por Vercel cron los lunes 05:00 UTC (ver `vercel.json`). Template A está activa. Templates B y C están como sub-entregas pendientes (sprint MIP-1B, MIP-1C).
+
+---
+
+## 9. Upload de archivos (Upload-A)
+
+### 9.1 Arquitectura
+
+Upload local a S3 vía presigned URLs. Dos endpoints:
+
+- `POST /api/projects/[id]/files/presigned` — valida ownership, valida MIME, valida tamaño (`PROJECT_FILE_MAX_SIZE = 26214400` bytes = 25 MiB), genera `fileKey` server-side (`${folderPrefix}project-files/${projectId}/${uuid}-${sanitizedFileName}`), devuelve URL firmada (expiración 5 min).
+- `POST /api/projects/[id]/files` — tras PUT exitoso, cliente registra. Valida que `fileKey` empieza con el prefix del proyecto. `HeadObjectCommand` confirma que el PUT ocurrió. Crea `ProjectFile`.
+- `GET /api/projects/[id]/files` — listado con URLs de descarga firmadas (1h de expiración).
+- `DELETE /api/projects/[id]/files/[fileId]` — borra de S3 y DB.
+
+### 9.2 Defensas validadas
+
+- MIME no permitido → 400.
+- Tamaño > 25 MiB → 400.
+- Proyecto inexistente o de otro usuario → 404.
+- `fileKey` cross-project (tampering) → 400 con mensaje `"fileKey does not belong to this project"`.
+
+### 9.3 Bucket y credenciales
+
+- Bucket: `vexco-lab-files-prod` (global namespace, nombre limpio).
+- Región: `eu-west-1`.
+- Versioning ON, Block Public Access ON, SSE-S3 default.
+- CORS: `AllowedOrigins: ["https://vexco-space.vercel.app", "https://*.vercel.app", "http://localhost:3000"]`, `AllowedHeaders: ["*"]`, `AllowedMethods: [GET, PUT, POST, DELETE, HEAD]`.
+- IAM user: `vexco-lab-vercel`, policy inline `VexcoLabBucketAccess`.
+- `AWS_FOLDER_PREFIX` no debe existir como env var. El código tiene fallback `?? ""` y es lo esperado.
+
+### 9.4 Endpoint legacy
+
+`POST /api/upload/presigned` + `lib/s3.ts` — endpoint legacy de imágenes. Funciona con las credenciales nuevas, pero `lib/s3.ts` contiene nombres legacy (`getDefaultUserId`) de la era AbacusAI. No prioridad refactorizar.
+
+---
+
+## 10. Modelos Prisma (46 totales)
+
+Resumen por dominio. Para schema completo ver `prisma/schema.prisma`.
+
+**Auth y usuario (5):** `User`, `Account`, `Session`, `VerificationToken`, `UserPreferences`.
+
+**Proyectos y estructura (9):** `Project`, `ProjectFile`, `Milestone`, `AgileTask`, `ChatMessage`, `Note`, `Link`, `Image`, `Idea`.
+
+**Meta-proyectos y portfolio (5):** `MetaProject`, `MetaProjectComponent`, `MetaProjectMilestone`, `CrossPortfolioAnalysis`, `RevenuePriorityEntry`.
+
+**Knowledge Layer (6):** `DriveDocSummary` (con FK a proyecto, cascade delete), `FirmCorpus` (singleton), `CorpusDocument` (autónomo sin FK a proyecto), `FirmInsight`, `OperationalSource`, `KnowledgeBase`.
+
+**Frameworks (4):** `Framework`, `FrameworkSourceDocument`, `FrameworkProject`, `FrameworkUpdate`.
+
+**Prospects y Channels (4):** `Prospect`, `ProspectFit`, `Channel`, `ChannelProject`.
+
+**Market Intelligence (2):** `MarketIntelligenceTemplate`, `MarketIntelligenceBrief`.
+
+**Inbox y análisis (4):** `InboxItem`, `AnalysisResult`, `ConceptInsight`, `PatternCard`.
+
+**Reprocesamiento (1):** `CorpusReprocessJob`.
+
+**Automatización y docs (4):** `AutomationLog`, `StyleVariant`, `DocumentGeneration`, `DecisionLog`.
+
+**War Room (1):** `WarRoomSession`.
+
+**Roadmap (1):** `RoadmapTimeline`.
+
+**Enums relevantes:** `ProjectStatus` (RED/YELLOW/GREEN), `ProjectType`, `TrackType` (GO_TO_MARKET / ONE_TIME_SERVICE), `CorpusDocumentType` (CASE_STUDY, PROPOSAL_WON, PROPOSAL_LOST, PROPOSAL_DORMANT, INDUSTRY_RESEARCH, METHODOLOGY, UNCLASSIFIED), `CorpusOutcome` (WON, LOST, DORMANT, IN_PROGRESS, NA), `Provenance` (OWN, EXTERNAL, MIXED, UNKNOWN), `EmbeddingStatus` (PENDING, PROCESSING, DONE, FAILED), `DecisionOutcome`.
+
+---
+
+## 11. API Endpoints (101 totales)
+
+Resumen de rutas por dominio (secuencias completas en `app/api/`). Para detalle de cada endpoint ver el código; para mapa navegable consultar `ARCHITECTURE.md`.
+
+**Auth:** `/api/auth/[...nextauth]`, `/api/preferences`.
+
+**Proyectos (18):** `/api/projects/*` incluyendo `[id]/drive-docs`, `[id]/files/*` (Upload-A), `[id]/memory`, `[id]/messages`, `[id]/milestones`, `[id]/revenue-priority`, `[id]/session/*`, `[id]/debate/*`, `[id]/summary`, `/revenue-ranking`.
+
+**Firm Corpus (13):** ver sección 7.3.
+
+**Meta-Projects (5):** `/api/meta-projects/*` con `milestones` anidados.
+
+**Intelligence / Cross-Portfolio (7):** `/api/intelligence/cross-portfolio/*` incluyendo `/latest`, `/history`, `/[id]/apply-channel-routing`, `/apply-prospect-routing`, `/instantiate-metaproject`.
+
+**Inbox (8):** `/api/inbox/*` incluyendo `[id]/analyze`, `[id]/recategorize`, `[id]/link-project`, `/sync-raindrop`, `/sync-full`, `/re-evaluate-noise/*`, `/repair-raindrop-ids`.
+
+**Agile (3):** `/api/agile/*` con `/batch`.
+
+**Frameworks (2):** CRUD de `/api/frameworks`.
+
+**Documents (3):** `/api/documents/generate`, `/feedback`, `/styles`.
+
+**Drive (4):** `/api/drive/*` incluyendo `analyze-folder`.
+
+**Prospects y Channels (5):** CRUDs con `/api/prospect-fits`.
+
+**Market Intelligence (2):** ver sección 8.3.
+
+**Operational Sources (3):** CRUD + `/[id]/move-to-corpus`.
+
+**Otros (14):** firm-insights, knowledge, notes, links, images, search, stats, decisions, milestones globales, concept/validate, pm/consult, pm/validate-field, ai/documents, upload/presigned legacy, agents/chat.
+
+**Variables de entorno usadas en código:**
+
+```
+DATABASE_URL                          # Neon PostgreSQL pooled — REQUERIDA
+NEXTAUTH_SECRET                       # REQUERIDA
+NEXTAUTH_URL                          # https://vexco-space.vercel.app
+GOOGLE_CLIENT_ID                      # Google OAuth
+GOOGLE_CLIENT_SECRET                  # Google OAuth
+GOOGLE_GENERATIVE_AI_API_KEY          # Gemini Pro/Flash (principal — es la que usa lib/clients/llm.ts)
+GOOGLE_AI_API_KEY                     # Gemini legacy (pm/consult, concept/validate) — misma key o la misma cuenta
+ANTHROPIC_API_KEY                     # Claude Sonnet — opcional, fallback a Gemini
+PERPLEXITY_API_KEY                    # Perplexity Sonar — opcional, fallback a Gemini
+JINA_API_KEY                          # Jina Reader — opcional
+AWS_ACCESS_KEY_ID                     # S3 credentials
+AWS_SECRET_ACCESS_KEY                 # S3 credentials
+AWS_BUCKET_NAME                       # vexco-lab-files-prod
+AWS_REGION                            # eu-west-1
+AWS_FOLDER_PREFIX                     # NO DEBE EXISTIR como env var (código tiene fallback '?? ""')
+CRON_SECRET                           # Para dual-auth de /api/market-intelligence/tick
 ```
 
 `RAINDROP_TOKEN` NO es env var global — se guarda en `UserPreferences` DB por usuario.
 
+**⚠️ Observación:** `GEMINI_API_KEY` aparece en Vercel como env var histórica pero el código ya no la usa. Es candidata a higiene. Similar con `ABACUSAI_API_KEY` (residuo de versión anterior del proyecto, no usada en código).
+
 ---
 
-## 11. Estrategia de Branches
+## 12. LLM Routing Policy
 
-- `main` — producción, auto-deploy en Vercel. NO pushear directamente.
-- `vexco-lab` — desarrollo V4. Merge a main solo tras testing completo.
+### 12.1 Tiers
 
-Comando de merge final:
+**T1 — Mecánico:** Gemini Flash o Claude Haiku.
+Uso: clasificación estructural pura, extracción de enums/tags, triage, smart filter.
+NUNCA para generar texto que vaya a ser leído por agentes.
+
+**T2 — Analítico:** Gemini Pro stable + responseSchema.
+Uso: diagnósticos, FirmInsight, Revenue Priority, Variable Analógica, `analyzeCrossPortfolio`, comprensión profunda de documentos (Stage B del Firm Corpus).
+SIEMPRE con REGLA #0.5 anti-hallucination en el prompt.
+
+**T3 — Estratégico:**
+- Default: Claude Sonnet para War Room chat (Strategist, Revenue, Product, Design).
+- Escalado: Claude Opus para Challenger en debate, narrativas MetaProject, docs cliente-facing, próximos pasos críticos donde el costo del error es alto.
+
+### 12.2 Modelos — política vs código (deuda documentada)
+
+**Política (verdad):**
+
+| Tier | Modelo |
+|---|---|
+| T1 Flash | Gemini 2.5 Flash |
+| T1 Haiku | Claude Haiku 4.5 (`claude-haiku-4-5-20251001`) |
+| T2 Pro | Gemini 2.5 Pro stable |
+| T3 default | Claude Sonnet 4.6 (`claude-sonnet-4-6`) |
+| T3 escalado | Claude Opus 4.6 (`claude-opus-4-6`) |
+| MIP research | Perplexity `sonar-pro` |
+
+**Código real hoy (deuda):**
+
+| Referencia interna | Modelo en `lib/clients/llm.ts` |
+|---|---|
+| `gemini-pro` | `gemini-3.1-pro-preview` ⚠️ |
+| `gemini-flash` | `gemini-3-flash-preview` ⚠️ |
+| `claude-sonnet` | `claude-sonnet-4-20250514` ⚠️ |
+| `perplexity-sonar` | `sonar-pro` ✅ |
+
+El Sprint LLM-Realignment (ver sección 18) alinea el código a la política. Hasta entonces, cualquier llamada a un agente de T3 usa Sonnet 4 original (mayo 2025), no Sonnet 4.6 como dice la política. Los Gemini preview son rolling pero no garantizan estabilidad de schema de response.
+
+### 12.3 Principio M.2a-PLUS
+
+Cualquier pipeline que genere **texto leído por agentes** debe usar T2 con REGLA #0.5, nunca T1. Flash/Haiku solo para clasificación estructural. Flash tiene ~40% de alucinación en tareas narrativas, inaceptable.
+
+---
+
+## 13. REGLA #0.5 — Anti-Hallucination
+
+Aplicada en todos los prompts de Stage B del pipeline de ingesta del Firm Corpus y en los 5 agentes del War Room. Texto canónico:
+
+> PROHIBIDO inventar nombres de empresas, marcas, productos, personas, lugares, cifras o frameworks que NO aparezcan literalmente en el texto fuente. Si una información no aparece, devuelve `null`, array vacío, o `UNKNOWN`. Es preferible un output corto y literal que uno completo e inventado. La omisión es siempre mejor que la invención.
+
+**Aplicación numérica específica (para War Room):**
+
+NUNCA inventes ni estimes cifras cuantitativas que no estén explícitamente en el contexto. Esto incluye: cantidad de archivos/documentos/items, número de contactos/leads/clientes, métricas de mercado (TAM/SAM/SOM), costos/precios/ingresos/valoraciones, fechas concretas/plazos, porcentajes/conversión/CAC/LTV.
+
+Si necesitas referirte a una cantidad y no está en el contexto: di "varios", "múltiples" o "no tengo el dato exacto". Si el contexto sí tiene el dato, úsalo exactamente. Si el usuario pide una cifra que no tienes, dile que no podés saberlo desde el contexto actual y sugerí cómo conseguir ese dato.
+
+---
+
+## 14. Reglas inviolables de configuración
+
+1. **NUNCA** modificar `next.config.js` — rompe el build en Vercel.
+2. **NUNCA** añadir `output` ni `binaryTargets` a `prisma/schema.prisma`.
+3. `package.json` `postinstall` debe ser SOLO `"prisma generate"` (sin `db push`).
+4. **NUNCA** usar npm — solo `yarn add`.
+5. **SIEMPRE** leer un archivo antes de modificarlo.
+6. **NUNCA** hardcodear valores de `.env` en código — solo `process.env.VARIABLE`.
+7. `ignoreBuildErrors: true` en `next.config.js` es legado — no modificar.
+8. App Router GET handlers que lean DB deben tener `export const dynamic = 'force-dynamic'`. Sin eso, Next.js 14 pre-renderiza en build time y los endpoints devuelven datos stale.
+9. Migraciones en Neon: usar `prisma migrate diff → db execute → migrate resolve --applied`. El shadow DB de Neon no soporta `migrate dev` legacy.
+
+---
+
+## 15. Trampas conocidas
+
+### 15.1 Next.js 14 App Router
+
+- **Pre-render por defecto.** GET handlers que acceden a DB se cachean agresivamente. Siempre añadir `export const dynamic = 'force-dynamic';` al inicio.
+- **Tipos de params en rutas dinámicas.** Next 14 los declara como `{ params: { id: string } }` síncronos. En Next 15 se vuelven `Promise<>`. El código actual asume Next 14.
+
+### 15.2 Vercel
+
+- **Env vars nunca deben contener expresiones.** Si accidentalmente copias `"folderPrefix ?? """` desde el editor de código al campo de env var, Vercel lo guarda como literal y rompe el sistema silenciosamente. Al crear/editar env vars, siempre verificar que el valor es un literal plano.
+- **Variables marcadas "Sensitive" solo se pueden aplicar al crear.** No se puede convertir una existente. Para aplicar Sensitive a una variable existente: eliminar y recrear. Coste alto para beneficio cosmético.
+- **`maxDuration = 300s`** está disponible por Fluid Compute. Necesario para `/api/firm-corpus/*` con pipelines de Stage A + B.
+
+### 15.3 Serverless
+
+- **Maps son efímeros.** `new Map()` en top-level de un módulo se reinicia entre invocations. Usar DB para estado persistente.
+- **Fire-and-forget es poco fiable.** `promesa.catch(...)` sin `await` puede cortarse cuando el response envía. Usar `await` o colas de trabajo.
+- **Output de LLM es no determinista.** Usar regex flexibles, never parse asumiendo formato exacto.
+
+### 15.4 S3 y Upload
+
+- **Bucket naming namespace.** Al crear bucket, AWS ofrece "regional de la cuenta" (fuerza sufijo `{account-id}-{region}-{random}`) vs "global" (nombre limpio, requiere unicidad global). Para single-tenant privado, preferir "global" — higiene de URLs, no expone account ID.
+- **CORS con SDK v3.** El SDK añade `x-amz-checksum-crc32` y `x-amz-sdk-checksum-algorithm` automáticamente al PUT. El CORS del bucket debe incluirlos (lo más simple: `AllowedHeaders: ["*"]` para single-tenant privado).
+- **Debug de CORS 403.** Si el browser reporta CORS genérico sin detalle, ir a `curl OPTIONS` directo al bucket. S3 devuelve XML diagnóstico (`"CORSResponse: Bucket not found"` es señal clara).
+
+### 15.5 Debug de múltiples bugs superpuestos
+
+Si un sistema falla repetidamente tras un fix aparentemente correcto, la hipótesis por defecto no debe ser "el fix no funcionó". Debe ser "hay un siguiente bug detrás que el fix recién desbloqueó la visibilidad de". Upload-A tuvo 4 bugs independientes en 4 capas distintas; cada fix revelaba el siguiente.
+
+---
+
+## 16. Estrategia de branches
+
+- `main` — producción, auto-deploy en Vercel. **NO** pushear directamente desde tareas en curso; crear branch feature y merge tras testing.
+- Branches feature — nombre descriptivo (`sprint-corpus-3`, `fix-upload-cors`, etc.). Merge a `main` solo tras validación.
+
+Comando de merge estándar:
 ```bash
-git checkout main && git merge vexco-lab --no-ff -m "🎉 Merge vexco-lab: Vex&Co Lab V4 completo" && git push origin main
+git checkout main && git merge <branch> --no-ff -m "Merge: <descripción>" && git push origin main
 ```
 
 ---
 
-## 12. Reglas Inviolables de Configuración
+## 17. Owner y contacto
 
-1. **NUNCA** modificar `next.config.js` — rompe el build en Vercel
-2. **NUNCA** añadir `output` ni `binaryTargets` a `prisma/schema.prisma`
-3. `package.json` `postinstall` debe ser SOLO `"prisma generate"` (sin `db push`)
-4. **NUNCA** usar npm — solo `yarn add`
-5. **SIEMPRE** leer un archivo antes de modificarlo
-6. **NUNCA** hardcodear valores de `.env` en código — solo `process.env.VARIABLE`
-7. TypeScript `ignoreBuildErrors: true` en `next.config.js` es legado — no modificar
-
----
-
-## 13. Owner
-
-- **Nombre:** Diego
+- **Nombre:** Diego Amadruda
 - **Email:** diego@vexandco.com
 - **GitHub:** Damadruda
-- **Dominio permitido para auth:** @vexandco.com
+- **Dominio permitido para auth:** `@vexandco.com`
 
 ---
 
-## 14. Key URLs
+## 18. Estado de sprints al 23 abril 2026
 
-- **Production:** https://vexco-space.vercel.app
-- **GitHub:** https://github.com/Damadruda/vexco-space (private)
-- **Vercel Project:** prj_8yUzvhXTXwWrTMlxJQ12Hu8Rm25d
-
----
-
-## 15. LLM Routing Policy (validada 9 abr, lineup Claude 4.6)
-
-**T1 — Mecanico:** Gemini Flash (`gemini-2.5-flash`) o Claude Haiku 4.5 (`claude-haiku-4-5-20251001`).
-Uso: clasificacion estructural pura, extraccion de enums/tags, triage, smart filter.
-NUNCA para generar texto que vaya a ser leido por agentes.
-
-**T2 — Analitico:** Gemini 2.5 Pro estable (`gemini-2.5-pro`) + responseSchema.
-Uso: diagnosticos, FirmInsight, Revenue Priority, Variable Analogica, analyzeCrossPortfolio,
-comprension profunda de documentos en ingesta del Firm Corpus (Etapa B).
-SIEMPRE con REGLA #0.5 anti-hallucination en el prompt.
-
-**T3 — Estrategico:**
-- Default: Claude Sonnet 4.6 (`claude-sonnet-4-6`) para War Room chat (Strategist, Revenue, Product, Design)
-- Escalado: Claude Opus 4.6 (`claude-opus-4-6`) para Challenger en debate, narrativas MetaProject,
-  docs cliente-facing, proximos pasos criticos donde el costo del error es alto.
-
-**Principio M.2a-PLUS:** Cualquier pipeline que genere TEXTO leido por agentes debe usar T2 con REGLA #0.5,
-NUNCA T1. Flash/Haiku solo para clasificacion estructural.
+| Sprint / Área | Estado |
+|---|---|
+| Upload-A (S3 files) | ✅ Completo (happy path + 4 defensivos validados) |
+| CORPUS-1 (wipe) | ✅ Completo |
+| CORPUS-2 (UI curación) | ✅ Completo |
+| CORPUS-3 (promoción autónoma) | ✅ Completo (migración aplicada 20 abril) |
+| MIP 1A (Template A) | ✅ Completo, cron activo lunes 05:00 UTC |
+| Siembra del corpus | 🔜 Siguiente paso (4-6 docs manual) |
+| M.2b (inyección corpus en prompts) | ⏸️ Bloqueado por corpus vacío |
+| Items 22-24 (client-ready export) | ⏸️ Mega-prompt diseñado no aplicado |
+| MIP 1B + 1C (Templates B, C) | ⏸️ Pendiente |
+| Sprint LLM-Realignment | ⏸️ Backlog (alinear código `lib/clients/llm.ts` y callers directos a política: Sonnet 4.6, Opus 4.6, Gemini 2.5 Pro stable, Gemini 2.5 Flash, Haiku 4.5) |
+| Mecanismo de revisión periódica de modelos LLM | ⏸️ Backlog (definir frecuencia + criterio de evaluación + benchmark reutilizable para decidir upgrades) |
+| Sprint L (A2A workflows) | ⏸️ Backlog (prereq Sprint N) |
+| Sprint N (Raindrop auto-improvement) | ⏸️ Backlog |
+| SmartDriveImport rethink | ⏸️ Backlog (pipeline actual pierde ~70%) |
+| Stack integration HubSpot + Apollo | ⏸️ Backlog |
+| Restauración 8 agentes | ⏸️ Backlog (volver a vistas especializadas) |
+| Higiene acumulada | ⏸️ Backlog continuo (env vars huérfanas, OAuth client antiguo, Safari multi-account) |
 
 ---
 
-## 16. REGLA #0.5 — Anti-Hallucination
+## 19. Mantenimiento de este archivo
 
-Aplicada en todos los prompts de Etapa B del pipeline de ingesta y en los 5 agentes del War Room.
-Texto canonico:
+Este `CLAUDE.md` es la fuente de verdad operativa del sistema. Se actualiza al cerrar cada sprint relevante. La sección 18 (estado de sprints) se actualiza siempre. Las secciones 10 y 11 (modelos y endpoints) se actualizan cuando se añaden/eliminan modelos o endpoints estructurales. La sección 15 (trampas conocidas) se actualiza cada vez que se descubra una.
 
-> PROHIBIDO inventar nombres de empresas, marcas, productos, personas, lugares, cifras o frameworks
-> que NO aparezcan literalmente en el texto fuente. Si una informacion no aparece, devuelve null,
-> array vacio, o UNKNOWN. Es preferible un output corto y literal que uno completo e inventado.
-> La omision es siempre mejor que la invencion.
+Si al leer este archivo detectas que contradice el estado real del repo, el repo gana. Corrige el archivo en el mismo PR donde se introduzca el cambio que lo desactualiza.
