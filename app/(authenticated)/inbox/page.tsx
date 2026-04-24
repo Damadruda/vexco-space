@@ -15,6 +15,9 @@ import {
   X,
   Check,
   Loader2,
+  Archive,
+  ArchiveRestore,
+  Trash2,
 } from "lucide-react";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -209,18 +212,52 @@ function AddItemForm({ onSuccess, onClose }: { onSuccess: () => void; onClose: (
 function ItemCard({
   item,
   projects,
+  isSelected,
   onAnalyzed,
   onLinked,
+  onArchive,
+  onUnarchive,
+  onDelete,
+  onToggleSelect,
 }: {
   item: InboxItem;
   projects: ProjectOption[];
+  isSelected: boolean;
   onAnalyzed: (id: string, analysis: AnalysisResult) => void;
   onLinked: (id: string, projectId: string | null) => void;
+  onArchive: (id: string) => Promise<void>;
+  onUnarchive: (id: string) => Promise<void>;
+  onDelete: (id: string) => Promise<void>;
+  onToggleSelect: (id: string) => void;
 }) {
   const [expanded, setExpanded] = useState(false);
   const [analyzing, setAnalyzing] = useState(false);
   const [analyzeError, setAnalyzeError] = useState("");
   const [linking, setLinking] = useState(false);
+  const [archiving, setArchiving] = useState(false);
+  const [deleting, setDeleting] = useState(false);
+
+  const handleArchive = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setArchiving(true);
+    try { await onArchive(item.id); } finally { setArchiving(false); }
+  };
+
+  const handleUnarchive = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    setArchiving(true);
+    try { await onUnarchive(item.id); } finally { setArchiving(false); }
+  };
+
+  const handleDelete = async (e: React.MouseEvent) => {
+    e.stopPropagation();
+    const confirmed = window.confirm(
+      "Eliminar permanentemente este item del Lab.\n\nSe borra de la base de datos (análisis incluido). Si el item sigue guardado en Raindrop, reaparecerá en el próximo sync como no procesado.\n\n¿Continuar?"
+    );
+    if (!confirmed) return;
+    setDeleting(true);
+    try { await onDelete(item.id); } finally { setDeleting(false); }
+  };
 
   const handleAnalyze = async () => {
     setAnalyzing(true);
@@ -248,12 +285,21 @@ function ItemCard({
   return (
     <div className="ql-card">
       {/* Header row */}
-      <div
-        className="flex cursor-pointer items-start gap-3"
-        onClick={() => setExpanded(!expanded)}
-      >
-        <span className="text-base">{TYPE_ICONS[item.type] ?? "📌"}</span>
-        <div className="flex-1 min-w-0">
+      <div className="flex items-start gap-3">
+        <input
+          type="checkbox"
+          checked={isSelected}
+          onChange={(e) => { e.stopPropagation(); onToggleSelect(item.id); }}
+          onClick={(e) => e.stopPropagation()}
+          className="mt-1.5 accent-[#C5A572] cursor-pointer shrink-0"
+          aria-label={`Seleccionar ${item.sourceTitle ?? "item"}`}
+        />
+        <div
+          className="flex cursor-pointer items-start gap-3 flex-1 min-w-0"
+          onClick={() => setExpanded(!expanded)}
+        >
+          <span className="text-base">{TYPE_ICONS[item.type] ?? "📌"}</span>
+          <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2 flex-wrap">
             <p className="font-medium text-ql-charcoal text-sm truncate">
               {item.sourceTitle || item.rawContent.slice(0, 80)}
@@ -304,29 +350,56 @@ function ItemCard({
             ))}
           </div>
         </div>
+        </div>
         <div className="flex items-center gap-2 shrink-0">
           {item.status === "unprocessed" && (
             <button
-              onClick={(e) => {
-                e.stopPropagation();
-                handleAnalyze();
-              }}
+              onClick={(e) => { e.stopPropagation(); handleAnalyze(); }}
               disabled={analyzing}
               className="ql-btn-secondary text-xs py-1.5 px-3 disabled:opacity-50"
+              title="Analizar con IA"
             >
-              {analyzing ? (
-                <span className="ql-status-thinking" />
-              ) : (
-                <Sparkles className="h-3 w-3" />
-              )}
+              {analyzing ? <span className="ql-status-thinking" /> : <Sparkles className="h-3 w-3" />}
               Analizar
             </button>
           )}
-          {expanded ? (
-            <ChevronUp className="h-4 w-4 text-ql-muted" />
+          {item.status !== "archived" ? (
+            <button
+              onClick={handleArchive}
+              disabled={archiving || deleting}
+              className="inline-flex items-center justify-center rounded-md p-1.5 text-ql-muted hover:bg-ql-cream hover:text-ql-charcoal transition-colors disabled:opacity-50"
+              title="Archivar"
+              aria-label="Archivar item"
+            >
+              {archiving ? <Loader2 className="h-4 w-4 animate-spin" /> : <Archive className="h-4 w-4" />}
+            </button>
           ) : (
-            <ChevronDown className="h-4 w-4 text-ql-muted" />
+            <button
+              onClick={handleUnarchive}
+              disabled={archiving || deleting}
+              className="inline-flex items-center justify-center rounded-md p-1.5 text-ql-muted hover:bg-ql-cream hover:text-ql-charcoal transition-colors disabled:opacity-50"
+              title="Desarchivar"
+              aria-label="Desarchivar item"
+            >
+              {archiving ? <Loader2 className="h-4 w-4 animate-spin" /> : <ArchiveRestore className="h-4 w-4" />}
+            </button>
           )}
+          <button
+            onClick={handleDelete}
+            disabled={archiving || deleting}
+            className="inline-flex items-center justify-center rounded-md p-1.5 text-ql-muted hover:bg-ql-danger/10 hover:text-ql-danger transition-colors disabled:opacity-50"
+            title="Eliminar permanentemente"
+            aria-label="Eliminar item"
+          >
+            {deleting ? <Loader2 className="h-4 w-4 animate-spin" /> : <Trash2 className="h-4 w-4" />}
+          </button>
+          <button
+            onClick={(e) => { e.stopPropagation(); setExpanded(!expanded); }}
+            className="inline-flex items-center justify-center rounded-md p-1.5 text-ql-muted hover:bg-ql-cream hover:text-ql-charcoal transition-colors"
+            aria-label={expanded ? "Colapsar" : "Expandir"}
+          >
+            {expanded ? <ChevronUp className="h-4 w-4" /> : <ChevronDown className="h-4 w-4" />}
+          </button>
         </div>
       </div>
 
@@ -445,6 +518,8 @@ export default function InboxPage() {
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<string>("");
   const [projects, setProjects] = useState<ProjectOption[]>([]);
+  const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+  const [batchArchiving, setBatchArchiving] = useState(false);
 
   // Re-evaluation state
   const [recentProject, setRecentProject] = useState<{ id: string; title: string } | null>(null);
@@ -489,6 +564,7 @@ export default function InboxPage() {
   }, [filter]);
 
   useEffect(() => {
+    setSelectedIds(new Set());
     fetchItems();
   }, [fetchItems]);
 
@@ -529,6 +605,84 @@ export default function InboxPage() {
       )
     );
   };
+
+  const handleToggleSelect = useCallback((id: string) => {
+    setSelectedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }, []);
+
+  const handleArchiveItem = useCallback(async (id: string) => {
+    const res = await fetch(`/api/inbox/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: "archived" }),
+    });
+    if (!res.ok) {
+      console.error("Error al archivar");
+      return;
+    }
+    if (filter === "archived" || filter === "all") {
+      setItems((prev) => prev.map((i) => i.id === id ? { ...i, status: "archived" } : i));
+    } else {
+      setItems((prev) => prev.filter((i) => i.id !== id));
+    }
+    setSelectedIds((prev) => { const n = new Set(prev); n.delete(id); return n; });
+  }, [filter]);
+
+  const handleUnarchiveItem = useCallback(async (id: string) => {
+    const current = items.find((i) => i.id === id);
+    const newStatus = current?.analysis ? "processed" : "unprocessed";
+    const res = await fetch(`/api/inbox/${id}`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ status: newStatus }),
+    });
+    if (!res.ok) {
+      console.error("Error al desarchivar");
+      return;
+    }
+    if (filter === "all") {
+      setItems((prev) => prev.map((i) => i.id === id ? { ...i, status: newStatus } : i));
+    } else {
+      setItems((prev) => prev.filter((i) => i.id !== id));
+    }
+  }, [items, filter]);
+
+  const handleDeleteItem = useCallback(async (id: string) => {
+    const res = await fetch(`/api/inbox/${id}`, { method: "DELETE" });
+    if (!res.ok) {
+      console.error("Error al eliminar");
+      return;
+    }
+    setItems((prev) => prev.filter((i) => i.id !== id));
+    setSelectedIds((prev) => { const n = new Set(prev); n.delete(id); return n; });
+  }, []);
+
+  const handleBatchArchive = useCallback(async () => {
+    if (selectedIds.size === 0) return;
+    setBatchArchiving(true);
+    const ids = Array.from(selectedIds);
+    await Promise.allSettled(
+      ids.map((id) =>
+        fetch(`/api/inbox/${id}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ status: "archived" }),
+        })
+      )
+    );
+    if (filter === "archived" || filter === "all") {
+      setItems((prev) => prev.map((i) => ids.includes(i.id) ? { ...i, status: "archived" } : i));
+    } else {
+      setItems((prev) => prev.filter((i) => !ids.includes(i.id)));
+    }
+    setSelectedIds(new Set());
+    setBatchArchiving(false);
+  }, [selectedIds, filter]);
 
   // Re-evaluation handlers
   const handleReEvaluate = async () => {
@@ -778,17 +932,45 @@ export default function InboxPage() {
                 key={item.id}
                 item={item}
                 projects={projects}
+                isSelected={selectedIds.has(item.id)}
                 onAnalyzed={handleAnalyzed}
                 onLinked={(id, projectId) => {
                   setItems(prev => prev.map(i =>
                     i.id === id ? { ...i, projectId } : i
                   ));
                 }}
+                onArchive={handleArchiveItem}
+                onUnarchive={handleUnarchiveItem}
+                onDelete={handleDeleteItem}
+                onToggleSelect={handleToggleSelect}
               />
             ))}
           </div>
         )}
       </div>
+
+      {selectedIds.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 rounded-lg border border-ql-sand bg-white shadow-lg px-4 py-3">
+          <span className="ql-caption">
+            {selectedIds.size} item{selectedIds.size > 1 ? "s" : ""} seleccionado{selectedIds.size > 1 ? "s" : ""}
+          </span>
+          <button
+            onClick={handleBatchArchive}
+            disabled={batchArchiving}
+            className="inline-flex items-center gap-1.5 rounded-md bg-[#1A1A1A] px-3 py-1.5 text-xs font-medium text-white hover:bg-[#333] transition-colors disabled:opacity-50"
+          >
+            {batchArchiving ? <Loader2 className="h-3 w-3 animate-spin" /> : <Archive className="h-3 w-3" />}
+            Archivar {selectedIds.size}
+          </button>
+          <button
+            onClick={() => setSelectedIds(new Set())}
+            disabled={batchArchiving}
+            className="ql-btn-ghost text-xs py-1.5 px-3 disabled:opacity-50"
+          >
+            Cancelar
+          </button>
+        </div>
+      )}
     </div>
   );
 }
