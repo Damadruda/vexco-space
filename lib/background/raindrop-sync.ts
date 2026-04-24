@@ -1,45 +1,26 @@
 // =============================================================================
-// VEXCO-LAB — BACKGROUND RAINDROP SYNC + AUTO-ANALYSIS
-// Fire-and-forget: import bookmarks → Jina extraction → Gemini analysis.
-// Used by: sync-raindrop route, session route, debate route.
+// VEXCO-LAB — BACKGROUND RAINDROP SYNC (auto-analyze DESACTIVADO)
+//
+// Estado transitorio (abril 2026): este módulo importa bookmarks de Raindrop
+// pero NO los analiza. Los items quedan en status="unprocessed" y Diego los
+// analiza manualmente desde la UI del Inbox o vía /api/inbox/reprocess-batch,
+// que usa el pipeline nuevo Stage A + Stage B (lib/inbox/).
+//
+// El pipeline viejo single-shot (gemini-3.1-pro-preview + prompt hardcoded)
+// se eliminó en este hotfix porque violaba el principio M.2a-PLUS documentado
+// en CLAUDE.md sección 8.5 y alucinaba ~40% en campos narrativos.
+//
+// TODO (Sprint Raindrop Sync Alignment): refactorizar para invocar
+// runStageA + runStageB de lib/inbox/ directamente, manteniendo el patrón
+// M.2a-PLUS end-to-end (incluyendo consumo de InboxCorrection).
 // =============================================================================
 
-import { GoogleGenAI } from "@google/genai";
 import { prisma } from "@/lib/db";
 import { raindropClient } from "@/lib/clients/raindrop";
-import { jinaClient } from "@/lib/clients/jina";
 
 const ONE_HOUR_MS = 60 * 60 * 1_000;
-const MAX_ITEMS_PER_SYNC = 10;
 
-const ANALYSIS_PROMPT = (
-  sourceTitle: string,
-  sourceUrl: string,
-  content: string
-) => `Eres un analista estratégico de negocios. Analiza el siguiente contenido y devuelve un JSON con esta estructura exacta:
-
-{
-  "summary": "resumen ejecutivo en 2-3 oraciones, tono C-Level, directo",
-  "keyInsights": ["insight 1", "insight 2", "insight 3"],
-  "suggestedTags": ["tag1", "tag2", "tag3"],
-  "category": "project|trend|discovery|noise",
-  "sentiment": "positive|negative|neutral|mixed",
-  "relevanceScore": 0.0
-}
-
-Reglas:
-- Escribe con oraciones cortas e impactantes. Voz activa.
-- Cero jerga o palabras como "sumérgete", "tapiz", "crucial", "descubre".
-- "noise" = contenido irrelevante para decisiones de negocio.
-- relevanceScore: 1.0 = altamente relevante para estrategia B2B.
-- Devuelve SOLO el JSON, sin markdown ni explicaciones adicionales.
-
-CONTENIDO A ANALIZAR:
-Título: ${sourceTitle}
-URL: ${sourceUrl}
-Contenido: ${content.slice(0, 25_000)}`;
-
-// ─── Core sync: import bookmarks + analyze new items ─────────────────────────
+// ─── Core sync: import bookmarks only (no auto-analyze) ──────────────────────
 
 export async function runRaindropSync(
   userId: string,
@@ -86,7 +67,6 @@ export async function runRaindropSync(
   let updated = 0;
   let skipped = 0;
   let errors = 0;
-  const newItemIds: string[] = [];
 
   for (const bookmark of allBookmarks) {
     if (!bookmark.link) {
@@ -125,9 +105,9 @@ export async function runRaindropSync(
       continue;
     }
 
-    // New item — create
+    // New item — create as unprocessed (no auto-analyze)
     try {
-      const item = await prisma.inboxItem.create({
+      await prisma.inboxItem.create({
         data: {
           type: "url",
           rawContent: bookmark.excerpt || bookmark.title,
@@ -139,7 +119,6 @@ export async function runRaindropSync(
           userId,
         },
       });
-      newItemIds.push(item.id);
       created++;
     } catch (err) {
       console.error(`[RAINDROP SYNC] Error creating bookmark ${bookmark._id}:`, err);
@@ -147,106 +126,17 @@ export async function runRaindropSync(
     }
   }
 
-  console.log(`[raindrop-sync] Results: ${created} created, ${updated} updated, ${skipped} skipped, ${errors} errors`);
+  console.log(`[raindrop-sync] Results: ${created} created, ${updated} updated, ${skipped} skipped, ${errors} errors (auto-analyze disabled)`);
 
   await prisma.userPreferences.update({
     where: { userId },
     data: { raindropLastSync: new Date() },
   });
 
-  // Auto-analyze up to MAX_ITEMS_PER_SYNC new items
-  const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-  if (!apiKey || newItemIds.length === 0) {
-    return { created, updated, skipped, analyzed: 0, errors };
-  }
-
-  const toAnalyze = newItemIds.slice(0, MAX_ITEMS_PER_SYNC);
-  const items_ = await prisma.inboxItem.findMany({
-    where: { id: { in: toAnalyze } },
-  });
-
-  const results = await Promise.allSettled(
-    items_.map(async (item) => {
-      let content = item.rawContent;
-
-      // Enrich via Jina if content is short
-      if (item.sourceUrl && content.length < 500) {
-        try {
-          const jinaApiKey = process.env.JINA_API_KEY;
-          const extracted = await jinaClient.extractContent(item.sourceUrl, jinaApiKey);
-          if (extracted.content) content = extracted.content;
-        } catch {
-          // Jina failed — continue with rawContent
-        }
-      }
-
-      const ai = new GoogleGenAI({ apiKey });
-      const prompt = ANALYSIS_PROMPT(
-        item.sourceTitle ?? item.rawContent.slice(0, 80),
-        item.sourceUrl ?? "",
-        content
-      );
-
-      const result = await ai.models.generateContent({
-        model: "gemini-3.1-pro-preview",
-        contents: prompt,
-      });
-      const responseText = result.text || "";
-      const cleaned = responseText.replace(/```json\n?|\n?```/g, "").trim();
-      const jsonMatch = cleaned.match(/\{[\s\S]*\}/);
-      if (!jsonMatch) throw new Error("No JSON in Gemini response");
-
-      const aiData = JSON.parse(jsonMatch[0]) as {
-        summary: string;
-        keyInsights: string[];
-        suggestedTags: string[];
-        category: string;
-        sentiment: string;
-        relevanceScore: number;
-      };
-
-      await prisma.analysisResult.upsert({
-        where: { inboxItemId: item.id },
-        create: {
-          inboxItemId: item.id,
-          summary: aiData.summary ?? "",
-          keyInsights: aiData.keyInsights ?? [],
-          suggestedTags: aiData.suggestedTags ?? [],
-          category: aiData.category ?? "noise",
-          sentiment: aiData.sentiment ?? "neutral",
-          relevanceScore: aiData.relevanceScore ?? 0,
-          rawAiResponse: responseText,
-          modelUsed: "gemini-3.1-pro-preview",
-          processingTimeMs: 0,
-        },
-        update: {
-          summary: aiData.summary ?? "",
-          keyInsights: aiData.keyInsights ?? [],
-          suggestedTags: aiData.suggestedTags ?? [],
-          category: aiData.category ?? "noise",
-          sentiment: aiData.sentiment ?? "neutral",
-          relevanceScore: aiData.relevanceScore ?? 0,
-          rawAiResponse: responseText,
-          modelUsed: "gemini-3.1-pro-preview",
-          processingTimeMs: 0,
-          updatedAt: new Date(),
-        },
-      });
-
-      await prisma.inboxItem.update({
-        where: { id: item.id },
-        data: { status: "processed" },
-      });
-    })
-  );
-
-  const analyzed = results.filter((r) => r.status === "fulfilled").length;
-  const failed = results.filter((r) => r.status === "rejected").length;
-  if (failed > 0) {
-    console.warn(`[RAINDROP-SYNC] ${failed} items failed analysis`);
-  }
-
-  return { created, updated, skipped, analyzed, errors };
+  // analyzed: 0 hardcoded — el pipeline de análisis automático está desactivado.
+  // Los items entran como unprocessed y se analizan bajo demanda desde la UI
+  // o vía /api/inbox/reprocess-batch (Stage A + Stage B).
+  return { created, updated, skipped, analyzed: 0, errors };
 }
 
 // ─── Trigger: only sync if token exists and last sync > 1h ago ───────────────
