@@ -10,15 +10,17 @@ export async function GET(request: NextRequest) {
     const userId = await getDefaultUserId();
     const { searchParams } = new URL(request.url);
     const type = searchParams.get("type");
-    const domain = searchParams.get("domain");
+    const functionalDomain = searchParams.get("functionalDomain") ?? searchParams.get("domain");
     const tagsParam = searchParams.get("tags");
+    const reviewPending = searchParams.get("reviewPending") === "true";
 
     const includeInactive = searchParams.get("includeInactive") === "true";
 
     const where: Record<string, unknown> = { ownerId: userId };
     if (!includeInactive) where.isActive = true;
     if (type) where.insightType = type;
-    if (domain) where.domain = domain;
+    if (functionalDomain) where.functionalDomain = functionalDomain;
+    if (reviewPending) where.naicsSectorReviewed = false;
     if (tagsParam) {
       const tagsArr = tagsParam.split(",").map((t) => t.trim());
       where.tags = { hasSome: tagsArr };
@@ -27,8 +29,10 @@ export async function GET(request: NextRequest) {
     const insights = await prisma.firmInsight.findMany({
       where,
       include: { sourceProject: { select: { id: true, title: true } } },
-      orderBy: { updatedAt: "desc" },
-      take: 100,
+      orderBy: reviewPending
+        ? [{ confidence: "desc" }, { updatedAt: "desc" }]
+        : { updatedAt: "desc" },
+      take: reviewPending ? 100 : 100,
     });
 
     return NextResponse.json({ insights });
@@ -48,7 +52,8 @@ export async function POST(request: NextRequest) {
       title,
       content,
       insightType,
-      domain,
+      functionalDomain,
+      domain, // legacy alias
       tags,
       confidence,
       sourceProjectId,
@@ -58,6 +63,7 @@ export async function POST(request: NextRequest) {
       title: string;
       content: string;
       insightType: string;
+      functionalDomain?: string;
       domain?: string;
       tags?: string[];
       confidence?: number;
@@ -78,7 +84,7 @@ export async function POST(request: NextRequest) {
         title,
         content,
         insightType,
-        domain: domain ?? null,
+        functionalDomain: functionalDomain ?? domain ?? null,
         tags: tags ?? [],
         confidence: confidence ?? 50,
         sourceProjectId: sourceProjectId ?? null,

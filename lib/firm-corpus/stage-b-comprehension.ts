@@ -93,6 +93,7 @@ REGLA #0.5 — ANTI-HALLUCINATION (CRITICA, NO NEGOCIABLE):
 - Es PREFERIBLE un summary corto y literal que uno completo e inventado.
 - Si dudas sobre algo, omitelo. La omision es siempre mejor que la invencion.
 - Antes de incluir cualquier nombre propio en keyEntities, verifica que aparece textualmente en el contenido.
+- PROHIBIDO inventar estadisticas de mercado, porcentajes, tamaños TAM/SAM/SOM, valoraciones, ratios o cifras cuantitativas que no aparezcan literalmente en el texto. Una cifra inventada destruye la credibilidad de todo el analisis. La omision siempre es mejor que la invencion.
 
 NOMBRE DEL ARCHIVO: ${fileName}
 METADATA YA CLASIFICADA: ${JSON.stringify(stageAMetadata)}

@@ -24,7 +24,7 @@ interface FirmInsight {
   title: string;
   content: string;
   insightType: string;
-  domain: string | null;
+  functionalDomain: string | null;
   tags: string[];
   confidence: number;
   sourceProjectId: string | null;
@@ -175,9 +175,9 @@ function InsightCard({
               <Check className="h-3 w-3" /> Validado
             </span>
           )}
-          {insight.domain && (
+          {insight.functionalDomain && (
             <span className="inline-flex rounded-full bg-[#F9F8F6] px-2 py-0.5 text-[10px] text-[#5E5E5E]">
-              {insight.domain}
+              {insight.functionalDomain}
             </span>
           )}
         </div>
@@ -471,7 +471,7 @@ export default function KnowledgePage() {
   const domains = useMemo(() => {
     const set = new Set<string>();
     insights.forEach((i) => {
-      if (i.domain) set.add(i.domain);
+      if (i.functionalDomain) set.add(i.functionalDomain);
     });
     return Array.from(set).sort();
   }, [insights]);
@@ -489,7 +489,7 @@ export default function KnowledgePage() {
   const filtered = useMemo(() => {
     let result = insights.filter((i) => {
       if (filterType !== "all" && i.insightType !== filterType) return false;
-      if (filterDomain !== "all" && i.domain !== filterDomain) return false;
+      if (filterDomain !== "all" && i.functionalDomain !== filterDomain) return false;
       if (filterProject !== "all" && i.sourceProjectId !== filterProject) return false;
       if (filterConfidence === "high" && i.confidence < 70) return false;
       if (filterConfidence === "medium" && (i.confidence < 30 || i.confidence >= 70)) return false;

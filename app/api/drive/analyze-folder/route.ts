@@ -4,10 +4,11 @@ import { authOptions } from "@/lib/auth-options";
 import { prisma } from "@/lib/db";
 import type { Part } from "@/lib/clients/llm";
 import { callLLM, callGeminiMultimodal } from "@/lib/clients/llm";
+import { classifyProjectSector } from "@/lib/firm-insights/sector-classifier";
 import mammoth from "mammoth";
 
 export const dynamic = "force-dynamic";
-export const maxDuration = 300;
+export const maxDuration = 500;
 
 // Configuration constants
 const CONFIG = {
@@ -604,7 +605,8 @@ function inferFileType(fileName: string, mimeType: string): string {
 }
 
 /**
- * Generate individual summary for a text document using callLLM (fast, with retry)
+ * Generate dense individual summary for a text document using Pro 2.5 stable + REGLA #0.5.
+ * T2 — output read by agents in War Room context. Per Convergencia v2.
  */
 async function summarizeDocument(
   fileName: string,
@@ -618,44 +620,118 @@ async function summarizeDocument(
 }> {
   const wordCount = textContent.split(/\s+/).length;
 
-  // Truncate very long docs for summary
   const truncated =
-    textContent.length > 6000
-      ? textContent.substring(0, 6000) + "\n[... contenido truncado ...]"
+    textContent.length > 12000
+      ? textContent.substring(0, 12000) + "\n[... contenido truncado ...]"
       : textContent;
 
   try {
     const response = await callLLM({
-      model: "gemini-flash",
-      systemPrompt: `Eres un analista de documentos. Resume el documento de forma concisa y extrae insights clave.
-Contexto del proyecto: ${projectContext}
+      model: "gemini-pro-stable",
+      systemPrompt: `Eres un analista de documentos de Vex&Co Lab. Tu tarea es producir un summary denso del documento + 3-5 insights clave + categoria.
 
-RESPONDE ÚNICAMENTE con JSON válido (sin markdown, sin backticks):
+REGLA #0.5 — ANTI-ALUCINACION (CRITICA):
+PROHIBIDO inventar nombres de empresas, marcas, productos, personas, lugares, cifras, frameworks o estadisticas que NO aparezcan literalmente en el texto fuente. Si una informacion no aparece, omite el campo o usa formulaciones genericas. La omision es siempre mejor que la invencion.
+
+PROHIBIDO inventar estadisticas de mercado, porcentajes de fracaso, tamaños de TAM/SAM/SOM, valoraciones, precios o ratios que no aparezcan literalmente en el documento. Si necesitas referirte a un patron sin tener la cifra, usa "multiples casos documentados" o "patron observado en el documento". NUNCA inventes el numero, ni siquiera para hacer un argumento mas convincente.
+
+CONTEXTO DEL PROYECTO: ${projectContext}
+
+OBJETIVO DEL SUMMARY:
+El summary debe permitir a otro analista o agente entender el contenido del documento sin tener que leerlo. NO es un titular — es una sintesis densa de 4-7 frases que captura: que es el documento, que datos/decisiones contiene, que conclusiones se pueden extraer, y por que es relevante al proyecto.
+
+KEY INSIGHTS:
+3-5 insights concretos extraidos del documento, cada uno una frase declarativa. NO generalidades — datos especificos, decisiones tomadas, hallazgos validados.
+
+CATEGORY: una de strategy, technical, financial, design, research, operations, legal, other.
+
+RESPONDE UNICAMENTE con JSON valido (sin markdown, sin backticks):
 {
-  "summary": "Resumen de 2-3 oraciones del documento",
+  "summary": "sintesis densa de 4-7 frases",
   "keyInsights": ["insight 1", "insight 2", "insight 3"],
   "category": "strategy|technical|financial|design|research|operations|legal|other"
 }`,
       userPrompt: `Documento: ${fileName}\n\nContenido:\n${truncated}`,
       jsonMode: true,
-      temperature: 0.3,
-      maxTokens: 1024,
+      temperature: 0.2,
+      maxTokens: 2048,
     });
 
     const parsed = JSON.parse(response.content);
     return {
       summary: parsed.summary || `Documento: ${fileName}`,
-      keyInsights: parsed.keyInsights || [],
+      keyInsights: Array.isArray(parsed.keyInsights) ? parsed.keyInsights.slice(0, 5) : [],
       category: parsed.category || null,
       wordCount,
     };
   } catch (error: any) {
     console.warn(`[DOC_SUMMARY] Error summarizing ${fileName}: ${error.message}`);
     return {
-      summary: `Documento importado: ${fileName} (${wordCount} palabras)`,
+      summary: `Documento importado: ${fileName} (${wordCount} palabras). Resumen automatico fallo — leer archivo original.`,
       keyInsights: [],
       category: null,
       wordCount,
+    };
+  }
+}
+
+/**
+ * Per-file PDF summary via Gemini multimodal Pro 2.5.
+ * Used when the file is a PDF (already in inlineData base64 form).
+ */
+async function summarizeDocumentMultimodal(
+  fileName: string,
+  pdfPart: Part,
+  projectContext: string
+): Promise<{
+  summary: string;
+  keyInsights: string[];
+  category: string | null;
+  wordCount: number;
+}> {
+  try {
+    const systemPrompt = `Eres un analista de documentos de Vex&Co Lab. Tienes un PDF nativo. Produce summary denso + insights + categoria.
+
+REGLA #0.5 — ANTI-ALUCINACION:
+PROHIBIDO inventar nombres, cifras, fechas, empresas o estadisticas que no aparezcan en el PDF. La omision es siempre mejor que la invencion.
+
+CONTEXTO DEL PROYECTO: ${projectContext}
+
+OBJETIVO: summary denso 4-7 frases + 3-5 keyInsights concretos + category.`;
+
+    const userPrompt = `Documento PDF: ${fileName}.
+
+Devuelve JSON:
+{
+  "summary": "sintesis densa 4-7 frases",
+  "keyInsights": ["insight 1", "insight 2", "insight 3"],
+  "category": "strategy|technical|financial|design|research|operations|legal|other"
+}`;
+
+    const result = await callGeminiMultimodal(
+      systemPrompt,
+      userPrompt,
+      [pdfPart],
+      true,
+      2048,
+      0.2,
+      "gemini-2.5-pro"
+    );
+
+    const parsed = JSON.parse(result.content);
+    return {
+      summary: parsed.summary || `PDF: ${fileName}`,
+      keyInsights: Array.isArray(parsed.keyInsights) ? parsed.keyInsights.slice(0, 5) : [],
+      category: parsed.category || null,
+      wordCount: 0,
+    };
+  } catch (error: any) {
+    console.warn(`[DOC_SUMMARY_PDF] Error summarizing ${fileName}: ${error.message}`);
+    return {
+      summary: `PDF importado: ${fileName}. Resumen automatico fallo — leer archivo original.`,
+      keyInsights: [],
+      category: null,
+      wordCount: 0,
     };
   }
 }
@@ -968,9 +1044,12 @@ INSTRUCCIONES:
 - Basa tu análisis EXCLUSIVAMENTE en el contenido proporcionado.
 - NO inventes información que no esté en los archivos.
 - Si no hay info para un campo, escribe "Información no disponible en los archivos".
-- Para CADA archivo procesado, clasifica su rol como asset (assetRole) y describe brevemente qué contiene (visualDescription).
+- Para CADA archivo procesado, clasifica su rol (assetRole). Para IMAGENES (mimeType image/*), describe brevemente qué se ve en visualDescription. Para documentos de texto y PDFs, deja visualDescription vacio o null — el summary denso vendra de un proceso posterior per-file.
 
-REGLA #0.5 ANTI-HALUCINACIÓN: si los archivos no contienen información sobre un campo, NO lo inventes. Indica explícitamente la ausencia.
+REGLA #0.5 ANTI-HALUCINACION (CRITICA):
+- Si los archivos no contienen informacion sobre un campo, NO lo inventes. Indica explicitamente la ausencia.
+- PROHIBIDO inventar estadisticas de mercado, porcentajes, tamaños TAM/SAM/SOM, valoraciones, ratios o cifras cuantitativas que no aparezcan literalmente en los archivos. Usa formulaciones cualitativas si hace falta.
+- Una cifra inventada destruye la credibilidad de todo el analisis.
 
 Responde ÚNICAMENTE con JSON válido:
 {
@@ -1028,7 +1107,7 @@ Responde ÚNICAMENTE con JSON válido:
     const description = truncate(parsedResponse.description) || `Proyecto importado desde Drive: ${folderName}`;
 
     // 8. GUARDAR PROYECTO
-    let project;
+    let project: Awaited<ReturnType<typeof prisma.project.create>>;
 
     if (existingProjectId) {
       const existing = await prisma.project.findUnique({ where: { id: existingProjectId } });
@@ -1068,51 +1147,148 @@ Responde ÚNICAMENTE con JSON válido:
 
     console.log(`[DRIVE_IMPORT] Proyecto ${existingProjectId ? "actualizado" : "creado"}: ${project.id}`);
 
+    // Auto-classify NAICS sector (fire-and-forget)
+    classifyProjectSector({
+      title: project.title,
+      description: project.description,
+      concept: parsedResponse.concept ?? null,
+      targetMarket: parsedResponse.targetMarket ?? null,
+    })
+      .then((res) => {
+        if (res.naicsSector || res.confidence > 0) {
+          return prisma.project.update({
+            where: { id: project.id },
+            data: {
+              naicsSector: res.naicsSector,
+              naicsSectorConfidence: res.confidence,
+            },
+          });
+        }
+      })
+      .catch((err) => console.warn("[PROJECT_NAICS_HOOK]", err));
+
     // 9. EXPERT MODE: guardar patrones
     let patternStats = { saved: 0, duplicates: 0, invalid: 0 };
     if (isExpertMode && patternsExtracted.length > 0) {
       patternStats = await processAndSavePatterns(patternsExtracted, project.id);
     }
 
-    // 10. GUARDAR DriveDocSummary con assetRole + visualDescription clasificados por Gemini
+    // 10. GUARDAR DriveDocSummary — caller per-file con Pro 2.5 (Convergencia v2)
     let docsSaved = 0;
     const classificationByName = new Map(
       documentsClassified.map(d => [d.fileName, d])
     );
 
-    for (const file of textFiles) {
-      try {
-        const classification = classificationByName.get(file.name);
+    // Construir mapas para que cada file tenga su contenido recuperable sin re-fetch.
+    const textContentByName = new Map<string, string>();
+    for (const part of parts) {
+      if ("text" in part) {
+        const m = part.text.match(/--- Archivo: (.+?) ---\n([\s\S]*?)(?=\n--- Archivo:|$)/);
+        if (m) {
+          textContentByName.set(m[1].trim(), m[2].trim());
+        }
+      }
+    }
 
-        await prisma.driveDocSummary.upsert({
-          where: {
-            projectId_driveFileId: {
+    // PDFs: el orden de pdf parts en `parts` coincide con el orden de PDFs en textFiles
+    const pdfPartByName = new Map<string, Part>();
+    const pdfPartsOrdered = parts.filter(
+      (p): p is { inlineData: { data: string; mimeType: string } } =>
+        "inlineData" in p && p.inlineData.mimeType === "application/pdf"
+    );
+    let pdfIdx = 0;
+    for (const file of textFiles) {
+      const isPdf =
+        file.mimeType === "application/pdf" ||
+        file.name.toLowerCase().endsWith(".pdf");
+      if (isPdf && pdfPartsOrdered[pdfIdx]) {
+        pdfPartByName.set(file.name, pdfPartsOrdered[pdfIdx]);
+        pdfIdx++;
+      }
+    }
+
+    const projectContextStr = `Titulo: ${folderName}. ${parsedResponse.concept ? `Concepto: ${String(parsedResponse.concept).slice(0, 300)}.` : ""}`;
+
+    // Procesar en batches de 4 para paralelismo controlado
+    const BATCH_SIZE = 4;
+    for (let i = 0; i < textFiles.length; i += BATCH_SIZE) {
+      const batch = textFiles.slice(i, i + BATCH_SIZE);
+      const summaryResults = await Promise.all(
+        batch.map(async (file) => {
+          const fileType = inferFileType(file.name, file.mimeType);
+          // Skip imagenes — su visualDescription viene del multimodal global
+          if (fileType === "image") {
+            return null;
+          }
+
+          // PDFs: multimodal per-file
+          const isPdf =
+            file.mimeType === "application/pdf" ||
+            file.name.toLowerCase().endsWith(".pdf");
+          if (isPdf) {
+            const pdfPart = pdfPartByName.get(file.name);
+            if (pdfPart) {
+              return await summarizeDocumentMultimodal(file.name, pdfPart, projectContextStr);
+            }
+            return null;
+          }
+
+          // Text files
+          const textContent = textContentByName.get(file.name);
+          if (!textContent) return null;
+          return await summarizeDocument(file.name, textContent, projectContextStr);
+        })
+      );
+
+      for (let j = 0; j < batch.length; j++) {
+        const file = batch[j];
+        const summaryRes = summaryResults[j];
+        const classification = classificationByName.get(file.name);
+        const fileType = inferFileType(file.name, file.mimeType);
+
+        try {
+          // Para imagenes: usar visualDescription del global como summary (sin caller)
+          // Para text/PDF: usar summary denso del caller
+          const summaryText = summaryRes?.summary
+            ?? classification?.visualDescription
+            ?? `Documento importado: ${file.name}`;
+          const keyInsights = summaryRes?.keyInsights ?? [];
+          const category = summaryRes?.category ?? null;
+          const wordCount = summaryRes?.wordCount ?? null;
+
+          await prisma.driveDocSummary.upsert({
+            where: {
+              projectId_driveFileId: {
+                projectId: project.id,
+                driveFileId: file.id,
+              },
+            },
+            update: {
+              fileName: file.name,
+              summary: summaryText,
+              keyInsights,
+              category,
+              wordCount,
+              ...(classification?.assetRole ? { assetRole: classification.assetRole } : {}),
+              ...(classification?.visualDescription ? { visualDescription: classification.visualDescription } : {}),
+            },
+            create: {
               projectId: project.id,
               driveFileId: file.id,
+              fileName: file.name,
+              fileType,
+              summary: summaryText,
+              keyInsights,
+              category,
+              wordCount,
+              assetRole: classification?.assetRole ?? null,
+              visualDescription: classification?.visualDescription ?? null,
             },
-          },
-          update: {
-            fileName: file.name,
-            ...(classification?.assetRole ? { assetRole: classification.assetRole } : {}),
-            ...(classification?.visualDescription ? { visualDescription: classification.visualDescription } : {}),
-          },
-          create: {
-            projectId: project.id,
-            driveFileId: file.id,
-            fileName: file.name,
-            fileType: inferFileType(file.name, file.mimeType),
-            summary: classification?.visualDescription
-              ? classification.visualDescription
-              : `Documento importado: ${file.name}`,
-            keyInsights: [],
-            category: null,
-            assetRole: classification?.assetRole ?? null,
-            visualDescription: classification?.visualDescription ?? null,
-          },
-        });
-        docsSaved++;
-      } catch (err: any) {
-        console.warn(`[DRIVE_IMPORT] Error guardando doc ${file.name}: ${err.message}`);
+          });
+          docsSaved++;
+        } catch (err: any) {
+          console.warn(`[DRIVE_IMPORT] Error guardando doc ${file.name}: ${err.message}`);
+        }
       }
     }
 

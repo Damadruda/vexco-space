@@ -12,11 +12,12 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { prisma } from '@/lib/prisma';
 import { authOptions } from '@/lib/auth-options';
+import { classifyProjectSector } from '@/lib/firm-insights/sector-classifier';
 
 // =============================================================================
 // GET: List all projects for user
 // =============================================================================
-export async function GET() {
+export async function GET(request: NextRequest) {
   try {
     const session = await getServerSession(authOptions);
     if (!session?.user?.email) {
@@ -31,8 +32,14 @@ export async function GET() {
       return NextResponse.json({ error: 'User not found' }, { status: 404 });
     }
 
+    const { searchParams } = new URL(request.url);
+    const reviewPending = searchParams.get('reviewPending') === 'true';
+
     const projects = await prisma.project.findMany({
-      where: { userId: user.id },
+      where: {
+        userId: user.id,
+        ...(reviewPending ? { naicsSectorReviewed: false } : {}),
+      },
       orderBy: { updatedAt: 'desc' },
       select: {
         id: true,
@@ -45,6 +52,9 @@ export async function GET() {
         marketStatus: true,
         businessStatus: true,
         executionStatus: true,
+        naicsSector: true,
+        naicsSectorConfidence: true,
+        naicsSectorReviewed: true,
         createdAt: true,
         updatedAt: true
       }
@@ -100,6 +110,24 @@ export async function POST(request: NextRequest) {
         executionStatus: 'RED'
       }
     });
+
+    // Auto-classify NAICS sector (fire-and-forget, no bloquea respuesta)
+    classifyProjectSector({
+      title: project.title,
+      description: project.description,
+    })
+      .then((res) => {
+        if (res.naicsSector || res.confidence > 0) {
+          return prisma.project.update({
+            where: { id: project.id },
+            data: {
+              naicsSector: res.naicsSector,
+              naicsSectorConfidence: res.confidence,
+            },
+          });
+        }
+      })
+      .catch((err) => console.warn('[PROJECT_NAICS_HOOK]', err));
 
     return NextResponse.json({ project }, { status: 201 });
 

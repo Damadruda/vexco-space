@@ -5,6 +5,8 @@ import { loadProjectMemory } from "@/lib/engine/supervisor";
 import { prisma } from "@/lib/db";
 import { GoogleGenAI } from "@google/genai";
 import Anthropic from "@anthropic-ai/sdk";
+import { matchInsightsForProject } from "@/lib/firm-insights/matcher";
+import { classifyInsightSector } from "@/lib/firm-insights/sector-classifier";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -129,7 +131,7 @@ async function buildProjectContext(memory: Record<string, unknown>, projectId?: 
       const driveDocs = await prisma.driveDocSummary.findMany({
         where: { projectId },
         orderBy: { createdAt: "desc" },
-        take: 15,
+        take: 30,
       });
       if (driveDocs.length > 0) {
         driveLines =
@@ -140,7 +142,7 @@ async function buildProjectContext(memory: Record<string, unknown>, projectId?: 
                 doc.keyInsights.length > 0
                   ? ` | Insights: ${doc.keyInsights.slice(0, 2).join("; ")}`
                   : "";
-              return `  - [${doc.fileType}] ${doc.fileName}: ${doc.summary.slice(0, 200)}${insights}`;
+              return `  - [${doc.fileType}] ${doc.fileName}: ${doc.summary.slice(0, 600)}${insights}`;
             })
             .join("\n");
       }
@@ -149,55 +151,22 @@ async function buildProjectContext(memory: Record<string, unknown>, projectId?: 
     }
   }
 
-  // FirmInsight: cross-project institutional knowledge
+  // FirmInsight: cross-project institutional knowledge — uses centralized matcher
   let firmInsightContext = "";
   if (projectId) {
     try {
       const userId = await getDefaultUserId();
-      const projectKeywords: string[] = [];
-      const projectTitle = (project.title as string) ?? "";
-      const projectDesc = (project.description as string) ?? "";
-      const projectConcept = (project as Record<string, unknown>).concept as string ?? "";
-      const projectMarket = (project as Record<string, unknown>).targetMarket as string ?? "";
-
-      [projectTitle, projectDesc, projectConcept, projectMarket]
-        .filter(Boolean)
-        .forEach(text => {
-          text.toLowerCase()
-            .split(/[\s,.\-_\/]+/)
-            .filter((w: string) => w.length > 3)
-            .forEach((w: string) => {
-              if (!projectKeywords.includes(w)) projectKeywords.push(w);
-            });
-        });
-
-      const relevantInsights = await prisma.firmInsight.findMany({
-        where: {
-          isActive: true,
-          ownerId: userId,
-          sourceProjectId: { not: projectId },
-        },
-        include: { sourceProject: { select: { title: true } } },
-        orderBy: [{ confidence: "desc" }, { updatedAt: "desc" }],
-        take: 20,
-      });
-
-      const matched = relevantInsights
-        .filter(insight => {
-          const insightText = `${insight.title} ${insight.content} ${insight.domain ?? ""} ${(insight.tags ?? []).join(" ")}`.toLowerCase();
-          return projectKeywords.some(kw => insightText.includes(kw));
-        })
-        .slice(0, 5);
+      const matched = await matchInsightsForProject({ projectId, userId, topN: 10 });
 
       if (matched.length > 0) {
-        const insightLines = matched.map(i =>
-          `  - [${i.insightType.toUpperCase()}${i.validatedByUser ? " ✓" : ""}] ${i.title}: ${i.content.slice(0, 300)}${i.sourceProject ? ` (de: ${i.sourceProject.title})` : ""}`
+        const insightLines = matched.map((i) =>
+          `  - [${i.insightType.toUpperCase()}${i.validatedByUser ? " ✓" : ""}] ${i.title}: ${i.content.slice(0, 600)}${i.sourceProject ? ` (de: ${i.sourceProject.title})` : ""}`
         ).join("\n");
 
         firmInsightContext = `\n- Conocimiento institucional de Vex&Co (${matched.length} insights relevantes):\n${insightLines}`;
       }
-    } catch {
-      // continue without firm insights
+    } catch (err) {
+      console.warn("[FIRM_INSIGHT_CONTEXT] Failed:", err);
     }
   }
 
@@ -370,7 +339,7 @@ async function extractAndSaveFirmInsights(
         .filter((v, i, a) => a.indexOf(v) === i) // unique
         .slice(0, 10);
 
-      await prisma.firmInsight.create({
+      const created = await prisma.firmInsight.create({
         data: {
           title,
           content,
@@ -384,6 +353,26 @@ async function extractAndSaveFirmInsights(
           ownerId: userId,
         },
       });
+
+      // Auto-classify NAICS sector (fire-and-forget)
+      classifyInsightSector({
+        title: created.title,
+        content: created.content,
+        functionalDomain: null,
+      })
+        .then((res) => {
+          if (res.naicsSector || res.confidence > 0) {
+            return prisma.firmInsight.update({
+              where: { id: created.id },
+              data: {
+                naicsSector: res.naicsSector,
+                naicsSectorConfidence: res.confidence,
+              },
+            });
+          }
+        })
+        .catch((err) => console.warn("[INSIGHT_NAICS_HOOK]", err));
+
       savedCount++;
     } catch (err) {
       console.error("[FIRM_INSIGHT] Failed to save:", err);

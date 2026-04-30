@@ -155,6 +155,10 @@ model Project {
   status      String    @default("idea") // idea, development, execution, completed
   projectType String    @default("idea") // idea, active, operational, completed
   category    String?
+  // Sprint Convergencia v2 — NAICS 2-digit sectoral classification
+  naicsSector            String?   // 2-digit NAICS code: "11", "21", "22", "23", "31", "42", "44", "48", "51", "52", "53", "54", "55", "56", "61", "62", "71", "72", "81", "92"
+  naicsSectorConfidence  Float?    // 0.0-1.0, populated by auto-classifier
+  naicsSectorReviewed    Boolean   @default(false)
   tags        String[]  @default([])
   priority    String    @default("medium") // low, medium, high
   progress    Int       @default(0) // 0-100
@@ -235,6 +239,7 @@ model Project {
   @@index([projectType])
   @@index([conceptStatus])
   @@index([trackType])
+  @@index([naicsSector])
 }
 
 // =============================================================================
@@ -773,7 +778,10 @@ model FirmInsight {
   content         String    @db.Text
   insightType     String    // "finding" | "segment" | "decision" | "error" | "pattern" | "contrarian_moat" | "framework_adopted"
   framework       Framework?
-  domain          String?   // e.g. "senior_professionals", "fractional", "b2b_saas", "content_led"
+  functionalDomain      String?   // free-form: "senior_professionals", "fractional", "pricing_validation", etc. NOT sectoral.
+  naicsSector           String?   // 2-digit NAICS code. Sectoral classification.
+  naicsSectorConfidence Float?
+  naicsSectorReviewed   Boolean   @default(false)
   tags            String[]  @default([])
   confidence      Int       @default(50) // 0-100, grows with validation
   sourceProjectId String?
@@ -791,7 +799,8 @@ model FirmInsight {
   @@index([tags])
   @@index([sourceProjectId])
   @@index([ownerId])
-  @@index([domain])
+  @@index([functionalDomain])
+  @@index([naicsSector])
 }
 
 // =============================================================================

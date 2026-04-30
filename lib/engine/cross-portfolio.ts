@@ -232,7 +232,7 @@ export async function analyzeCrossPortfolio(opts: {
       firmInsights: p.firmInsights.map((fi) => ({
         title: fi.title,
         type: fi.insightType,
-        domain: fi.domain,
+        domain: fi.functionalDomain,
       })),
       existingChannels: p.channelLinks.map((cl) => cl.channel.name),
     }));

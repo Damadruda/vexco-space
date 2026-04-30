@@ -473,7 +473,18 @@ Cualquier pipeline que genere **texto leído por agentes** debe usar T2 con REGL
 
 Aplicada en todos los prompts de Stage B del pipeline de ingesta del Firm Corpus y en los 5 agentes del War Room. Texto canónico:
 
-> PROHIBIDO inventar nombres de empresas, marcas, productos, personas, lugares, cifras o frameworks que NO aparezcan literalmente en el texto fuente. Si una información no aparece, devuelve `null`, array vacío, o `UNKNOWN`. Es preferible un output corto y literal que uno completo e inventado. La omisión es siempre mejor que la invención.
+> PROHIBIDO inventar nombres de empresas, marcas, productos, personas, lugares, cifras o frameworks
+> que NO aparezcan literalmente en el texto fuente. Si una informacion no aparece, devuelve null,
+> array vacio, o UNKNOWN. Es preferible un output corto y literal que uno completo e inventado.
+> La omision es siempre mejor que la invencion.
+>
+> EXTENSION (Convergencia v2): PROHIBIDO inventar estadisticas de mercado, porcentajes de fracaso,
+> tamaños de TAM/SAM/SOM, valoraciones, precios, ratios o cualquier cifra cuantitativa que no
+> aparezca literalmente en una fuente citada en el contexto. Si necesitas referirte a un patron
+> sin tener la cifra, usa formulaciones cualitativas: "multiples casos documentados", "patron
+> observado en proyectos como X, Y", "tendencia identificada en el sector". NUNCA inventes el
+> numero, ni siquiera para hacer un argumento mas convincente. Una cifra inventada destruye la
+> credibilidad de todo el analisis.
 
 **Aplicación numérica específica (para War Room):**
 

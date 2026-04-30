@@ -13,7 +13,7 @@ export type Part = { text: string } | { inlineData: { data: string; mimeType: st
 // ─── Public Types ─────────────────────────────────────────────────────────────
 
 export interface LLMRequest {
-  model: "gemini-flash" | "gemini-pro" | "claude-sonnet" | "perplexity-sonar";
+  model: "gemini-flash" | "gemini-pro" | "gemini-pro-stable" | "gemini-flash-stable" | "claude-sonnet" | "perplexity-sonar";
   systemPrompt: string;
   userPrompt: string;
   jsonMode: boolean;
@@ -358,6 +358,16 @@ export async function callLLM(request: LLMRequest): Promise<LLMResponse> {
     const res = await callPerplexity(systemPrompt, userPrompt, { temperature });
     content = res.content;
     realModel = apiKey ? "sonar-pro" : "gemini-3-flash-preview (fallback)";
+  } else if (model === "gemini-pro-stable") {
+    const res = await callGemini(systemPrompt, userPrompt, jsonMode, maxTokens, temperature, "gemini-2.5-pro", responseSchema);
+    content = res.content;
+    tokensUsed = res.tokensUsed;
+    realModel = "gemini-2.5-pro";
+  } else if (model === "gemini-flash-stable") {
+    const res = await callGemini(systemPrompt, userPrompt, jsonMode, maxTokens, temperature, "gemini-2.5-flash", responseSchema);
+    content = res.content;
+    tokensUsed = res.tokensUsed;
+    realModel = "gemini-2.5-flash";
   } else if (model === "gemini-pro") {
     const res = await callGemini(systemPrompt, userPrompt, jsonMode, maxTokens, temperature, "gemini-3.1-pro-preview", responseSchema);
     content = res.content;
