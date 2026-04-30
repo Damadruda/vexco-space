@@ -43,7 +43,7 @@ async function classifyNaics(
   contextBlock: string,
   entityKind: "project" | "insight"
 ): Promise<SectorClassification> {
-  const apiKey = process.env.GOOGLE_AI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
+  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
   if (!apiKey) {
     console.warn("[NAICS_CLASSIFIER] No API key — skipping classification");
     return { naicsSector: null, confidence: 0, reasoning: "no_api_key" };
