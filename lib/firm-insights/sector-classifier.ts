@@ -1,14 +1,23 @@
 // =============================================================================
 // NAICS auto-classifier for Project and FirmInsight.
-// Stage A-style: Gemini Flash + responseSchema enum cerrado. T1 estructural.
+// T2 analytical: Gemini 2.5 Pro stable + responseSchema enum cerrado.
+// Bug A v2: migrado de Flash a Pro tras evidencia de anchoring fuerte
+// (Flash devolvía confidence 90% uniforme con sesgo a 54 a pesar de
+// instrucciones explícitas de perspectiva cliente final).
 // =============================================================================
 
-import { GoogleGenAI, Type } from "@google/genai";
+import { Type } from "@google/genai";
+import { callLLM } from "@/lib/clients/llm";
 import { NAICS_CODES, NAICS_SECTORS } from "./naics";
 
 const SECTOR_SCHEMA = {
   type: Type.OBJECT,
   properties: {
+    subject: {
+      type: Type.STRING,
+      enum: ["VEXCO_OPERATING", "EXTERNAL_CLIENT", "HORIZONTAL_OFFER", "METHODOLOGICAL"],
+      description: "Quien es el sujeto del proyecto/insight: Vex&Co operando, cliente externo, oferta horizontal, o contenido metodológico.",
+    },
     naicsSector: {
       type: Type.STRING,
       enum: [...NAICS_CODES, "UNKNOWN"],
@@ -20,18 +29,10 @@ const SECTOR_SCHEMA = {
       type: Type.STRING,
     },
   },
-  required: ["naicsSector", "confidence"],
+  required: ["subject", "naicsSector", "confidence", "reasoning"],
 };
 
 const NAICS_REFERENCE_BLOCK = NAICS_SECTORS.map((s) => `${s.code} = ${s.label}`).join("\n");
-
-const CPG_DISCLAIMER = `
-REGLA CPG / VERTICAL INTEGRATION:
-Empresas con cadena vertical (manufactura + venta) se clasifican por la actividad de mayor margen, usualmente Manufactura (31).
-Empresas DTC sin manufactura propia → Comercio Minorista (44).
-Distribuidores B2B sin produccion → Comercio Mayorista (42).
-Una marca de café que produce y vende: 31. Glossier (DTC sin manufactura): 44. P&G: 31.
-`;
 
 export interface SectorClassification {
   naicsSector: string | null;
@@ -39,98 +40,202 @@ export interface SectorClassification {
   reasoning: string;
 }
 
+// ─── Prompt builder ───────────────────────────────────────────────────────────
+
+function buildPrompt(contextBlock: string, entityKind: "project" | "insight"): string {
+  const insightExtraCase = entityKind === "insight"
+    ? `
+
+CASO ESPECÍFICO PARA INSIGHTS (subject: METHODOLOGICAL):
+Si el insight describe un patrón metodológico, una táctica, un framework, una lección operativa o un principio transversal sin sector específico (ej. "validar pricing con entrevistas", "patrón de discovery", "modalidad Fractional supera Sprint en cliente con capital alto", "regla de empaquetado para corporativos"), el subject es METHODOLOGICAL y naicsSector debe ser UNKNOWN con confidence 0.3. Estos insights son transversales por naturaleza — sirven a TODOS los sectores y NO deben anclarse a uno solo.`
+    : "";
+
+  return `# CLASSIFIER NAICS PARA VEX&CO LAB — PROTOCOLO OBLIGATORIO
+
+## SUJETO ANTES QUE SECTOR
+
+Tu tarea NO es clasificar este ${entityKind} en un sector NAICS directamente. Tu tarea es PRIMERO identificar el sujeto, y SOLO DESPUÉS asignar sector.
+
+Vex&Co es una consultora boutique. Si clasificas todo lo que Vex&Co toca en 54 (Servicios Profesionales y Consultoría), no aportas señal cross-portfolio al Lab — todo terminaría siendo 54 y eso es ruido, no información. La información útil para el Lab es el sector del CLIENTE FINAL al que sirve cada proyecto, no el sector operativo de Vex&Co.
+
+## CUATRO TIPOS DE SUJETO (clasifica primero)
+
+**A. EXTERNAL_CLIENT** — el ${entityKind} sirve a un cliente externo identificable (banco, retailer, edtech, fabricante, hospital, etc.).
+   → naicsSector = sector del CLIENTE, NO de Vex&Co.
+   → 54 NUNCA es la respuesta aquí (excepto el caso raro donde el cliente externo es literalmente otra consultora vendiendo a sus propios clientes).
+   → confidence típico: 0.7-0.95 según claridad de identificación del cliente.
+
+**B. VEXCO_OPERATING** — el ${entityKind} es operación interna de Vex&Co (herramienta propia tipo Lab, framework propio, IP, marca propia, contenido editorial de Vex&Co, importación de archivos genérica desde Drive).
+   → naicsSector = UNKNOWN, confidence = 0.3.
+   → Indicadores: descripciones que mencionan "Vex&Co", "Lab", "importación automática", "platforma interna", "framework propio", o son títulos genéricos sin cliente.
+
+**C. HORIZONTAL_OFFER** — el ${entityKind} es una oferta de servicios de Vex&Co que sirve indiferentemente a múltiples sectores (ej. "Fractional CxO para empresas medianas", "metodología de pricing B2B", "Sprint de discovery").
+   → naicsSector = UNKNOWN, confidence = 0.3.
+   → Indicadores: descripciones que NO mencionan un cliente específico ni un vertical, sino un tipo de servicio aplicable a varios sectores.${insightExtraCase}
+
+## REGLA ANTI-54-DEFAULT (crítica)
+
+Si tu razonamiento te lleva a 54, ANTES de devolverlo verifica:
+- ¿El sujeto del proyecto es Vex&Co operando, o un cliente externo siendo servido?
+- Si es Vex&Co operando → subject=VEXCO_OPERATING o HORIZONTAL_OFFER, naicsSector=UNKNOWN.
+- Si es cliente externo → subject=EXTERNAL_CLIENT, naicsSector=sector del cliente. Y ese sector NUNCA es 54 (porque el cliente paga a consultores como Vex&Co, no es consultor él mismo).
+
+54 solo es respuesta correcta cuando el cliente externo es literalmente OTRA consultora (caso raro, ej. SERVICEPHERE si su cliente final son integradores SAP que son consultores).
+
+## EJEMPLOS CALIBRADOS
+
+### Ejemplo 1 — Cliente externo bancario
+Input: "BANGE: estrategia de banca puente España-África con 11M€ inyectados, plan 2025-2030"
+Output:
+{
+  "subject": "EXTERNAL_CLIENT",
+  "naicsSector": "52",
+  "confidence": 0.95,
+  "reasoning": "Sujeto: cliente externo (BANGE, banco transcontinental). Vex&Co opera para él. Sector del cliente: 52 Servicios Financieros. NO 54 porque BANGE no es consultora, es banco."
+}
+
+### Ejemplo 2 — Operación interna Vex&Co
+Input: "CONSULTING: Importación automática de 29 archivos desde Google Drive"
+Output:
+{
+  "subject": "VEXCO_OPERATING",
+  "naicsSector": "UNKNOWN",
+  "confidence": 0.3,
+  "reasoning": "Sujeto: Vex&Co operando internamente. La descripción es genérica (importación de archivos), no hay cliente externo identificable. Caso B."
+}
+
+### Ejemplo 3 — Oferta horizontal Vex&Co
+Input: "Fractional CxO: Oferta de servicios fraccionales que amplía el alcance del Consulting hacia industrias donde no tengo experiencia directa"
+Output:
+{
+  "subject": "HORIZONTAL_OFFER",
+  "naicsSector": "UNKNOWN",
+  "confidence": 0.3,
+  "reasoning": "Sujeto: oferta horizontal de Vex&Co. Sirve a múltiples sectores indiferentemente, no hay cliente vertical específico. Caso C."
+}
+
+### Ejemplo 4 — Cliente externo retail
+Input: "Comparador de precios para supermercados en tiempo real: aplicación web que permite seleccionar entre cadenas y mostrar precios"
+Output:
+{
+  "subject": "EXTERNAL_CLIENT",
+  "naicsSector": "44",
+  "confidence": 0.85,
+  "reasoning": "Sujeto: cliente externo (supermercados, retailers). El producto sirve al sector retail aunque sea entregado vía web. Sector: 44 Comercio Minorista."
+}
+
+### Ejemplo 5 — Contenido editorial sectorial
+Input: "ANTARCTIC TALKS: divulgación y plataforma editorial de pensamiento enfocada en regiones polares"
+Output:
+{
+  "subject": "EXTERNAL_CLIENT",
+  "naicsSector": "51",
+  "confidence": 0.85,
+  "reasoning": "Sujeto: cliente externo (audiencia editorial de regiones polares). Aunque el operador sea cercano a Vex&Co, el proyecto es contenido sectorial de medios. Sector: 51 Información y Medios."
+}
+
+### Ejemplo 6 — Insight metodológico (solo si entityKind es insight)
+Input (insight): "El modelo Consultora Tradicional + Red de Expertos fracasa si se vende como staffing o bolsa de horas. Debe empaquetarse como Consultoría Core + Células Ágiles de Implementación Tech."
+Output:
+{
+  "subject": "METHODOLOGICAL",
+  "naicsSector": "UNKNOWN",
+  "confidence": 0.3,
+  "reasoning": "Sujeto: principio metodológico transversal sobre modelo de empaquetado de consultoría. Aplica a cualquier sector. No tiene anclaje sectorial. Caso D."
+}
+
+### Ejemplo 7 — Cliente externo que ES consultora (caso 54 legítimo)
+Input: "Plataforma de gestión para integradores SAP que centraliza proyectos, pagos y documentación"
+Output:
+{
+  "subject": "EXTERNAL_CLIENT",
+  "naicsSector": "54",
+  "confidence": 0.7,
+  "reasoning": "Sujeto: cliente externo (integradores SAP). Estos son consultores tecnológicos B2B. 54 es respuesta correcta aquí porque el cliente final ES literalmente otra consultora. Caso raro pero legítimo."
+}
+
+## CALIBRACIÓN DE CONFIDENCE (obligatoria)
+
+- **0.9-0.95**: cliente externo identificado con claridad, sector inequívoco (ej. BANGE = banco = 52).
+- **0.7-0.85**: cliente externo identificable pero con ambigüedad menor (varios sectores plausibles, eliges el más probable).
+- **0.3**: subject = VEXCO_OPERATING, HORIZONTAL_OFFER o METHODOLOGICAL. Confidence baja por diseño porque la respuesta es UNKNOWN.
+- **0.4-0.6**: caso ambiguo donde dudas entre cliente externo y operación interna. Por defecto en duda elige UNKNOWN con confidence 0.4 (preferimos falsos negativos sobre falsos positivos).
+
+NO devuelvas confidence 0.9 en TODOS los casos. Si te encuentras devolviendo 0.9 uniforme en una batch, estás haciendo anchoring — recalibra.
+
+## REGLA #0.5 — ANTI-ALUCINACIÓN
+
+NO inventes información que no esté en el texto. Si el texto es vago ("plataforma", "herramienta") y no permite identificar cliente final, devuelve subject=VEXCO_OPERATING o HORIZONTAL_OFFER con UNKNOWN. Es preferible UNKNOWN que un sector inventado.
+
+## CÓDIGOS NAICS DISPONIBLES (referencia)
+
+${NAICS_REFERENCE_BLOCK}
+
+UNKNOWN = subject ∈ {VEXCO_OPERATING, HORIZONTAL_OFFER, METHODOLOGICAL} o ambigüedad real.
+
+## CONTENIDO A CLASIFICAR
+
+${entityKind.toUpperCase()}:
+${contextBlock.slice(0, 6000)}
+
+## OUTPUT
+
+Devuelve JSON con los 4 campos del schema:
+- subject: VEXCO_OPERATING | EXTERNAL_CLIENT | HORIZONTAL_OFFER | METHODOLOGICAL
+- naicsSector: codigo de 2 dígitos o "UNKNOWN"
+- confidence: número 0.0-1.0 calibrado según las reglas de arriba
+- reasoning: 1-2 frases. PRIMERA frase debe declarar el sujeto explícitamente ("Sujeto: ..."). SEGUNDA frase justifica el sector elegido o el UNKNOWN.`;
+}
+
+// ─── Core classification call ─────────────────────────────────────────────────
+
 async function classifyNaics(
   contextBlock: string,
   entityKind: "project" | "insight"
 ): Promise<SectorClassification> {
-  const apiKey = process.env.GEMINI_API_KEY || process.env.GOOGLE_AI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-  if (!apiKey) {
-    console.warn("[NAICS_CLASSIFIER] No API key — skipping classification");
-    return { naicsSector: null, confidence: 0, reasoning: "no_api_key" };
-  }
-
-  const ai = new GoogleGenAI({ apiKey });
-
-  const PERSPECTIVA_BLOCK = `
-PERSPECTIVA OBLIGATORIA — leer antes de clasificar:
-
-Vex&Co es una consultora boutique que SIEMPRE opera desde el sector 54 (Servicios Profesionales y Consultoria). Tu tarea NO es clasificar el sector de Vex&Co — siempre seria 54 y eso no aporta senal cross-portfolio para el Lab.
-
-Tu tarea ES clasificar el sector del CLIENTE FINAL al que sirve este ${entityKind}. La pregunta operativa que tienes que responder es:
-"En que sector NAICS opera la empresa, segmento o audiencia al que el output de este ${entityKind} esta destinado?"
-
-CASOS:
-
-A. ${entityKind === "project" ? "Proyecto" : "Insight de proyecto"} sirve a un cliente externo identificable (un banco, un retailer, una edtech, un fabricante, etc.):
-   → Clasifica el sector del CLIENTE, NO el de Vex&Co.
-   → 54 NUNCA es la respuesta correcta en este caso. Si tu razonamiento te lleva a 54, revisa: estas clasificando a Vex&Co (54) o a su cliente (otro sector)?
-
-B. ${entityKind === "project" ? "Proyecto" : "Insight"} es operacion interna de Vex&Co (herramienta propia, framework propio, IP, oferta general de servicios sin vertical, marca propia, contenido editorial de Vex&Co):
-   → Devuelve UNKNOWN con confidence 0.3. Estos son transversales por diseno y NO necesitan sector NAICS.
-
-C. ${entityKind === "project" ? "Proyecto" : "Insight"} es oferta horizontal que sirve a multiples sectores indistintamente (ej. "Fractional CxO para empresas medianas en general", "metodologia de pricing para B2B"):
-   → Devuelve UNKNOWN con confidence 0.3. Es transversal.
-
-D. ${entityKind === "insight" ? `Insight es metodologico/funcional (ej. "validar pricing con entrevistas", "patron de discovery", "tactica de retencion", "lesson learned operativa"):
-   → Devuelve UNKNOWN con confidence 0.3. Es transversal por naturaleza, no sectorial.` : ""}
-
-REGLA ANTI-54-DEFAULT (critica):
-Si el ${entityKind} describe a Vex&Co haciendo consultoria/servicio profesional (lo cual es siempre cierto porque Vex&Co es consultora), eso NO es senal de sector. La senal de sector esta en QUIEN paga el servicio o lee el output, no en QUE hace Vex&Co. Antes de devolver 54, verifica: el sujeto del proyecto es Vex&Co o su cliente?
-
-EJEMPLOS CALIBRADOS:
-- "BANGE: estrategia de banca puente Espana-Africa con 11M€ inyectados" → 52 (Servicios Financieros). El cliente es un banco. NO 54.
-- "Comparador de precios para supermercados" → 44 (Comercio Minorista). El cliente son los supermercados. NO 54.
-- "Plataforma de gestion para integradores SAP" → si los integradores SAP son los usuarios y son consultores → 54 (excepcion legitima, el cliente vertical es la consultoria). Si en cambio la plataforma sirve a las empresas que contratan a los integradores → sector de esas empresas.
-- "Vex&Co Lab" (operacion interna) → UNKNOWN. Sin cliente externo.
-- "Fractional CxO" (oferta horizontal de Vex&Co) → UNKNOWN. Transversal.
-- "Antarctic Talks: contenido editorial sobre regiones polares" → 51 (Informacion y Medios). El sector del proyecto es el del contenido publicado, no el de Vex&Co.
-`;
-
-  const prompt = `Eres un clasificador NAICS 2-digit para Vex&Co Lab. Tu unica tarea es asignar UN codigo NAICS de 2 digitos al ${entityKind} descrito abajo, desde la perspectiva del cliente final.
-
-${PERSPECTIVA_BLOCK}
-
-CODIGOS NAICS DISPONIBLES (2-digit):
-${NAICS_REFERENCE_BLOCK}
-
-UNKNOWN = no puedes determinar con seguridad, ${entityKind} es transversal/no-sectorial, o ${entityKind} es operacion interna de Vex&Co.
-
-${CPG_DISCLAIMER}
-
-REGLA #0.5 — ANTI-ALUCINACION:
-NO inventes informacion que no este en el texto. Si tienes dudas, devuelve UNKNOWN con confidence 0.3.
-
-CONTENIDO DEL ${entityKind.toUpperCase()}:
-${contextBlock.slice(0, 6000)}
-
-Devuelve JSON con:
-- naicsSector: codigo de 2 digitos o "UNKNOWN"
-- confidence: numero 0.0-1.0 (0.7+ = alta certeza, 0.4-0.7 = dudoso, <0.4 = muy bajo o caso B/C/D del bloque PERSPECTIVA)
-- reasoning: 1-2 frases. Si elegiste un sector, declara explicitamente "Cliente final: [tipo]". Si elegiste UNKNOWN, indica si es por caso B (interno), C (horizontal), D (metodologico), o ambiguedad real.`;
+  const prompt = buildPrompt(contextBlock, entityKind);
 
   try {
-    const result = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
-      contents: prompt,
-      config: {
-        responseMimeType: "application/json",
-        responseSchema: SECTOR_SCHEMA,
-        temperature: 0.1,
-      },
+    const response = await callLLM({
+      model: "gemini-pro-stable",
+      systemPrompt: "",
+      userPrompt: prompt,
+      jsonMode: true,
+      responseSchema: SECTOR_SCHEMA,
+      temperature: 0.0,
+      maxTokens: 1024,
     });
 
-    const parsed = JSON.parse(result.text || "{}");
+    const parsed = JSON.parse(response.content || "{}");
     const sector = parsed.naicsSector === "UNKNOWN" ? null : parsed.naicsSector;
+    const confidence = typeof parsed.confidence === "number" ? parsed.confidence : 0;
+    const reasoning = parsed.reasoning || "";
+    const subject = parsed.subject || "UNKNOWN";
+
+    // Tag el subject en el reasoning para que sea visible en /sectors/review
+    const enrichedReasoning = `[${subject}] ${reasoning}`;
+
+    // Sanity check: si el modelo cae en fallback Flash, log warning para detectar
+    if (response.model && response.model.includes("flash")) {
+      console.warn("[NAICS_CLASSIFIER] Pro fallback to Flash detected — output may have anchoring bias", {
+        sector,
+        confidence,
+        subject,
+      });
+    }
+
     return {
       naicsSector: sector,
-      confidence: typeof parsed.confidence === "number" ? parsed.confidence : 0,
-      reasoning: parsed.reasoning || "",
+      confidence,
+      reasoning: enrichedReasoning,
     };
   } catch (err) {
     console.warn("[NAICS_CLASSIFIER] Failed:", err);
-    return { naicsSector: null, confidence: 0, reasoning: "error" };
+    return { naicsSector: null, confidence: 0, reasoning: "[ERROR] classifier failed" };
   }
 }
+
+// ─── Public API (preserva las firmas previas) ─────────────────────────────────
 
 export async function classifyProjectSector(input: {
   title: string;
