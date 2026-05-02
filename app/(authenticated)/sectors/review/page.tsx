@@ -27,6 +27,8 @@ export default function SectorReviewPage() {
   const [projects, setProjects] = useState<PendingProject[]>([]);
   const [insights, setInsights] = useState<PendingInsight[]>([]);
   const [loading, setLoading] = useState(true);
+  const [reclassifying, setReclassifying] = useState(false);
+  const [reclassifyMessage, setReclassifyMessage] = useState<string | null>(null);
 
   useEffect(() => {
     fetchPending();
@@ -70,20 +72,55 @@ export default function SectorReviewPage() {
     setInsights((prev) => prev.filter((i) => i.id !== id));
   };
 
+  const handleReclassify = async () => {
+    if (reclassifying) return;
+    setReclassifying(true);
+    setReclassifyMessage(null);
+    try {
+      const res = await fetch("/api/sectors/reclassify", { method: "POST" });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `HTTP ${res.status}`);
+      }
+      const data = await res.json();
+      setReclassifyMessage(
+        `Re-clasificación completa: ${data.projectsUpdated}/${data.projectsProcessed} proyectos, ${data.insightsUpdated}/${data.insightsProcessed} insights actualizados${data.errors?.length ? ` (${data.errors.length} errores)` : ""}.`
+      );
+      await fetchPending();
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      setReclassifyMessage(`Error: ${msg}`);
+    } finally {
+      setReclassifying(false);
+    }
+  };
+
   if (loading) return <div className="p-8 text-[#5E5E5E]">Cargando...</div>;
 
   return (
     <div className="max-w-5xl mx-auto p-8 space-y-10">
-      <header>
-        <h1
-          className="text-3xl text-[#1A1A1A] mb-2"
-          style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+      <header className="flex items-start justify-between gap-4">
+        <div>
+          <h1
+            className="text-3xl text-[#1A1A1A] mb-2"
+            style={{ fontFamily: "'Cormorant Garamond', Georgia, serif" }}
+          >
+            Revisión de sectores NAICS
+          </h1>
+          <p className="text-sm text-[#5E5E5E]">
+            {projects.length} proyectos y {insights.length} insights pendientes de validación.
+          </p>
+          {reclassifyMessage && (
+            <p className="text-xs text-[#C5A572] mt-2">{reclassifyMessage}</p>
+          )}
+        </div>
+        <button
+          onClick={handleReclassify}
+          disabled={reclassifying}
+          className="ql-btn-primary text-xs py-2 px-4 disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
         >
-          Revisión de sectores NAICS
-        </h1>
-        <p className="text-sm text-[#5E5E5E]">
-          {projects.length} proyectos y {insights.length} insights pendientes de validación.
-        </p>
+          {reclassifying ? "Re-clasificando..." : "Re-clasificar pendientes"}
+        </button>
       </header>
 
       <section>

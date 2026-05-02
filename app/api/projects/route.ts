@@ -112,9 +112,16 @@ export async function POST(request: NextRequest) {
     });
 
     // Auto-classify NAICS sector (fire-and-forget, no bloquea respuesta)
+    // Pasamos todos los campos relevantes para que el classifier vea el cliente final.
+    // Al crear el proyecto, concept y targetMarket suelen estar null;
+    // el classifier los acepta como opcionales y trabaja con lo que tiene.
+    // La re-clasificacion masiva (POST /api/sectors/reclassify) corre despues
+    // cuando los campos estan poblados.
     classifyProjectSector({
       title: project.title,
       description: project.description,
+      concept: project.concept,
+      targetMarket: project.targetMarket,
     })
       .then((res) => {
         if (res.naicsSector || res.confidence > 0) {
