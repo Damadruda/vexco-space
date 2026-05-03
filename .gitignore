@@ -51,3 +51,10 @@ prisma/dev.db-journal
 
 # local sprint checkpoints
 checkpoint-*.md
+
+# claude.ai session scratch (mega-prompts directory)
+.claude-mega-prompts/
+
+# env backups locales (post-incident 2026-05-03)
+.env.local.pre-*
+.env.local.bak

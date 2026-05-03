@@ -505,6 +505,7 @@ Si necesitas referirte a una cantidad y no está en el contexto: di "varios", "m
 7. `ignoreBuildErrors: true` en `next.config.js` es legado — no modificar.
 8. App Router GET handlers que lean DB deben tener `export const dynamic = 'force-dynamic'`. Sin eso, Next.js 14 pre-renderiza en build time y los endpoints devuelven datos stale.
 9. Migraciones en Neon: usar `prisma migrate diff → db execute → migrate resolve --applied`. El shadow DB de Neon no soporta `migrate dev` legacy.
+10. Database Safety Lock — INVIOLABLE. Antes de ejecutar prisma migrate dev, prisma migrate reset, prisma db push, prisma db push --accept-data-loss o cualquier comando que modifique schema/datos, validar EXPLICITAMENTE que DATABASE_URL no apunta al host de produccion. El host de produccion de Vex&Co Lab es ep-steep-unit-agd4kb5l-pooler.c-2.eu-central-1.aws.neon.tech. La branch dev del proyecto Neon (host ep-sweet-mode-agjuvpdm-pooler...) es la unica target valida para comandos destructivos locales. Comando de validacion obligatorio antes de cualquier prisma migrate dev|reset|push: grep "^DATABASE_URL" .env.local | sed 's|.*@||; s|/.*||'. Si el output devuelve ep-steep-unit-agd4kb5l-pooler.c-2.eu-central-1.aws.neon.tech, DETENER. NO ejecutar el comando. Reportar a Diego. Ver INCIDENT.md 2026-05-03 para contexto.
 
 ---
 
@@ -536,6 +537,16 @@ Si necesitas referirte a una cantidad y no está en el contexto: di "varios", "m
 ### 15.5 Debug de múltiples bugs superpuestos
 
 Si un sistema falla repetidamente tras un fix aparentemente correcto, la hipótesis por defecto no debe ser "el fix no funcionó". Debe ser "hay un siguiente bug detrás que el fix recién desbloqueó la visibilidad de". Upload-A tuvo 4 bugs independientes en 4 capas distintas; cada fix revelaba el siguiente.
+
+### 15.6 DATABASE_URL local apuntando a produccion
+
+Trampa. Por simplicidad historica, .env.local puede haber quedado apuntando al mismo host de Neon que usa Vercel para produccion (ep-steep-unit-agd4kb5l). Eso convierte cualquier comando destructivo de Prisma corrido localmente (migrate dev, migrate reset, db push) en un wipe de produccion. Paso el 03/05/2026 — ver INCIDENT.md.
+
+Mitigacion permanente. Branch dev dedicada en Neon (host ep-sweet-mode-agjuvpdm), Schema-only, sin datos. .env.local apunta aca. Antes de cualquier sesion local que vaya a tocar Prisma, validar el host con el grep de la regla 14.10.
+
+### 15.7 Carpetas con prefijo _ en App Router
+
+Trampa. Next.js 14 App Router trata cualquier carpeta que empiece con _ (underscore) como private folder y NO la rutea. Convencion que choca con la practica habitual de prefijar _debug, _internal, _admin para senalizar privacidad. En App Router eso resulta en 404. Para endpoints internos que necesitan ser ruteables, usar nombres planos sin underscore (ej: app/api/debug/, app/api/internal/).
 
 ---
 
@@ -583,6 +594,7 @@ git checkout main && git merge <branch> --no-ff -m "Merge: <descripción>" && gi
 | Stack integration HubSpot + Apollo | ⏸️ Backlog |
 | Restauración 8 agentes | ⏸️ Backlog (volver a vistas especializadas) |
 | Higiene acumulada | ⏸️ Backlog continuo (env vars huérfanas, OAuth client antiguo, Safari multi-account) |
+| Incident 03/05/2026 (DB wipe + recovery PITR) | ✅ Cerrado 03/05 (branch dev + lock 14.10 + INCIDENT.md). Cleanup production_old pendiente >7 días. |
 
 ---
 
