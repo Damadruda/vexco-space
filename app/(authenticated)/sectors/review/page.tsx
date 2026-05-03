@@ -10,6 +10,7 @@ interface PendingProject {
   naicsSector: string | null;
   naicsSectorConfidence: number | null;
   naicsSectorReviewed: boolean;
+  naicsSectorReasoning: string | null;
 }
 
 interface PendingInsight {
@@ -20,6 +21,7 @@ interface PendingInsight {
   naicsSector: string | null;
   naicsSectorConfidence: number | null;
   naicsSectorReviewed: boolean;
+  naicsSectorReasoning: string | null;
   sourceProject: { title: string } | null;
 }
 
@@ -157,6 +159,11 @@ export default function SectorReviewPage() {
                         </span>
                       )}
                     </div>
+                    {p.naicsSectorReasoning && (
+                      <p className="text-xs text-[#5E5E5E]/80 italic mt-2 leading-relaxed">
+                        {p.naicsSectorReasoning}
+                      </p>
+                    )}
                   </div>
                   <div className="flex flex-col gap-2 min-w-[280px]">
                     <select
@@ -229,6 +236,11 @@ export default function SectorReviewPage() {
                         </span>
                       )}
                     </div>
+                    {i.naicsSectorReasoning && (
+                      <p className="text-xs text-[#5E5E5E]/80 italic mt-2 leading-relaxed">
+                        {i.naicsSectorReasoning}
+                      </p>
+                    )}
                   </div>
                   <div className="flex flex-col gap-2 min-w-[280px]">
                     <select

@@ -144,6 +144,7 @@ export async function POST() {
           data: {
             naicsSector: classification.naicsSector,
             naicsSectorConfidence: classification.confidence,
+            naicsSectorReasoning: classification.reasoning,
           },
         });
 
@@ -219,6 +220,7 @@ export async function POST() {
           data: {
             naicsSector: classification.naicsSector,
             naicsSectorConfidence: classification.confidence,
+            naicsSectorReasoning: classification.reasoning,
           },
         });
 

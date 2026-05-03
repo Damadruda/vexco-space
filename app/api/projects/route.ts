@@ -55,6 +55,7 @@ export async function GET(request: NextRequest) {
         naicsSector: true,
         naicsSectorConfidence: true,
         naicsSectorReviewed: true,
+        naicsSectorReasoning: true,
         createdAt: true,
         updatedAt: true
       }
@@ -130,6 +131,7 @@ export async function POST(request: NextRequest) {
             data: {
               naicsSector: res.naicsSector,
               naicsSectorConfidence: res.confidence,
+              naicsSectorReasoning: res.reasoning,
             },
           });
         }
