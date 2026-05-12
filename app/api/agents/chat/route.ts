@@ -129,7 +129,7 @@ async function buildProjectContext(memory: Record<string, unknown>, projectId?: 
   if (projectId) {
     try {
       const driveDocs = await prisma.driveDocSummary.findMany({
-        where: { projectId },
+        where: { projectId, unlinkedAt: null },
         orderBy: { createdAt: "desc" },
         take: 30,
       });
@@ -252,7 +252,7 @@ IMPLICACIONES OPERATIVAS (obligatorias para todos los agentes):
         agileTasksCount,
         inboxItemsLinkedCount,
       ] = await Promise.all([
-        prisma.driveDocSummary.count({ where: { projectId } }),
+        prisma.driveDocSummary.count({ where: { projectId, unlinkedAt: null } }),
         prisma.chatMessage.count({ where: { projectId } }),
         prisma.firmInsight.count({ where: { sourceProjectId: projectId, isActive: true } }),
         prisma.agileTask.count({ where: { projectId } }),

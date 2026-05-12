@@ -716,12 +716,14 @@ model DriveDocSummary {
   wordCount          Int?     // approximate word count of source doc
   assetRole          String?  // logo | brand_asset | mockup | screenshot | reference | content | data | technical_spec | other
   visualDescription  String?  @db.Text
+  unlinkedAt         DateTime?    // soft-delete: huérfanos auto + desvinculados manuales
   createdAt          DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
   @@unique([projectId, driveFileId])
   @@index([projectId])
   @@index([category])
+  @@index([unlinkedAt])
 }
 
 // =============================================================================

@@ -5,6 +5,7 @@ import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import { Swords, FileText, Inbox, ArrowRight, FolderOpen, Paperclip } from "lucide-react";
 import { ProjectFileUploader } from "@/components/project-file-uploader";
+import { ReimportDriveModal } from "@/components/project/reimport-drive-modal";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -128,6 +129,7 @@ export default function ProjectOverviewPage() {
   const [data, setData] = useState<ProjectSummary | null>(null);
   const [loading, setLoading] = useState(true);
   const [unlinkModal, setUnlinkModal] = useState(false);
+  const [reimportModal, setReimportModal] = useState(false);
   const [deleteModal, setDeleteModal] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState("");
   const [actionLoading, setActionLoading] = useState(false);
@@ -580,6 +582,25 @@ export default function ProjectOverviewPage() {
             Acciones del proyecto
           </h3>
           <div className="space-y-3">
+            {/* Acción 0: Re-procesar import de Drive */}
+            <div className="flex items-start justify-between gap-4 rounded-lg border border-[#E8E4DE] bg-white px-5 py-4">
+              <div className="flex-1">
+                <p className="text-sm font-medium text-[#1A1A1A]">Re-procesar import de Drive</p>
+                <p className="text-xs text-[#5E5E5E] mt-1">
+                  Re-corre el flow completo de Convergencia v2 sobre los {driveDocs.length} archivos vinculados.
+                  Opcionalmente desvinculá o promové al Firm Corpus archivos individuales antes del re-proceso.
+                  Sobrescribe el concept del proyecto y los summaries.
+                </p>
+              </div>
+              <button
+                onClick={() => setReimportModal(true)}
+                disabled={driveDocs.length === 0 || !project.driveFolderId}
+                className="shrink-0 text-xs font-medium px-4 py-2 border border-[#1A1A1A] text-[#1A1A1A] hover:bg-[#1A1A1A] hover:text-white disabled:opacity-30 disabled:cursor-not-allowed transition-colors rounded"
+              >
+                Re-procesar import
+              </button>
+            </div>
+
             {/* Acción 1: Desvincular archivos */}
             <div className="flex items-start justify-between gap-4 rounded-lg border border-[#E8E4DE] bg-white px-5 py-4">
               <div className="flex-1">
@@ -739,6 +760,23 @@ export default function ProjectOverviewPage() {
             </div>
           </div>
         </div>
+      )}
+
+      {/* Modal: Re-procesar import de Drive */}
+      {reimportModal && (
+        <ReimportDriveModal
+          projectId={project.id}
+          driveDocs={driveDocs.map(d => ({
+            id: d.id,
+            driveFileId: d.driveFileId,
+            fileName: d.fileName,
+            fileType: d.fileType,
+            category: d.category,
+            corpusStatus: d.corpusStatus,
+          }))}
+          onClose={() => setReimportModal(false)}
+          onComplete={() => { window.location.reload(); }}
+        />
       )}
 
       {/* Modal: Eliminar proyecto (type-to-confirm) */}

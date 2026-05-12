@@ -82,7 +82,7 @@ export async function GET(
 
         prisma.driveDocSummary
           .findMany({
-            where: { projectId: params.id },
+            where: { projectId: params.id, unlinkedAt: null },
             take: 30,
             orderBy: { createdAt: "desc" },
             select: {

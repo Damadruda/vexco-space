@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
     }
 
     const summaries = await prisma.driveDocSummary.findMany({
-      where: { projectId },
+      where: { projectId, unlinkedAt: null },
       select: { driveFileId: true },
     });
 
