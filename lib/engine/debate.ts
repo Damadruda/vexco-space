@@ -91,7 +91,7 @@ Devuelve SOLO este JSON:
 }`;
 
   const response = await callLLM({
-    model: "gemini-flash",
+    tier: "T1",
     systemPrompt:
       "Eres un estratega que selecciona el panel de expertos óptimo para un debate.",
     userPrompt: agentSelectionPrompt,
@@ -343,12 +343,14 @@ Prioriza lo accionable sobre lo teórico.`,
     },
   };
 
+  // Synthesis is high-stakes consolidation → escalate to Opus
   const synthesisResult = await routeToAgent(
     "strategist",
     synthesisMemory as Record<string, unknown>,
     synthesisPlan,
     decisions,
-    session.userId
+    session.userId,
+    { tier: "T3", escalated: true }
   );
 
   session.synthesisResult = synthesisResult;

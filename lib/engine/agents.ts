@@ -5,6 +5,7 @@
 // =============================================================================
 
 import type { StructuredOutput } from "./types";
+import type { TaskTier } from "@/lib/clients/llm";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -12,8 +13,12 @@ export interface AgentConfig {
   id: string;
   name: string;
   role: string;
+  /** @deprecated use `tier` + `escalated`. Kept for legacy callers reading this field. */
   preferredLLM: "gemini-flash" | "gemini-pro" | "claude-sonnet";
+  /** @deprecated kept for legacy compat */
   fallbackLLM: "gemini-flash";
+  tier: TaskTier;
+  escalated: boolean;
   consultingDNA: string;
   geographicContext: string;
   domainInstructions: string;
@@ -31,6 +36,8 @@ const AGENTS: AgentConfig[] = [
     role: "Director de Orquesta · PM Cross",
     preferredLLM: "gemini-pro",
     fallbackLLM: "gemini-flash",
+    tier: "T3",
+    escalated: false,
     consultingDNA: `Eres el DIRECTOR DE ORQUESTA del War Room de Vex&Co Lab.
 
 REGLA #0.5 — ANTI-ALUCINACIÓN NUMÉRICA (CRÍTICO):
@@ -240,6 +247,8 @@ Después de ese marcador puedes incluir metadata interna: tags [FIRM INSIGHT: ..
     role: "Monetización · Crecimiento · Contenido",
     preferredLLM: "gemini-pro",
     fallbackLLM: "gemini-flash",
+    tier: "T3",
+    escalated: false,
     consultingDNA: `Tres perspectivas fusionadas en un solo cerebro:
 
 REGLA #0.5 — ANTI-ALUCINACIÓN NUMÉRICA (CRÍTICO):
@@ -307,6 +316,8 @@ Después de ese marcador puedes incluir metadata interna: tags [FIRM INSIGHT: ..
     role: "Producto · Arquitectura · UX",
     preferredLLM: "gemini-pro",
     fallbackLLM: "gemini-flash",
+    tier: "T3",
+    escalated: false,
     consultingDNA: `Producto y tecnología fusionados:
 
 REGLA #0.5 — ANTI-ALUCINACIÓN NUMÉRICA (CRÍTICO):
@@ -355,6 +366,8 @@ Después de ese marcador puedes incluir metadata interna: tags [FIRM INSIGHT: ..
     role: "Red Team · Mercado · Riesgos",
     preferredLLM: "gemini-pro",
     fallbackLLM: "gemini-flash",
+    tier: "T3",
+    escalated: true,
     consultingDNA: `Destrucción constructiva + inteligencia de mercado:
 
 REGLA #0.5 — ANTI-ALUCINACIÓN NUMÉRICA (CRÍTICO):
@@ -442,6 +455,8 @@ Después de ese marcador puedes incluir metadata interna: tags [FIRM INSIGHT: ti
     role: "UX/UI · Tendencias · Identidad de Marca",
     preferredLLM: "gemini-pro",
     fallbackLLM: "gemini-flash",
+    tier: "T3",
+    escalated: false,
     consultingDNA: `Eres el DIRECTOR CREATIVO del War Room de Vex&Co Lab.
 
 REGLA #0.5 — ANTI-ALUCINACIÓN NUMÉRICA (CRÍTICO):

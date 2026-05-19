@@ -3,7 +3,8 @@
 // Text generation with REGLA #0.5 anti-hallucination.
 // =============================================================================
 
-import { GoogleGenAI, Type } from "@google/genai";
+import { Type } from "@google/genai";
+import { callLLM } from "@/lib/clients/llm";
 import type { StageAResult } from "./stage-a-classifier";
 
 export interface KeyEntity {
@@ -80,11 +81,6 @@ export async function runStageB(
   fileName: string,
   stageAMetadata: StageAResult
 ): Promise<StageBResult> {
-  const apiKey = process.env.GOOGLE_AI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-  if (!apiKey) throw new Error("GOOGLE_AI_API_KEY no configurada");
-
-  const ai = new GoogleGenAI({ apiKey });
-
   const prompt = `Eres un analista de conocimiento institucional para Vex&Co, una consultora boutique B2B. Tu tarea es comprender este documento y extraer metadata profunda con MAXIMA FIDELIDAD al texto fuente.
 
 REGLA #0.5 — ANTI-HALLUCINATION (CRITICA, NO NEGOCIABLE):
@@ -173,18 +169,17 @@ Tareas:
    REGLA #0.5 — Anti-alucinacion:
    Si tienes dudas sobre si algo cuenta como framework documentado, NO lo incluyas. Es mejor perder un verdadero positivo que llenar la base con ruido.`;
 
-  const result = await ai.models.generateContent({
-    model: "gemini-2.5-pro",
-    contents: prompt,
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: STAGE_B_SCHEMA,
-      temperature: 0.2,
-      maxOutputTokens: 8000,
-    },
+  const response = await callLLM({
+    tier: "T2",
+    systemPrompt: "",
+    userPrompt: prompt,
+    jsonMode: true,
+    temperature: 0.2,
+    maxTokens: 8000,
+    responseSchema: STAGE_B_SCHEMA,
   });
 
-  const parsed = JSON.parse(result.text || "{}");
+  const parsed = JSON.parse(response.content || "{}");
   return {
     extractedSummary: parsed.extractedSummary || "",
     keyEntities: parsed.keyEntities || [],

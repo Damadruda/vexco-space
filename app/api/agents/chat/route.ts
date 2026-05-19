@@ -614,24 +614,22 @@ El marcador <!-- INTERNAL --> es OBLIGATORIO cuando emitas el bloque de agent as
         };
 
         try {
-          const preferredLLM = agentConfig.preferredLLM;
+          // Resolve tier → provider + modelId
+          const { resolveTierModel, MODEL_IDS } = await import("@/lib/clients/llm");
+          const tier = agentConfig.tier ?? "T3";
+          const escalated = agentConfig.escalated ?? false;
+          const resolved = resolveTierModel(tier, { escalated });
 
           // ── Gemini streaming ────────────────────────────────────────
-          if (preferredLLM === "gemini-pro" || preferredLLM === "gemini-flash") {
+          if (resolved.provider === "gemini") {
             const geminiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
             if (!geminiKey) throw new Error("GOOGLE_GENERATIVE_AI_API_KEY no configurada");
 
             const ai = new GoogleGenAI({ apiKey: geminiKey });
-            const modelName = preferredLLM === "gemini-pro"
-              ? "gemini-3.1-pro-preview"
-              : "gemini-3-flash-preview";
-
-            const fullPrompt = systemPrompt
-              ? `${systemPrompt}\n\n${userPrompt}`
-              : userPrompt;
+            const fullPrompt = systemPrompt ? `${systemPrompt}\n\n${userPrompt}` : userPrompt;
 
             const streamIter = await ai.models.generateContentStream({
-              model: modelName,
+              model: resolved.modelId,
               contents: fullPrompt,
               config: {
                 maxOutputTokens: 8192,
@@ -648,22 +646,17 @@ El marcador <!-- INTERNAL --> es OBLIGATORIO cuando emitas el bloque de agent as
             }
 
           // ── Claude streaming ────────────────────────────────────────
-          } else if (preferredLLM === "claude-sonnet") {
+          } else if (resolved.provider === "anthropic") {
             const anthropicKey = process.env.ANTHROPIC_API_KEY;
 
             if (!anthropicKey) {
               // Fallback to Gemini Flash streaming
-              const geminiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-              if (!geminiKey) throw new Error("No LLM API key configured");
-
               console.warn("[AGENT_CHAT] ANTHROPIC_API_KEY missing — fallback to Gemini Flash stream");
-              const ai = new GoogleGenAI({ apiKey: geminiKey });
-              const fullPrompt = systemPrompt
-                ? `${systemPrompt}\n\n${userPrompt}`
-                : userPrompt;
+              const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY! });
+              const fullPrompt = systemPrompt ? `${systemPrompt}\n\n${userPrompt}` : userPrompt;
 
               const streamIter = await ai.models.generateContentStream({
-                model: "gemini-3-flash-preview",
+                model: MODEL_IDS.geminiT1,
                 contents: fullPrompt,
                 config: { maxOutputTokens: 8192, temperature: 0.7 },
               });
@@ -678,19 +671,29 @@ El marcador <!-- INTERNAL --> es OBLIGATORIO cuando emitas el bloque de agent as
             } else {
               const client = new Anthropic({ apiKey: anthropicKey });
 
+              // Enable prompt caching when system prompt is long enough (>= 4000 chars)
+              const useCaching = systemPrompt.length >= 4000;
+              const systemParam = useCaching
+                ? [
+                    {
+                      type: "text" as const,
+                      text: systemPrompt,
+                      cache_control: { type: "ephemeral" as const },
+                    },
+                  ]
+                : systemPrompt;
+
               const anthropicStream = client.messages.stream({
-                model: "claude-sonnet-4-20250514",
+                model: resolved.modelId,
                 max_tokens: 8192,
                 temperature: 0.7,
-                system: systemPrompt,
+                // eslint-disable-next-line @typescript-eslint/no-explicit-any
+                system: systemParam as any,
                 messages: [{ role: "user", content: userPrompt }],
               });
 
               for await (const event of anthropicStream) {
-                if (
-                  event.type === "content_block_delta" &&
-                  event.delta.type === "text_delta"
-                ) {
+                if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
                   const text = event.delta.text;
                   if (text) {
                     fullText += text;
@@ -700,8 +703,7 @@ El marcador <!-- INTERNAL --> es OBLIGATORIO cuando emitas el bloque de agent as
               }
             }
           } else {
-            // Unknown model — should not happen, but fallback to non-streaming
-            throw new Error(`Unsupported LLM for streaming: ${preferredLLM}`);
+            throw new Error(`Unsupported LLM provider: ${resolved.provider}`);
           }
 
           // ── Parse assigned agents after full stream (strategist only) ──

@@ -123,13 +123,15 @@ Componentes UI en `components/expert-panel/`: `ExpertAvatar`, `ExpertList`, `Con
 
 ### 5.2 Los 5 agentes actuales
 
-| ID | Nombre UI | Rol | preferredLLM |
+| ID | Nombre UI | Rol | Tier |
 |---|---|---|---|
-| `strategist` | Strategist | Director de orquesta · PM cross | gemini-pro |
-| `revenue` | Revenue & Growth | Monetización · crecimiento · contenido | gemini-pro |
-| `redteam` | Challenger | Stress-test · contrarian · Variables analógicas | gemini-pro |
-| `infrastructure` | Product & Tech | Arquitectura · stack · operaciones | gemini-pro |
-| `design` | Design & Experience | UX/UI · brand · entregables visuales | gemini-pro |
+| `strategist` | Strategist | Director de orquesta · PM cross | T3 default (Sonnet 4.6) |
+| `revenue` | Revenue & Growth | Monetización · crecimiento · contenido | T3 default (Sonnet 4.6) |
+| `redteam` | Challenger | Stress-test · contrarian · Variables analógicas | T3 escalated (Opus 4.7) |
+| `infrastructure` | Product & Tech | Arquitectura · stack · operaciones | T3 default (Sonnet 4.6) |
+| `design` | Design & Experience | UX/UI · brand · entregables visuales | T3 default (Sonnet 4.6) |
+
+> Campo `preferredLLM` en `lib/engine/agents.ts` queda deprecated (compat legacy). El routing real lo decide `tier` + `escalated` vía `resolveTierModel()`. Ver sección 12.
 
 **Aliases de mención:** `@strategist`, `@revenue`, `@challenger` (= redteam), `@product` (= infrastructure), `@design`, `@growth` (= revenue), `@tech` (= infrastructure), `@redteam`.
 
@@ -423,47 +425,49 @@ CRON_SECRET                           # Para dual-auth de /api/market-intelligen
 
 ---
 
-## 12. LLM Routing Policy
+## 12. LLM Routing Policy (validada mayo 2026, lineup Claude 4.7 + Gemini 3)
+
+**Implementación:** `lib/clients/llm.ts` exporta `callLLM({ tier, escalated?, tierEngine? })`. Los model IDs viven en `MODEL_IDS` (single source of truth). El enum legacy `model: "gemini-flash" | "gemini-pro" | "gemini-pro-stable" | "gemini-flash-stable" | "claude-sonnet" | "perplexity-sonar"` sigue funcionando mapeado a tier internamente para callers no migrados (`gemini-pro*`→T2, `gemini-flash*`→T1, `claude-sonnet`→T3 default).
 
 ### 12.1 Tiers
 
-**T1 — Mecánico:** Gemini Flash o Claude Haiku.
-Uso: clasificación estructural pura, extracción de enums/tags, triage, smart filter.
-NUNCA para generar texto que vaya a ser leído por agentes.
+**T1 — Mecánico:**
+- Default: Gemini 3 Flash (`gemini-3-flash`) — clasificación estructural, enums, tags, triage, smart filter, routing del Supervisor, agent selection del debate.
+- Engine alternativo Anthropic: Claude Haiku 4.5 (`claude-haiku-4-5-20251001`) — pasar `tierEngine: "anthropic"`.
+- NUNCA para generar texto que vaya a ser leído por agentes.
 
-**T2 — Analítico:** Gemini Pro stable + responseSchema.
-Uso: diagnósticos, FirmInsight, Revenue Priority, Variable Analógica, `analyzeCrossPortfolio`, comprensión profunda de documentos (Stage B del Firm Corpus).
-SIEMPRE con REGLA #0.5 anti-hallucination en el prompt.
+**T2 — Analítico:**
+- Gemini 3 Pro (`gemini-3-pro`) con `responseSchema` — diagnósticos, FirmInsight, Revenue Priority, comprensión profunda (Stage B), MIP executor.
+- SIEMPRE con REGLA #0.5 anti-hallucination en el prompt.
 
 **T3 — Estratégico:**
-- Default: Claude Sonnet para War Room chat (Strategist, Revenue, Product, Design).
-- Escalado: Claude Opus para Challenger en debate, narrativas MetaProject, docs cliente-facing, próximos pasos críticos donde el costo del error es alto.
+- Default: Claude Sonnet 4.6 (`claude-sonnet-4-6`) — War Room chat (Strategist, Revenue, Product, Design).
+- Escalado: Claude Opus 4.7 (`claude-opus-4-7`) — Challenger en debate, fase 3 síntesis del Full Debate, narrativas MetaProject, docs client-facing.
 
-### 12.2 Modelos — política vs código (deuda documentada)
+### 12.2 MODEL_IDS (single source of truth en `lib/clients/llm.ts`)
 
-**Política (verdad):**
-
-| Tier | Modelo |
+| Referencia | Model ID |
 |---|---|
-| T1 Flash | Gemini 2.5 Flash |
-| T1 Haiku | Claude Haiku 4.5 (`claude-haiku-4-5-20251001`) |
-| T2 Pro | Gemini 2.5 Pro stable |
-| T3 default | Claude Sonnet 4.6 (`claude-sonnet-4-6`) |
-| T3 escalado | Claude Opus 4.6 (`claude-opus-4-6`) |
-| MIP research | Perplexity `sonar-pro` |
+| `geminiT1` (T1 default) | `gemini-3-flash` |
+| `geminiT2` (T2) | `gemini-3-pro` |
+| `anthropicT1` (T1 anthropic) | `claude-haiku-4-5-20251001` |
+| `anthropicT3Default` (T3 default) | `claude-sonnet-4-6` |
+| `anthropicT3Escalated` (T3 escalado) | `claude-opus-4-7` |
+| `perplexity` (MIP research) | `sonar-pro` |
 
-**Código real hoy (deuda):**
+Si un provider devuelve `404 model not found`, actualizar el ID en `MODEL_IDS` — es el único punto de cambio.
 
-| Referencia interna | Modelo en `lib/clients/llm.ts` |
-|---|---|
-| `gemini-pro` | `gemini-3.1-pro-preview` ⚠️ |
-| `gemini-flash` | `gemini-3-flash-preview` ⚠️ |
-| `claude-sonnet` | `claude-sonnet-4-20250514` ⚠️ |
-| `perplexity-sonar` | `sonar-pro` ✅ |
+### 12.3 Prompt caching
 
-El Sprint LLM-Realignment (ver sección 18) alinea el código a la política. Hasta entonces, cualquier llamada a un agente de T3 usa Sonnet 4 original (mayo 2025), no Sonnet 4.6 como dice la política. Los Gemini preview son rolling pero no garantizan estabilidad de schema de response.
+- Activado en agentes T3 cuando `systemPrompt.length >= 4000` chars.
+- Vía `enablePromptCache: true` en `callLLM` (callers no-streaming) y manualmente en el streaming de `app/api/agents/chat/route.ts` (`cache_control: { type: "ephemeral" }`).
+- `LLMResponse.cachedTokens` expone `cache_read_input_tokens` del SDK Anthropic.
 
-### 12.3 Principio M.2a-PLUS
+### 12.4 Validación
+
+Endpoint `/api/debug/llm-routing` (autenticado): sin params retorna el mapping dry; `?live=1` hace un ping real por cada tier (consume tokens).
+
+### 12.5 Principio M.2a-PLUS
 
 Cualquier pipeline que genere **texto leído por agentes** debe usar T2 con REGLA #0.5, nunca T1. Flash/Haiku solo para clasificación estructural. Flash tiene ~40% de alucinación en tareas narrativas, inaceptable.
 
@@ -585,7 +589,7 @@ git checkout main && git merge <branch> --no-ff -m "Merge: <descripción>" && gi
 | M.2b (inyección corpus en prompts) | ⏸️ Bloqueado por corpus vacío |
 | Items 22-24 (client-ready export) | ⏸️ Mega-prompt diseñado no aplicado |
 | MIP 1B + 1C (Templates B, C) | ⏸️ Pendiente |
-| Sprint LLM-Realignment | ⏸️ Backlog (alinear código `lib/clients/llm.ts` y callers directos a política: Sonnet 4.6, Opus 4.6, Gemini 2.5 Pro stable, Gemini 2.5 Flash, Haiku 4.5) |
+| Sprint LLM-Realignment | ✅ Completo (19 mayo) — tier routing T1/T2/T3 en `lib/clients/llm.ts` (`callLLM({tier})`, `MODEL_IDS`, `resolveTierModel`), lineup 4.7/3-pro/3-flash, prompt caching en T3, endpoint `/api/debug/llm-routing`. Enum legacy mantenido por compat |
 | Sprint Raindrop Sync Alignment | ⏸️ Backlog (alinear `lib/background/raindrop-sync.ts` al nuevo pipeline del Inbox) |
 | Mecanismo de revisión periódica de modelos LLM | ⏸️ Backlog (definir frecuencia + criterio de evaluación + benchmark reutilizable para decidir upgrades) |
 | Sprint L (A2A workflows) | ⏸️ Backlog (prereq Sprint N) |

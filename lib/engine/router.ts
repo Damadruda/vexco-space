@@ -36,7 +36,8 @@ export async function routeToAgent(
   projectMemory: Record<string, unknown>,
   supervisorPlan: SupervisorPlan,
   decisionHistory: Array<{ outcome: string; decision: string; agentSource: string }>,
-  userId?: string
+  userId?: string,
+  tierOverride?: { tier: "T1" | "T2" | "T3"; escalated?: boolean }
 ): Promise<AgentResult> {
   const expert = EXPERTS.find((e) => e.id === agentId);
   if (!expert) throw new Error(`Agent not found: ${agentId}`);
@@ -136,16 +137,18 @@ export async function routeToAgent(
 
   try {
     llmResponse = await callLLM({
-      model: agentConfig?.preferredLLM ?? "gemini-flash",
+      tier: tierOverride?.tier ?? agentConfig?.tier ?? "T3",
+      escalated: tierOverride?.escalated ?? agentConfig?.escalated ?? false,
       systemPrompt,
       userPrompt,
       jsonMode: true,
       temperature: 0.7,
+      enablePromptCache: true,
     });
   } catch (err) {
-    console.warn(`[ROUTER] Primary LLM failed for ${agentId}, retrying with gemini-flash:`, err);
+    console.warn(`[ROUTER] Primary LLM failed for ${agentId}, retrying with T1 gemini:`, err);
     llmResponse = await callLLM({
-      model: "gemini-flash",
+      tier: "T1",
       systemPrompt,
       userPrompt,
       jsonMode: true,

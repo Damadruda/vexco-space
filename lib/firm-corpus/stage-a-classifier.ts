@@ -1,9 +1,10 @@
 // =============================================================================
-// STAGE A — Gemini Flash structural metadata classification (T1)
+// STAGE A — T1 structural metadata classification (Gemini 3 Flash via callLLM).
 // Pure enum/tag extraction. NO text generation.
 // =============================================================================
 
-import { GoogleGenAI, Type } from "@google/genai";
+import { Type } from "@google/genai";
+import { callLLM } from "@/lib/clients/llm";
 
 export interface StageAResult {
   documentType: "CASE_STUDY" | "RESEARCH" | "METHODOLOGY" | "UNCLASSIFIED";
@@ -34,11 +35,6 @@ export async function runStageA(
   rawContent: string,
   fileName: string
 ): Promise<StageAResult> {
-  const apiKey = process.env.GOOGLE_AI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-  if (!apiKey) throw new Error("GOOGLE_AI_API_KEY no configurada");
-
-  const ai = new GoogleGenAI({ apiKey });
-
   const prompt = `Eres un clasificador estructural de documentos. Tu unica tarea es asignar metadata categorica al documento.
 
 NOMBRE DEL ARCHIVO: ${fileName}
@@ -54,17 +50,16 @@ Clasifica:
 
 NO inventes valores. Si no puedes determinar algo con seguridad, devuelve null o UNCLASSIFIED.`;
 
-  const result = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
-    contents: prompt,
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: STAGE_A_SCHEMA,
-      temperature: 0.1,
-    },
+  const response = await callLLM({
+    tier: "T1",
+    systemPrompt: "",
+    userPrompt: prompt,
+    jsonMode: true,
+    temperature: 0.1,
+    responseSchema: STAGE_A_SCHEMA,
   });
 
-  const parsed = JSON.parse(result.text || "{}");
+  const parsed = JSON.parse(response.content || "{}");
   return {
     documentType: parsed.documentType || "UNCLASSIFIED",
     industry: parsed.industry || null,
