@@ -4,7 +4,6 @@
 // Reads ProjectMemory directly via Prisma (no HTTP round-trip).
 // =============================================================================
 
-import { GoogleGenAI } from "@google/genai";
 import { prisma } from "@/lib/db";
 import { buildSupervisorPrompt } from "./prompts";
 import type { SupervisorPlan } from "./types";
@@ -144,7 +143,7 @@ export async function supervisorAnalyze(
   }
 
   try {
-    const ai = new GoogleGenAI({ apiKey });
+    const { callLLM } = await import("@/lib/clients/llm");
 
     const isNewProject = decisions.length === 0;
     let prompt = buildSupervisorPrompt(memory, decisions, isNewProject);
@@ -152,15 +151,16 @@ export async function supervisorAnalyze(
       prompt += `\n\nCONTEXTO ADICIONAL DEL USUARIO:\n"${additionalContext}"`;
     }
 
-    const result = await ai.models.generateContent({
-      model: "gemini-3.1-pro-preview",
-      contents: prompt,
-      config: { responseMimeType: "application/json" },
+    // Supervisor is mechanical routing → T1 gemini
+    const llmResponse = await callLLM({
+      tier: "T1",
+      systemPrompt: "",
+      userPrompt: prompt,
+      jsonMode: true,
+      temperature: 0.3,
     });
-    const responseText = result.text || "";
 
-    const cleaned = responseText.replace(/```json\n?|\n?```/g, "").trim();
-    const plan = JSON.parse(cleaned) as SupervisorPlan;
+    const plan = JSON.parse(llmResponse.content) as SupervisorPlan;
 
     // Validate required fields
     if (!plan.analysis || !plan.proposedAction || !plan.targetAgentId) {

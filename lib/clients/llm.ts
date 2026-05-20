@@ -1,8 +1,8 @@
 // =============================================================================
 // VEXCO-LAB — CENTRALIZED LLM CLIENT
-// Single entry point for all LLM calls: Gemini Flash, Claude Sonnet, Perplexity Sonar.
-// No other file should call an LLM directly.
-// Fallback: Claude → Gemini Flash | Perplexity → Gemini Flash (with warning).
+// Single entry point for all LLM calls.
+// Tier routing T1/T2/T3 per CLAUDE.md §15. Legacy `model` enum backwards-compat.
+// Prompt caching enabled on Anthropic system prompts (cache_control: ephemeral).
 // =============================================================================
 
 import { GoogleGenAI } from "@google/genai";
@@ -10,18 +10,72 @@ import Anthropic from "@anthropic-ai/sdk";
 
 export type Part = { text: string } | { inlineData: { data: string; mimeType: string } };
 
+// ─── Tier system ──────────────────────────────────────────────────────────────
+
+export type TaskTier = "T1" | "T2" | "T3";
+export type TierEngine = "gemini" | "anthropic"; // Only T1 has dual engine option
+
+/**
+ * Single source of truth for model IDs. Update here when migrating.
+ */
+export const MODEL_IDS = {
+  geminiT1: "gemini-3-flash",
+  geminiT2: "gemini-3-pro",
+  geminiMultimodal: "gemini-3-pro",
+  geminiMultimodalFallback: "gemini-3-flash",
+  anthropicT1: "claude-haiku-4-5-20251001",
+  anthropicT3Default: "claude-sonnet-4-6",
+  anthropicT3Escalated: "claude-opus-4-7",
+  perplexity: "sonar-pro",
+} as const;
+
+export function resolveTierModel(
+  tier: TaskTier,
+  opts: { escalated?: boolean; engine?: TierEngine } = {}
+): { provider: "gemini" | "anthropic"; modelId: string } {
+  if (tier === "T1") {
+    if (opts.engine === "anthropic") {
+      return { provider: "anthropic", modelId: MODEL_IDS.anthropicT1 };
+    }
+    return { provider: "gemini", modelId: MODEL_IDS.geminiT1 };
+  }
+  if (tier === "T2") {
+    return { provider: "gemini", modelId: MODEL_IDS.geminiT2 };
+  }
+  // T3
+  if (opts.escalated) {
+    return { provider: "anthropic", modelId: MODEL_IDS.anthropicT3Escalated };
+  }
+  return { provider: "anthropic", modelId: MODEL_IDS.anthropicT3Default };
+}
+
 // ─── Public Types ─────────────────────────────────────────────────────────────
 
 export interface LLMRequest {
-  model: "gemini-flash" | "gemini-pro" | "gemini-pro-stable" | "gemini-flash-stable" | "claude-sonnet" | "perplexity-sonar";
+  // Legacy path (still works, mapped to tier internally).
+  // `gemini-pro-stable` / `gemini-flash-stable` kept for out-of-scope callers
+  // (sector-classifier, drive-import-helpers) — mapped to T2 / T1 respectively.
+  model?:
+    | "gemini-flash"
+    | "gemini-pro"
+    | "gemini-pro-stable"
+    | "gemini-flash-stable"
+    | "claude-sonnet"
+    | "perplexity-sonar";
+  // Preferred path
+  tier?: TaskTier;
+  escalated?: boolean;
+  tierEngine?: TierEngine;
+  // Common
   systemPrompt: string;
   userPrompt: string;
   jsonMode: boolean;
   maxTokens?: number;
   temperature?: number;
-  // Gemini structured output — guarantees syntactically valid JSON matching the schema
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   responseSchema?: any;
+  // NEW: enable prompt caching on Anthropic system prompt (requires >= 1024 chars)
+  enablePromptCache?: boolean;
 }
 
 export interface LLMResponse {
@@ -29,40 +83,41 @@ export interface LLMResponse {
   model: string;
   processingTimeMs: number;
   tokensUsed?: number;
+  cachedTokens?: number;
 }
 
-// ─── Gemini (Pro + Flash with retry/fallback) ─────────────────────────────────
+// ─── Gemini ────────────────────────────────────────────────────────────────────
 
 async function callGemini(
   systemPrompt: string,
   userPrompt: string,
   jsonMode: boolean,
+  modelId: string,
   maxTokens?: number,
   temperature?: number,
-  modelOverride?: string,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   responseSchema?: any
-): Promise<{ content: string; tokensUsed?: number }> {
+): Promise<{ content: string; tokensUsed?: number; modelUsed: string }> {
   const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
   if (!apiKey) throw new Error("GOOGLE_GENERATIVE_AI_API_KEY no configurada");
 
-  const modelName = modelOverride ?? "gemini-3.1-pro-preview";
-  const timeoutMs = modelName.includes("flash") ? 30_000 : 120_000;
-
   const ai = new GoogleGenAI({ apiKey });
+  const fullPrompt = systemPrompt ? `${systemPrompt}\n\n${userPrompt}` : userPrompt;
 
-  const fullPrompt = systemPrompt
-    ? `${systemPrompt}\n\n${userPrompt}`
-    : userPrompt;
+  const isFlash = modelId.includes("flash");
+  const timeoutMs = isFlash ? 30_000 : 120_000;
 
-  // Hasta 2 intentos con el modelo actual
+  const currentModel = modelId;
+
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
       const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error(`Gemini timeout after ${timeoutMs / 1000}s`)), timeoutMs)
+        setTimeout(
+          () => reject(new Error(`Gemini timeout after ${timeoutMs / 1000}s`)),
+          timeoutMs
+        )
       );
 
-      // Build config explicitly — no conditional spreads for critical params
       const geminiConfig: Record<string, unknown> = {
         maxOutputTokens: maxTokens || 8192,
         temperature: temperature !== undefined ? temperature : 0.7,
@@ -75,48 +130,54 @@ async function callGemini(
       }
 
       const generatePromise = ai.models.generateContent({
-        model: modelName,
+        model: currentModel,
         contents: fullPrompt,
         config: geminiConfig,
       });
       const result = await Promise.race([generatePromise, timeoutPromise]);
       const text = result.text || "";
       const cleaned = text.replace(/```json\n?|\n?```/g, "").trim();
-
       if (!cleaned) throw new Error("Gemini returned empty response");
-
-      return { content: cleaned };
+      return { content: cleaned, modelUsed: currentModel };
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
-      console.warn(`[GEMINI] ${modelName} attempt ${attempt} failed: ${msg}`);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      console.warn(`[GEMINI] Full error:`, JSON.stringify(err, null, 2).substring(0, 500));
+      console.warn(`[GEMINI] ${currentModel} attempt ${attempt} failed: ${msg}`);
       if (attempt < 2) await new Promise((r) => setTimeout(r, 2_000));
     }
   }
 
   // Fallback Pro → Flash
-  if (!modelOverride && modelName === "gemini-3.1-pro-preview") {
-    console.warn("[GEMINI] Pro failed twice, falling back to gemini-3-flash-preview");
-    return callGemini(systemPrompt, userPrompt, jsonMode, maxTokens, temperature, "gemini-3-flash-preview", responseSchema);
+  if (currentModel === MODEL_IDS.geminiT2) {
+    console.warn(`[GEMINI] ${currentModel} failed twice, falling back to ${MODEL_IDS.geminiT1}`);
+    return callGemini(systemPrompt, userPrompt, jsonMode, MODEL_IDS.geminiT1, maxTokens, temperature, responseSchema);
   }
 
-  throw new Error(`Gemini ${modelName} failed after all retries`);
+  throw new Error(`Gemini ${currentModel} failed after all retries`);
 }
 
-// ─── Claude Sonnet ────────────────────────────────────────────────────────────
+// ─── Claude ────────────────────────────────────────────────────────────────────
 
 async function callClaude(
   systemPrompt: string,
   userPrompt: string,
   jsonMode: boolean,
+  modelId: string,
   maxTokens?: number,
-  temperature?: number
-): Promise<{ content: string; tokensUsed?: number }> {
+  temperature?: number,
+  enablePromptCache: boolean = false
+): Promise<{ content: string; tokensUsed?: number; cachedTokens?: number; modelUsed: string }> {
   const apiKey = process.env.ANTHROPIC_API_KEY;
   if (!apiKey) {
     console.warn("[LLM] ANTHROPIC_API_KEY no configurada — fallback a Gemini Flash");
-    return callGemini(systemPrompt, userPrompt, jsonMode, maxTokens, temperature);
+    const fallback = await callGemini(
+      systemPrompt,
+      userPrompt,
+      jsonMode,
+      MODEL_IDS.geminiT1,
+      maxTokens,
+      temperature
+    );
+    return { content: fallback.content, modelUsed: `${fallback.modelUsed} (fallback)` };
   }
 
   const client = new Anthropic({ apiKey });
@@ -125,11 +186,25 @@ async function callClaude(
     ? `${systemPrompt}\n\nResponde SOLO con JSON válido. Sin texto extra, sin markdown, sin bloques de código.`
     : systemPrompt;
 
+  // Caching only kicks in for system prompts >= ~1024 tokens (~4000 chars heuristic).
+  // Use array-of-blocks format only when caching is enabled and content is long enough.
+  const useCaching = enablePromptCache && system.length >= 4000;
+  const systemParam = useCaching
+    ? [
+        {
+          type: "text" as const,
+          text: system,
+          cache_control: { type: "ephemeral" as const },
+        },
+      ]
+    : system;
+
   const message = await client.messages.create({
-    model: "claude-sonnet-4-20250514",
+    model: modelId,
     max_tokens: maxTokens ?? 4096,
     temperature: temperature ?? 0.7,
-    system,
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    system: systemParam as any,
     messages: [{ role: "user", content: userPrompt }],
   });
 
@@ -137,13 +212,20 @@ async function callClaude(
   const raw = block.type === "text" ? block.text : "";
   const cleaned = raw.replace(/```json\n?|\n?```/g, "").trim();
 
+  const usage = message.usage as unknown as Record<string, unknown>;
+  const inputTokens = (usage.input_tokens as number) ?? 0;
+  const outputTokens = (usage.output_tokens as number) ?? 0;
+  const cachedTokens = (usage.cache_read_input_tokens as number) ?? 0;
+
   return {
     content: cleaned,
-    tokensUsed: message.usage.input_tokens + message.usage.output_tokens,
+    tokensUsed: inputTokens + outputTokens,
+    cachedTokens,
+    modelUsed: modelId,
   };
 }
 
-// ─── Perplexity Sonar ─────────────────────────────────────────────────────────
+// ─── Perplexity ────────────────────────────────────────────────────────────────
 
 export interface PerplexityOptions {
   temperature?: number;
@@ -164,13 +246,13 @@ export async function callPerplexity(
 ): Promise<PerplexityResult> {
   const temperature = options?.temperature;
   const responseSchema = options?.responseSchema;
-  // JSON schema output is only reliable on sonar-pro
-  const model = responseSchema ? "sonar-pro" : (options?.model ?? "sonar-pro");
+  const model = responseSchema ? "sonar-pro" : options?.model ?? "sonar-pro";
 
   const apiKey = process.env.PERPLEXITY_API_KEY;
   if (!apiKey) {
     console.warn("[LLM] PERPLEXITY_API_KEY no configurada — fallback a Gemini Flash");
-    return callGemini(systemPrompt, userPrompt, false, undefined, temperature);
+    const fallback = await callGemini(systemPrompt, userPrompt, false, MODEL_IDS.geminiT1, undefined, temperature);
+    return { content: fallback.content };
   }
 
   const controller = new AbortController();
@@ -203,16 +285,18 @@ export async function callPerplexity(
       signal: controller.signal,
     });
   } catch (fetchErr) {
-    console.warn(`[LLM] Perplexity fetch failed (timeout or network) — fallback a Gemini Flash:`, fetchErr);
-    return callGemini(systemPrompt, userPrompt, false, undefined, temperature);
+    console.warn(`[LLM] Perplexity fetch failed — fallback a Gemini Flash:`, fetchErr);
+    const fallback = await callGemini(systemPrompt, userPrompt, false, MODEL_IDS.geminiT1, undefined, temperature);
+    return { content: fallback.content };
   } finally {
     clearTimeout(timeout);
   }
 
   if (!res.ok) {
     const errText = await res.text().catch(() => "");
-    console.warn(`[LLM] Perplexity error ${res.status} — fallback a Gemini Flash. Body: ${errText.slice(0, 500)}`);
-    return callGemini(systemPrompt, userPrompt, false, undefined, temperature);
+    console.warn(`[LLM] Perplexity error ${res.status} — fallback Gemini Flash. Body: ${errText.slice(0, 500)}`);
+    const fallback = await callGemini(systemPrompt, userPrompt, false, MODEL_IDS.geminiT1, undefined, temperature);
+    return { content: fallback.content };
   }
 
   const data = (await res.json()) as {
@@ -223,9 +307,6 @@ export async function callPerplexity(
 
   const content = data.choices?.[0]?.message?.content ?? "";
 
-  // Normalize citations. Perplexity may return:
-  //   - an array of URL strings (classic Sonar)
-  //   - or an array of { url, title } (newer variants)
   let citations: Array<{ url: string; title: string }> | undefined;
   if (Array.isArray(data.citations) && data.citations.length > 0) {
     citations = data.citations
@@ -259,13 +340,8 @@ export async function callPerplexity(
   return { content, citations, usage };
 }
 
-// ─── Gemini Multimodal (for Drive folder analysis with images) ────────────────
+// ─── Gemini Multimodal ─────────────────────────────────────────────────────────
 
-/**
- * callGeminiMultimodal — Para análisis que incluyen imágenes.
- * Mismo retry/fallback que callGemini pero acepta Parts[].
- * Solo se usa desde analyze-folder.
- */
 export async function callGeminiMultimodal(
   systemPrompt: string,
   userPrompt: string,
@@ -279,32 +355,37 @@ export async function callGeminiMultimodal(
   if (!apiKey) throw new Error("GOOGLE_GENERATIVE_AI_API_KEY no configurada");
 
   const startTime = Date.now();
-  const modelName = modelOverride || "gemini-3.1-pro-preview";
-  const timeoutMs = modelName.includes("flash") ? 30000 : 120000;
+  const modelName = modelOverride || MODEL_IDS.geminiMultimodal;
+  const timeoutMs = modelName.includes("flash") ? 30_000 : 120_000;
 
   const ai = new GoogleGenAI({ apiKey });
-
   const fullPrompt = systemPrompt ? `${systemPrompt}\n\n${userPrompt}` : userPrompt;
 
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
       const timeoutPromise = new Promise<never>((_, reject) =>
-        setTimeout(
-          () => reject(new Error(`Gemini timeout after ${timeoutMs / 1000}s`)),
-          timeoutMs
-        )
+        setTimeout(() => reject(new Error(`Gemini multimodal timeout after ${timeoutMs / 1000}s`)), timeoutMs)
       );
+
+      const config: Record<string, unknown> = {
+        maxOutputTokens: maxTokens || 8192,
+        temperature: temperature !== undefined ? temperature : 0.7,
+      };
+      if (jsonMode) {
+        config.responseMimeType = "application/json";
+      }
+
+      // Build contents: prompt + parts
+      const contents = [
+        {
+          parts: [{ text: fullPrompt }, ...parts],
+        },
+      ];
+
       const generatePromise = ai.models.generateContent({
         model: modelName,
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        contents: [{ text: fullPrompt }, ...parts] as any,
-        config: {
-          ...(jsonMode ? { responseMimeType: "application/json" } : {}),
-          ...(maxTokens ? { maxOutputTokens: maxTokens } : {}),
-          temperature: temperature ?? 0.7,
-          // thinkingConfig deshabilitado temporalmente — causa posible del 500
-          // ...(modelName.includes("pro") ? { thinkingConfig: { thinkingLevel: "low" } } : {}),
-        },
+        contents,
+        config,
       });
       const result = await Promise.race([generatePromise, timeoutPromise]);
       const text = result.text || "";
@@ -314,15 +395,13 @@ export async function callGeminiMultimodal(
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       console.warn(`[GEMINI_MULTIMODAL] ${modelName} attempt ${attempt} failed: ${msg}`);
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      console.warn(`[GEMINI_MULTIMODAL] Full error:`, JSON.stringify(err, null, 2).substring(0, 500));
-      if (attempt < 2) await new Promise((r) => setTimeout(r, 2000));
+      if (attempt < 2) await new Promise((r) => setTimeout(r, 2_000));
     }
   }
 
   // Fallback Pro → Flash
-  if (!modelOverride && modelName === "gemini-3.1-pro-preview") {
-    console.warn("[GEMINI_MULTIMODAL] Pro failed, falling back to gemini-3-flash-preview");
+  if (!modelOverride && modelName === MODEL_IDS.geminiMultimodal) {
+    console.warn(`[GEMINI_MULTIMODAL] ${modelName} failed, falling back to ${MODEL_IDS.geminiMultimodalFallback}`);
     return callGeminiMultimodal(
       systemPrompt,
       userPrompt,
@@ -330,60 +409,83 @@ export async function callGeminiMultimodal(
       jsonMode,
       maxTokens,
       temperature,
-      "gemini-3-flash-preview"
+      MODEL_IDS.geminiMultimodalFallback
     );
   }
 
   throw new Error(`Gemini multimodal ${modelName} failed after all retries`);
 }
 
-// ─── Public API ───────────────────────────────────────────────────────────────
+// ─── Public API ────────────────────────────────────────────────────────────────
 
 export async function callLLM(request: LLMRequest): Promise<LLMResponse> {
-  const { model, systemPrompt, userPrompt, jsonMode, maxTokens, temperature, responseSchema } = request;
+  const { systemPrompt, userPrompt, jsonMode, maxTokens, temperature, responseSchema, enablePromptCache } = request;
   const startTime = Date.now();
 
-  let content: string;
-  let tokensUsed: number | undefined;
-  let realModel: string;
+  // Resolve provider + modelId
+  let provider: "gemini" | "anthropic" | "perplexity";
+  let modelId: string;
 
-  if (model === "claude-sonnet") {
-    const apiKey = process.env.ANTHROPIC_API_KEY;
-    const res = await callClaude(systemPrompt, userPrompt, jsonMode, maxTokens, temperature);
-    content = res.content;
-    tokensUsed = res.tokensUsed;
-    realModel = apiKey ? "claude-sonnet-4-20250514" : "gemini-3.1-pro-preview (fallback)";
-  } else if (model === "perplexity-sonar") {
-    const apiKey = process.env.PERPLEXITY_API_KEY;
-    const res = await callPerplexity(systemPrompt, userPrompt, { temperature });
-    content = res.content;
-    realModel = apiKey ? "sonar-pro" : "gemini-3-flash-preview (fallback)";
-  } else if (model === "gemini-pro-stable") {
-    const res = await callGemini(systemPrompt, userPrompt, jsonMode, maxTokens, temperature, "gemini-2.5-pro", responseSchema);
-    content = res.content;
-    tokensUsed = res.tokensUsed;
-    realModel = "gemini-2.5-pro";
-  } else if (model === "gemini-flash-stable") {
-    const res = await callGemini(systemPrompt, userPrompt, jsonMode, maxTokens, temperature, "gemini-2.5-flash", responseSchema);
-    content = res.content;
-    tokensUsed = res.tokensUsed;
-    realModel = "gemini-2.5-flash";
-  } else if (model === "gemini-pro") {
-    const res = await callGemini(systemPrompt, userPrompt, jsonMode, maxTokens, temperature, "gemini-3.1-pro-preview", responseSchema);
-    content = res.content;
-    tokensUsed = res.tokensUsed;
-    realModel = "gemini-3.1-pro-preview";
+  if (request.tier) {
+    const resolved = resolveTierModel(request.tier, {
+      escalated: request.escalated,
+      engine: request.tierEngine,
+    });
+    provider = resolved.provider;
+    modelId = resolved.modelId;
+  } else if (request.model === "perplexity-sonar") {
+    provider = "perplexity";
+    modelId = MODEL_IDS.perplexity;
+  } else if (request.model === "claude-sonnet") {
+    provider = "anthropic";
+    modelId = MODEL_IDS.anthropicT3Default;
+  } else if (request.model === "gemini-pro" || request.model === "gemini-pro-stable") {
+    provider = "gemini";
+    modelId = MODEL_IDS.geminiT2;
+  } else if (request.model === "gemini-flash" || request.model === "gemini-flash-stable") {
+    provider = "gemini";
+    modelId = MODEL_IDS.geminiT1;
   } else {
-    const res = await callGemini(systemPrompt, userPrompt, jsonMode, maxTokens, temperature, "gemini-3-flash-preview", responseSchema);
-    content = res.content;
-    tokensUsed = res.tokensUsed;
-    realModel = "gemini-3-flash-preview";
+    // No tier and no model: default to T1 gemini
+    provider = "gemini";
+    modelId = MODEL_IDS.geminiT1;
   }
 
+  if (provider === "anthropic") {
+    const res = await callClaude(
+      systemPrompt,
+      userPrompt,
+      jsonMode,
+      modelId,
+      maxTokens,
+      temperature,
+      enablePromptCache ?? false
+    );
+    return {
+      content: res.content,
+      model: res.modelUsed,
+      processingTimeMs: Date.now() - startTime,
+      tokensUsed: res.tokensUsed,
+      cachedTokens: res.cachedTokens,
+    };
+  }
+
+  if (provider === "perplexity") {
+    const res = await callPerplexity(systemPrompt, userPrompt, { temperature });
+    return {
+      content: res.content,
+      model: MODEL_IDS.perplexity,
+      processingTimeMs: Date.now() - startTime,
+      tokensUsed: res.usage?.total_tokens,
+    };
+  }
+
+  // gemini
+  const res = await callGemini(systemPrompt, userPrompt, jsonMode, modelId, maxTokens, temperature, responseSchema);
   return {
-    content,
-    model: realModel,
+    content: res.content,
+    model: res.modelUsed,
     processingTimeMs: Date.now() - startTime,
-    tokensUsed,
+    tokensUsed: res.tokensUsed,
   };
 }
