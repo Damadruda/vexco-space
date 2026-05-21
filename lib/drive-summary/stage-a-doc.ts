@@ -105,7 +105,18 @@ Responde SOLO con JSON valido segun el esquema.`;
     responseSchema: STAGE_A_SCHEMA,
   });
 
-  const parsed = JSON.parse(response.content) as Partial<StageADocResult>;
+  // Defensive logging: capture raw content before parse to diagnose schema/preamble issues
+  const rawSnippet = response.content.slice(0, 500);
+  console.log(`[STAGE_A] ${fileName} raw response (first 500 chars):`, rawSnippet);
+
+  let parsed: Partial<StageADocResult>;
+  try {
+    parsed = JSON.parse(response.content) as Partial<StageADocResult>;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[STAGE_A] JSON.parse failed for ${fileName}: ${msg}. Raw content (truncated): ${rawSnippet}`);
+    throw new Error(`Stage A JSON parse failed for ${fileName}: ${msg} | rawHead: ${rawSnippet.slice(0, 100)}`);
+  }
 
   // language: "" treated as null at app level (LLM cannot return literal null without nullable:true)
   const languageRaw = typeof parsed.language === "string" ? parsed.language.trim() : "";

@@ -98,7 +98,17 @@ REGLA #0.5 aplica a AMBOS outputs: prohibido inventar nombres, cifras, fechas o 
     responseSchema: STAGE_B_SCHEMA,
   });
 
-  const parsed = JSON.parse(response.content) as Partial<StageBDocResult>;
+  const rawSnippet = response.content.slice(0, 500);
+  console.log(`[STAGE_B] ${fileName} raw response (first 500 chars):`, rawSnippet);
+
+  let parsed: Partial<StageBDocResult>;
+  try {
+    parsed = JSON.parse(response.content) as Partial<StageBDocResult>;
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error(`[STAGE_B] JSON.parse failed for ${fileName}: ${msg}. Raw content (truncated): ${rawSnippet}`);
+    throw new Error(`Stage B JSON parse failed for ${fileName}: ${msg} | rawHead: ${rawSnippet.slice(0, 100)}`);
+  }
 
   return {
     summary: parsed.summary ?? "",
