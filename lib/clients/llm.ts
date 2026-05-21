@@ -30,8 +30,8 @@ export type TierEngine = "gemini" | "anthropic"; // Only T1 has dual engine opti
  */
 export const MODEL_IDS = {
   geminiT1: "gemini-3.5-flash",
-  geminiT2: "gemini-3.1-pro",
-  geminiMultimodal: "gemini-3.1-pro",
+  geminiT2: "gemini-3.1-pro-preview",
+  geminiMultimodal: "gemini-3.1-pro-preview",
   geminiMultimodalFallback: "gemini-3.5-flash",
   anthropicT1: "claude-haiku-4-5-20251001",
   anthropicT3Default: "claude-sonnet-4-6",
