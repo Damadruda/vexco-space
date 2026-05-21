@@ -96,7 +96,7 @@ Clasifica el documento en las siguientes dimensiones:
 Responde SOLO con JSON valido segun el esquema.`;
 
   const response = await callLLM({
-    model: "gemini-flash",
+    model: "gemini-pro",
     systemPrompt: SYSTEM_PROMPT,
     userPrompt,
     jsonMode: true,
