@@ -717,6 +717,10 @@ model DriveDocSummary {
   assetRole          String?  // logo | brand_asset | mockup | screenshot | reference | content | data | technical_spec | other
   visualDescription  String?  @db.Text
   unlinkedAt         DateTime?    // soft-delete: huérfanos auto + desvinculados manuales
+  language                    String?  // "es" | "en" | "pt" | otro código ISO o null
+  hasStructuredData           Boolean  @default(false)  // true si contiene tablas/código/JSON significativo
+  processingError             String?  @db.Text  // mensaje de error si Stage A o B falló, null si OK
+  lastNarrativeProcessedAt    DateTime?  // timestamp de última ejecución exitosa del pipeline narrativo
   createdAt          DateTime @default(now())
   updatedAt   DateTime @updatedAt
 

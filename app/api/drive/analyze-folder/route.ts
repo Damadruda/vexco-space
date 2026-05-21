@@ -2,7 +2,6 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth-options";
 import { prisma } from "@/lib/db";
-import type { Part } from "@/lib/clients/llm";
 import { callLLM, callGeminiMultimodal } from "@/lib/clients/llm";
 import { classifyProjectSector } from "@/lib/firm-insights/sector-classifier";
 import {
@@ -12,9 +11,10 @@ import {
   scanFolderRecursively,
   processFilesInBatches,
   inferFileType,
-  summarizeDocument,
-  summarizeDocumentMultimodal,
 } from "@/lib/services/drive-import-helpers";
+import { extractFileContent } from "@/lib/services/corpus-importer";
+import { runStageADoc } from "@/lib/drive-summary/stage-a-doc";
+import { runStageBDoc } from "@/lib/drive-summary/stage-b-doc";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 500;
@@ -126,6 +126,64 @@ async function processAndSavePatterns(
   }
   
   return { saved, duplicates, invalid };
+}
+
+/**
+ * Run the full narrative pipeline (Stage A + Stage B) on a single document.
+ * Returns the structured result + raw error if any stage failed.
+ * Used in the DriveDocSummary upsert loop.
+ */
+async function processDriveDocNarrative(
+  fileName: string,
+  rawContent: string
+): Promise<{
+  category: string | null;
+  language: string | null;
+  hasStructuredData: boolean;
+  wordCount: number;
+  summary: string | null;
+  keyInsights: string[];
+  processingError: string | null;
+}> {
+  const wordCount = rawContent.split(/\s+/).filter(Boolean).length;
+
+  if (rawContent.length < 50) {
+    return {
+      category: null,
+      language: null,
+      hasStructuredData: false,
+      wordCount,
+      summary: null,
+      keyInsights: [],
+      processingError: `Content too short (${rawContent.length} chars) — narrative pipeline skipped`,
+    };
+  }
+
+  try {
+    const stageA = await runStageADoc(rawContent, fileName);
+    const stageB = await runStageBDoc(rawContent, fileName, stageA);
+    return {
+      category: stageA.category,
+      language: stageA.language,
+      hasStructuredData: stageA.hasStructuredData,
+      wordCount,
+      summary: stageB.summary,
+      keyInsights: stageB.keyInsights,
+      processingError: null,
+    };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[DRIVE_NARRATIVE] ${fileName}: ${msg}`);
+    return {
+      category: null,
+      language: null,
+      hasStructuredData: false,
+      wordCount,
+      summary: null,
+      keyInsights: [],
+      processingError: msg.slice(0, 500),
+    };
+  }
 }
 
 export async function POST(request: Request) {
@@ -469,124 +527,124 @@ Responde ÚNICAMENTE con JSON válido:
       patternStats = await processAndSavePatterns(patternsExtracted, project.id);
     }
 
-    // 10. GUARDAR DriveDocSummary — caller per-file con Pro 2.5 (Convergencia v2)
-    let docsSaved = 0;
+    // 10. GUARDAR DriveDocSummary — pipeline narrativo Stage A + B (Sprint Convergencia Fase 1)
     const classificationByName = new Map(
       documentsClassified.map(d => [d.fileName, d])
     );
 
-    // Construir mapas para que cada file tenga su contenido recuperable sin re-fetch.
-    const textContentByName = new Map<string, string>();
-    for (const part of parts) {
-      if ("text" in part) {
-        const m = part.text.match(/--- Archivo: (.+?) ---\n([\s\S]*?)(?=\n--- Archivo:|$)/);
-        if (m) {
-          textContentByName.set(m[1].trim(), m[2].trim());
-        }
-      }
-    }
+    const NARRATIVE_BATCH_SIZE = 3;
+    let narrativeSuccess = 0;
+    let narrativeFailed = 0;
 
-    // PDFs: el orden de pdf parts en `parts` coincide con el orden de PDFs en textFiles
-    const pdfPartByName = new Map<string, Part>();
-    const pdfPartsOrdered = parts.filter(
-      (p): p is { inlineData: { data: string; mimeType: string } } =>
-        "inlineData" in p && p.inlineData.mimeType === "application/pdf"
-    );
-    let pdfIdx = 0;
-    for (const file of textFiles) {
-      const isPdf =
-        file.mimeType === "application/pdf" ||
-        file.name.toLowerCase().endsWith(".pdf");
-      if (isPdf && pdfPartsOrdered[pdfIdx]) {
-        pdfPartByName.set(file.name, pdfPartsOrdered[pdfIdx]);
-        pdfIdx++;
-      }
-    }
+    for (let i = 0; i < textFiles.length; i += NARRATIVE_BATCH_SIZE) {
+      const batch = textFiles.slice(i, i + NARRATIVE_BATCH_SIZE);
 
-    const projectContextStr = `Titulo: ${folderName}. ${parsedResponse.concept ? `Concepto: ${String(parsedResponse.concept).slice(0, 300)}.` : ""}`;
-
-    // Procesar en batches de 4 para paralelismo controlado
-    const BATCH_SIZE = 4;
-    for (let i = 0; i < textFiles.length; i += BATCH_SIZE) {
-      const batch = textFiles.slice(i, i + BATCH_SIZE);
-      const summaryResults = await Promise.all(
+      const batchResults = await Promise.all(
         batch.map(async (file) => {
-          const fileType = inferFileType(file.name, file.mimeType);
-          // Skip imagenes — su visualDescription viene del multimodal global
-          if (fileType === "image") {
-            return null;
+          const classification = classificationByName.get(file.name);
+          let rawContent = "";
+          let extractionError: string | null = null;
+
+          try {
+            rawContent = await extractFileContent(
+              {
+                id: file.id,
+                name: file.name,
+                mimeType: file.mimeType,
+                modifiedTime: new Date().toISOString(),
+              },
+              accessToken
+            );
+          } catch (err) {
+            extractionError = err instanceof Error ? err.message : String(err);
+            console.warn(`[DRIVE_NARRATIVE] Extract failed ${file.name}: ${extractionError}`);
           }
 
-          // PDFs: multimodal per-file
-          const isPdf =
-            file.mimeType === "application/pdf" ||
-            file.name.toLowerCase().endsWith(".pdf");
-          if (isPdf) {
-            const pdfPart = pdfPartByName.get(file.name);
-            if (pdfPart) {
-              return await summarizeDocumentMultimodal(file.name, pdfPart, projectContextStr);
+          const narrative = extractionError
+            ? {
+                category: null,
+                language: null,
+                hasStructuredData: false,
+                wordCount: 0,
+                summary: null,
+                keyInsights: [] as string[],
+                processingError: `Extraction failed: ${extractionError.slice(0, 400)}`,
+              }
+            : await processDriveDocNarrative(file.name, rawContent);
+
+          // Fallback: si no hubo summary narrativo pero existe visualDescription, usar este para summary
+          const finalSummary =
+            narrative.summary ??
+            (classification?.visualDescription ?? `Documento importado: ${file.name}`);
+
+          try {
+            await prisma.driveDocSummary.upsert({
+              where: {
+                projectId_driveFileId: {
+                  projectId: project.id,
+                  driveFileId: file.id,
+                },
+              },
+              update: {
+                fileName: file.name,
+                summary: finalSummary,
+                keyInsights: narrative.keyInsights,
+                category: narrative.category,
+                wordCount: narrative.wordCount,
+                language: narrative.language,
+                hasStructuredData: narrative.hasStructuredData,
+                processingError: narrative.processingError,
+                lastNarrativeProcessedAt: narrative.processingError ? null : new Date(),
+                ...(classification?.assetRole ? { assetRole: classification.assetRole } : {}),
+                ...(classification?.visualDescription ? { visualDescription: classification.visualDescription } : {}),
+              },
+              create: {
+                projectId: project.id,
+                driveFileId: file.id,
+                fileName: file.name,
+                fileType: inferFileType(file.name, file.mimeType),
+                summary: finalSummary,
+                keyInsights: narrative.keyInsights,
+                category: narrative.category,
+                wordCount: narrative.wordCount,
+                language: narrative.language,
+                hasStructuredData: narrative.hasStructuredData,
+                processingError: narrative.processingError,
+                lastNarrativeProcessedAt: narrative.processingError ? null : new Date(),
+                assetRole: classification?.assetRole ?? null,
+                visualDescription: classification?.visualDescription ?? null,
+              },
+            });
+
+            if (narrative.processingError) {
+              narrativeFailed++;
+            } else {
+              narrativeSuccess++;
             }
-            return null;
+            return { ok: true, fileName: file.name };
+          } catch (upsertErr) {
+            const msg = upsertErr instanceof Error ? upsertErr.message : String(upsertErr);
+            console.warn(`[DRIVE_IMPORT] Upsert failed ${file.name}: ${msg}`);
+            return { ok: false, fileName: file.name, error: msg };
           }
-
-          // Text files
-          const textContent = textContentByName.get(file.name);
-          if (!textContent) return null;
-          return await summarizeDocument(file.name, textContent, projectContextStr);
         })
       );
 
-      for (let j = 0; j < batch.length; j++) {
-        const file = batch[j];
-        const summaryRes = summaryResults[j];
-        const classification = classificationByName.get(file.name);
-        const fileType = inferFileType(file.name, file.mimeType);
+      const batchOk = batchResults.filter((r) => r.ok).length;
+      console.log(
+        `[DRIVE_NARRATIVE] Batch ${Math.floor(i / NARRATIVE_BATCH_SIZE) + 1}: ${batchOk}/${batch.length} ok`
+      );
 
-        try {
-          // Para imagenes: usar visualDescription del global como summary (sin caller)
-          // Para text/PDF: usar summary denso del caller
-          const summaryText = summaryRes?.summary
-            ?? classification?.visualDescription
-            ?? `Documento importado: ${file.name}`;
-          const keyInsights = summaryRes?.keyInsights ?? [];
-          const category = summaryRes?.category ?? null;
-          const wordCount = summaryRes?.wordCount ?? null;
-
-          await prisma.driveDocSummary.upsert({
-            where: {
-              projectId_driveFileId: {
-                projectId: project.id,
-                driveFileId: file.id,
-              },
-            },
-            update: {
-              fileName: file.name,
-              summary: summaryText,
-              keyInsights,
-              category,
-              wordCount,
-              ...(classification?.assetRole ? { assetRole: classification.assetRole } : {}),
-              ...(classification?.visualDescription ? { visualDescription: classification.visualDescription } : {}),
-            },
-            create: {
-              projectId: project.id,
-              driveFileId: file.id,
-              fileName: file.name,
-              fileType,
-              summary: summaryText,
-              keyInsights,
-              category,
-              wordCount,
-              assetRole: classification?.assetRole ?? null,
-              visualDescription: classification?.visualDescription ?? null,
-            },
-          });
-          docsSaved++;
-        } catch (err: any) {
-          console.warn(`[DRIVE_IMPORT] Error guardando doc ${file.name}: ${err.message}`);
-        }
+      // Small delay between batches to avoid rate limits
+      if (i + NARRATIVE_BATCH_SIZE < textFiles.length) {
+        await new Promise((resolve) => setTimeout(resolve, 200));
       }
     }
+
+    const docsSaved = narrativeSuccess + narrativeFailed;
+    console.log(
+      `[DRIVE_NARRATIVE] Total: ${narrativeSuccess} narrative ok, ${narrativeFailed} narrative failed`
+    );
 
     const duration = ((Date.now() - startTime) / 1000).toFixed(2);
     console.log(`[DRIVE_IMPORT] Completado en ${duration}s — proyecto: ${project.id}, docs: ${docsSaved}`);
