@@ -75,6 +75,8 @@ export async function GET(request: NextRequest) {
           maxTokens: 100,
           temperature: 0.3,
         });
+        const modelMatches = res.model === resolved.modelId;
+        const fallbackTriggered = !modelMatches;
         return {
           label: p.label,
           tier: p.tier,
@@ -84,7 +86,8 @@ export async function GET(request: NextRequest) {
           expectedModelId: resolved.modelId,
           actualModel: res.model,
           latencyMs: Date.now() - startedAt,
-          ok: true,
+          ok: modelMatches,
+          fallbackTriggered,
           sample: res.content.slice(0, 200),
           tokensUsed: res.tokensUsed ?? null,
           cachedTokens: res.cachedTokens ?? null,
@@ -100,6 +103,7 @@ export async function GET(request: NextRequest) {
           actualModel: null,
           latencyMs: Date.now() - startedAt,
           ok: false,
+          fallbackTriggered: false,
           error: err instanceof Error ? err.message : String(err),
         };
       }
