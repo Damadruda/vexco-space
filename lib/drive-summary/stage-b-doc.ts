@@ -19,8 +19,6 @@ const STAGE_B_SCHEMA = {
     keyInsights: {
       type: "array",
       items: { type: "string" },
-      minItems: 0,
-      maxItems: 5,
     },
   },
   required: ["summary", "keyInsights"],
@@ -33,7 +31,14 @@ REGLA #0.5 — Anti-hallucination (CRITICA):
 PROHIBIDO inventar nombres de empresas, marcas, productos, personas, lugares, cifras, fechas, o frameworks
 que NO aparezcan literalmente en el texto fuente. Si una informacion no esta clara, NO la incluyas.
 Es preferible un summary breve y un keyInsights corto pero fiel, que uno completo e inventado.
-La omision es siempre mejor que la invencion.`;
+La omision es siempre mejor que la invencion.
+
+REGLA DE FORMATO CRITICA:
+- RESPONDE EXCLUSIVAMENTE con JSON valido.
+- NO incluyas preambulo, explicacion, comentarios, ni texto antes o despues del JSON.
+- NO uses markdown ni code fences (\`\`\`).
+- Empieza tu respuesta directamente con el caracter "{" y termina con "}".
+- El campo "keyInsights" debe ser un array de 3 a 5 strings. Si el documento no da para 3 insights claros, devuelve 1 o 2 (fidelidad > completitud).`;
 
 function categoryHint(category: DriveDocCategory): string {
   const hints: Record<DriveDocCategory, string> = {

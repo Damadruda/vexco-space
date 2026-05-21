@@ -146,7 +146,7 @@ async function callGemini(
       });
       const result = await Promise.race([generatePromise, timeoutPromise]);
       const text = result.text || "";
-      const cleaned = text.replace(/```json\n?|\n?```/g, "").trim();
+      const cleaned = extractJsonFromResponse(text, jsonMode || !!responseSchema);
       if (!cleaned) throw new Error("Gemini returned empty response");
       return { content: cleaned, modelUsed: currentModel };
     } catch (err: unknown) {
@@ -501,4 +501,79 @@ export async function callLLM(request: LLMRequest): Promise<LLMResponse> {
     processingTimeMs: Date.now() - startTime,
     tokensUsed: res.tokensUsed,
   };
+}
+
+/**
+ * Extract usable content from a Gemini response.
+ *
+ * In JSON mode, defensively extracts the first balanced top-level JSON object
+ * from the response text. Gemini occasionally adds prose preambles like
+ * "Here is the JSON:" even when responseMimeType="application/json" is set
+ * (typically when the schema is rejected as invalid OpenAPI subset, but also
+ * sporadically with preview models).
+ *
+ * In non-JSON mode, strips markdown code fences and returns trimmed text.
+ *
+ * @param text raw text from Gemini result.text
+ * @param expectJson true if the caller used jsonMode or responseSchema
+ * @returns string ready for JSON.parse (json mode) or plain text
+ */
+export function extractJsonFromResponse(text: string, expectJson: boolean): string {
+  // Strip markdown code fences first — applies to both modes
+  const cleaned = text.replace(/```(?:json)?\n?|\n?```/g, "").trim();
+
+  if (!expectJson) {
+    return cleaned;
+  }
+
+  // If the cleaned text starts with { or [, assume it's already valid JSON-shaped
+  if (cleaned.startsWith("{") || cleaned.startsWith("[")) {
+    return cleaned;
+  }
+
+  // Otherwise: find the first balanced {...} or [...] block in the response.
+  // This handles preambles like "Here is the JSON: {...}".
+  const firstObjStart = cleaned.indexOf("{");
+  const firstArrStart = cleaned.indexOf("[");
+  const candidates = [firstObjStart, firstArrStart].filter((i) => i >= 0);
+  if (candidates.length === 0) {
+    // No JSON-like content found — return as-is and let downstream parsing fail
+    // with a clear error including the offending text
+    return cleaned;
+  }
+
+  const start = Math.min(...candidates);
+  const openChar = cleaned[start];
+  const closeChar = openChar === "{" ? "}" : "]";
+
+  // Walk forward tracking nesting depth, respecting string literals
+  let depth = 0;
+  let inString = false;
+  let escape = false;
+  for (let i = start; i < cleaned.length; i++) {
+    const ch = cleaned[i];
+    if (escape) {
+      escape = false;
+      continue;
+    }
+    if (ch === "\\") {
+      escape = true;
+      continue;
+    }
+    if (ch === '"') {
+      inString = !inString;
+      continue;
+    }
+    if (inString) continue;
+    if (ch === openChar) depth++;
+    else if (ch === closeChar) {
+      depth--;
+      if (depth === 0) {
+        return cleaned.slice(start, i + 1);
+      }
+    }
+  }
+
+  // Unbalanced — return what we have starting from the first opener, downstream will fail
+  return cleaned.slice(start);
 }

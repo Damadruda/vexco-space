@@ -43,15 +43,25 @@ const STAGE_A_SCHEMA = {
         "OTHER",
       ],
     },
-    language: { type: "string", nullable: true },
+    language: {
+      type: "string",
+      description: "ISO 639-1 code (es, en, pt...) or empty string if undetermined",
+    },
     hasStructuredData: { type: "boolean" },
   },
-  required: ["category", "hasStructuredData"],
+  required: ["category", "language", "hasStructuredData"],
 };
 
 const SYSTEM_PROMPT = `Eres un clasificador estructural de documentos de proyectos consultor B2B.
 Tu unica tarea es asignar metadata categorica al documento.
-NO generes texto narrativo. NO inventes valores. Si no puedes determinar algo con seguridad, devuelve null o el valor mas conservador.`;
+NO generes texto narrativo. NO inventes valores. Si no puedes determinar algo con seguridad, devuelve el valor mas conservador.
+
+REGLA DE FORMATO CRITICA:
+- RESPONDE EXCLUSIVAMENTE con JSON valido.
+- NO incluyas preambulo, explicacion, comentarios, ni texto antes o despues del JSON.
+- NO uses markdown ni code fences (\`\`\`).
+- Empieza tu respuesta directamente con el caracter "{" y termina con "}".
+- Si tienes dudas sobre un campo, usa el valor por defecto definido en las instrucciones, NO expliques tu razonamiento.`;
 
 export async function runStageADoc(
   rawContent: string,
@@ -97,9 +107,11 @@ Responde SOLO con JSON valido segun el esquema.`;
 
   const parsed = JSON.parse(response.content) as Partial<StageADocResult>;
 
+  // language: "" treated as null at app level (LLM cannot return literal null without nullable:true)
+  const languageRaw = typeof parsed.language === "string" ? parsed.language.trim() : "";
   return {
     category: (parsed.category as DriveDocCategory) ?? "OTHER",
-    language: parsed.language ?? null,
+    language: languageRaw.length > 0 ? languageRaw : null,
     hasStructuredData: parsed.hasStructuredData ?? false,
   };
 }
