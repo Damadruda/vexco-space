@@ -615,7 +615,7 @@ El marcador <!-- INTERNAL --> es OBLIGATORIO cuando emitas el bloque de agent as
 
         try {
           // Resolve tier → provider + modelId
-          const { resolveTierModel, MODEL_IDS } = await import("@/lib/clients/llm");
+          const { resolveTierModel, MODEL_IDS, supportsSamplingParams } = await import("@/lib/clients/llm");
           const tier = agentConfig.tier ?? "T3";
           const escalated = agentConfig.escalated ?? false;
           const resolved = resolveTierModel(tier, { escalated });
@@ -683,14 +683,17 @@ El marcador <!-- INTERNAL --> es OBLIGATORIO cuando emitas el bloque de agent as
                   ]
                 : systemPrompt;
 
-              const anthropicStream = client.messages.stream({
+              const streamParams: Anthropic.Messages.MessageStreamParams = {
                 model: resolved.modelId,
                 max_tokens: 8192,
-                temperature: 0.7,
                 // eslint-disable-next-line @typescript-eslint/no-explicit-any
                 system: systemParam as any,
                 messages: [{ role: "user", content: userPrompt }],
-              });
+              };
+              if (supportsSamplingParams(resolved.modelId)) {
+                streamParams.temperature = 0.7;
+              }
+              const anthropicStream = client.messages.stream(streamParams);
 
               for await (const event of anthropicStream) {
                 if (event.type === "content_block_delta" && event.delta.type === "text_delta") {

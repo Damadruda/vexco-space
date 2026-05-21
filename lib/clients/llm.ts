@@ -10,6 +10,16 @@ import Anthropic from "@anthropic-ai/sdk";
 
 export type Part = { text: string } | { inlineData: { data: string; mimeType: string } };
 
+// Models that deprecated temperature/top_p/top_k entirely (Anthropic API rejects request body
+// containing these fields, regardless of value). Update this set as new restricted models ship.
+export const MODELS_WITHOUT_SAMPLING_PARAMS = new Set<string>([
+  "claude-opus-4-7",
+]);
+
+export function supportsSamplingParams(modelId: string): boolean {
+  return !MODELS_WITHOUT_SAMPLING_PARAMS.has(modelId);
+}
+
 // ─── Tier system ──────────────────────────────────────────────────────────────
 
 export type TaskTier = "T1" | "T2" | "T3";
@@ -19,10 +29,10 @@ export type TierEngine = "gemini" | "anthropic"; // Only T1 has dual engine opti
  * Single source of truth for model IDs. Update here when migrating.
  */
 export const MODEL_IDS = {
-  geminiT1: "gemini-3-flash",
-  geminiT2: "gemini-3-pro",
-  geminiMultimodal: "gemini-3-pro",
-  geminiMultimodalFallback: "gemini-3-flash",
+  geminiT1: "gemini-3.5-flash",
+  geminiT2: "gemini-3.1-pro",
+  geminiMultimodal: "gemini-3.1-pro",
+  geminiMultimodalFallback: "gemini-3.5-flash",
   anthropicT1: "claude-haiku-4-5-20251001",
   anthropicT3Default: "claude-sonnet-4-6",
   anthropicT3Escalated: "claude-opus-4-7",
@@ -199,14 +209,17 @@ async function callClaude(
       ]
     : system;
 
-  const message = await client.messages.create({
+  const baseParams: Anthropic.Messages.MessageCreateParamsNonStreaming = {
     model: modelId,
     max_tokens: maxTokens ?? 4096,
-    temperature: temperature ?? 0.7,
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     system: systemParam as any,
     messages: [{ role: "user", content: userPrompt }],
-  });
+  };
+  if (supportsSamplingParams(modelId)) {
+    baseParams.temperature = temperature ?? 0.7;
+  }
+  const message = await client.messages.create(baseParams);
 
   const block = message.content[0];
   const raw = block.type === "text" ? block.text : "";
