@@ -58,3 +58,14 @@ checkpoint-*.md
 # env backups locales (post-incident 2026-05-03)
 .env.local.pre-*
 .env.local.bak
+
+# Handoffs y notas operacionales locales (no compartir vía repo)
+HANDOFFS/
+
+# Logs de scripts y backfills
+*.log
+
+# Screenshots sueltos en raíz (PNGs en public/ y app/ siguen permitidos)
+/*.png
+/*.jpg
+/*.jpeg
