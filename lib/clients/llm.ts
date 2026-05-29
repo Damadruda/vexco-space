@@ -94,6 +94,9 @@ export interface LLMResponse {
   processingTimeMs: number;
   tokensUsed?: number;
   cachedTokens?: number;
+  fallbackTriggered?: boolean;
+  fallbackFromModel?: string;
+  fallbackErrors?: string[];
 }
 
 // ─── Gemini ────────────────────────────────────────────────────────────────────
@@ -107,7 +110,7 @@ async function callGemini(
   temperature?: number,
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   responseSchema?: any
-): Promise<{ content: string; tokensUsed?: number; modelUsed: string }> {
+): Promise<{ content: string; tokensUsed?: number; modelUsed: string; fallbackErrors?: string[]; fallbackFromModel?: string }> {
   const apiKey = process.env.GOOGLE_GENERATIVE_AI_API_KEY;
   if (!apiKey) throw new Error("GOOGLE_GENERATIVE_AI_API_KEY no configurada");
 
@@ -118,6 +121,8 @@ async function callGemini(
   const timeoutMs = isFlash ? 30_000 : 120_000;
 
   const currentModel = modelId;
+
+  const attemptErrors: string[] = [];
 
   for (let attempt = 1; attempt <= 2; attempt++) {
     try {
@@ -152,6 +157,7 @@ async function callGemini(
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : String(err);
       console.warn(`[GEMINI] ${currentModel} attempt ${attempt} failed: ${msg}`);
+      attemptErrors.push(`attempt ${attempt}: ${msg}`);
       if (attempt < 2) await new Promise((r) => setTimeout(r, 2_000));
     }
   }
@@ -159,7 +165,12 @@ async function callGemini(
   // Fallback Pro → Flash
   if (currentModel === MODEL_IDS.geminiT2) {
     console.warn(`[GEMINI] ${currentModel} failed twice, falling back to ${MODEL_IDS.geminiT1}`);
-    return callGemini(systemPrompt, userPrompt, jsonMode, MODEL_IDS.geminiT1, maxTokens, temperature, responseSchema);
+    const fallbackResult = await callGemini(systemPrompt, userPrompt, jsonMode, MODEL_IDS.geminiT1, maxTokens, temperature, responseSchema);
+    return {
+      ...fallbackResult,
+      fallbackFromModel: currentModel,
+      fallbackErrors: [...attemptErrors, ...(fallbackResult.fallbackErrors ?? [])],
+    };
   }
 
   throw new Error(`Gemini ${currentModel} failed after all retries`);
@@ -500,6 +511,9 @@ export async function callLLM(request: LLMRequest): Promise<LLMResponse> {
     model: res.modelUsed,
     processingTimeMs: Date.now() - startTime,
     tokensUsed: res.tokensUsed,
+    fallbackTriggered: !!res.fallbackFromModel,
+    fallbackFromModel: res.fallbackFromModel,
+    fallbackErrors: res.fallbackErrors,
   };
 }
 
