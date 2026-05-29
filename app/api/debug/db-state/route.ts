@@ -64,6 +64,7 @@ export async function GET() {
       "ChatMessage",
       "InboxItem",
       "User",
+      "LLMFallbackLog",
     ];
 
     for (const table of tablesToCount) {

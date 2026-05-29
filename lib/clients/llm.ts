@@ -7,6 +7,7 @@
 
 import { GoogleGenAI } from "@google/genai";
 import Anthropic from "@anthropic-ai/sdk";
+import { prisma } from "@/lib/prisma";
 
 export type Part = { text: string } | { inlineData: { data: string; mimeType: string } };
 
@@ -165,6 +166,23 @@ async function callGemini(
   // Fallback Pro → Flash
   if (currentModel === MODEL_IDS.geminiT2) {
     console.warn(`[GEMINI] ${currentModel} failed twice, falling back to ${MODEL_IDS.geminiT1}`);
+
+    // Persist fallback event for diagnostics. Awaited to ensure the row lands
+    // before the lambda returns (CLAUDE.md §15.3 — fire-and-forget unreliable
+    // in serverless). Wrapped in try/catch so DB issues never break the fallback.
+    try {
+      await prisma.lLMFallbackLog.create({
+        data: {
+          fromModel: currentModel,
+          toModel: MODEL_IDS.geminiT1,
+          errors: attemptErrors,
+        },
+      });
+    } catch (dbErr) {
+      const dbMsg = dbErr instanceof Error ? dbErr.message : String(dbErr);
+      console.warn(`[GEMINI] Failed to persist fallback log: ${dbMsg}`);
+    }
+
     const fallbackResult = await callGemini(systemPrompt, userPrompt, jsonMode, MODEL_IDS.geminiT1, maxTokens, temperature, responseSchema);
     return {
       ...fallbackResult,
