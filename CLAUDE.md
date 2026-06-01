@@ -421,7 +421,7 @@ CRON_SECRET                           # Para dual-auth de /api/market-intelligen
 
 `RAINDROP_TOKEN` NO es env var global — se guarda en `UserPreferences` DB por usuario.
 
-**⚠️ Observación:** `GEMINI_API_KEY` aparece en Vercel como env var histórica pero el código ya no la usa. Es candidata a higiene. Similar con `ABACUSAI_API_KEY` (residuo de versión anterior del proyecto, no usada en código).
+**⚠️ Observación:** `GEMINI_API_KEY` y `ABACUSAI_API_KEY` eran env vars históricas no usadas por el código. `ABACUSAI_API_KEY` ya no aparece en Vercel (eliminada en fecha desconocida anterior al 29-may-2026, confirmado en auditoría). `GEMINI_API_KEY` sigue presente en Vercel (3 instancias: Production, Preview, Development), pendiente de borrado en Sprint 3.
 
 ---
 
@@ -432,12 +432,12 @@ CRON_SECRET                           # Para dual-auth de /api/market-intelligen
 ### 12.1 Tiers
 
 **T1 — Mecánico:**
-- Default: Gemini 3 Flash (`gemini-3-flash`) — clasificación estructural, enums, tags, triage, smart filter, routing del Supervisor, agent selection del debate.
+- Default: Gemini 3.5 Flash (`gemini-3.5-flash`) — clasificación estructural, enums, tags, triage, smart filter, routing del Supervisor, agent selection del debate.
 - Engine alternativo Anthropic: Claude Haiku 4.5 (`claude-haiku-4-5-20251001`) — pasar `tierEngine: "anthropic"`.
 - NUNCA para generar texto que vaya a ser leído por agentes.
 
 **T2 — Analítico:**
-- Gemini 3 Pro (`gemini-3-pro`) con `responseSchema` — diagnósticos, FirmInsight, Revenue Priority, comprensión profunda (Stage B), MIP executor.
+- Gemini 3 Pro (`gemini-3.1-pro-preview`) con `responseSchema` — diagnósticos, FirmInsight, Revenue Priority, comprensión profunda (Stage B), MIP executor.
 - SIEMPRE con REGLA #0.5 anti-hallucination en el prompt.
 
 **T3 — Estratégico:**
@@ -448,8 +448,8 @@ CRON_SECRET                           # Para dual-auth de /api/market-intelligen
 
 | Referencia | Model ID |
 |---|---|
-| `geminiT1` (T1 default) | `gemini-3-flash` |
-| `geminiT2` (T2) | `gemini-3-pro` |
+| `geminiT1` (T1 default) | `gemini-3.5-flash` |
+| `geminiT2` (T2) | `gemini-3.1-pro-preview` |
 | `anthropicT1` (T1 anthropic) | `claude-haiku-4-5-20251001` |
 | `anthropicT3Default` (T3 default) | `claude-sonnet-4-6` |
 | `anthropicT3Escalated` (T3 escalado) | `claude-opus-4-7` |
@@ -575,7 +575,7 @@ git checkout main && git merge <branch> --no-ff -m "Merge: <descripción>" && gi
 
 ---
 
-## 18. Estado de sprints al 23 abril 2026
+## 18. Estado de sprints al 29 mayo 2026
 
 | Sprint / Área | Estado |
 |---|---|
@@ -599,6 +599,9 @@ git checkout main && git merge <branch> --no-ff -m "Merge: <descripción>" && gi
 | Restauración 8 agentes | ⏸️ Backlog (volver a vistas especializadas) |
 | Higiene acumulada | ⏸️ Backlog continuo (env vars huérfanas, OAuth client antiguo, Safari multi-account) |
 | Incident 03/05/2026 (DB wipe + recovery PITR) | ✅ Cerrado 03/05 (branch dev + lock 14.10 + INCIDENT.md). Cleanup production_old pendiente >7 días. |
+| Sprint 1 — Observability LLM inline (29 may, `ebf3dc1`) | ✅ Completo — `/api/debug/llm-routing` expone `fallbackTriggered` + `fallbackFromModel` + `fallbackErrors[]`. Backward compatible |
+| Sprint 2 — Probe live de tiers (29 may) | ✅ Completo — los 5 tiers `allOk: true`; Pro respondió. Fallback Pro→Flash confirmado intermitente, no estructural |
+| Sprint 2.5 — Persistencia de fallbacks (29 may, `b7bac51`) | ✅ Completo — modelo `LLMFallbackLog` + migración SQL manual `20260529000000_add_llm_fallback_log`; insert con await en el bloque de fallback de `callGemini`; contado en `/api/debug/db-state` |
 
 ---
 
