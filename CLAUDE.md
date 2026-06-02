@@ -575,7 +575,7 @@ git checkout main && git merge <branch> --no-ff -m "Merge: <descripción>" && gi
 
 ---
 
-## 18. Estado de sprints al 29 mayo 2026
+## 18. Estado de sprints al 02 junio 2026
 
 | Sprint / Área | Estado |
 |---|---|
@@ -597,11 +597,15 @@ git checkout main && git merge <branch> --no-ff -m "Merge: <descripción>" && gi
 | SmartDriveImport rethink | ⏸️ Backlog (pipeline actual pierde ~70%) |
 | Stack integration HubSpot + Apollo | ⏸️ Backlog |
 | Restauración 8 agentes | ⏸️ Backlog (volver a vistas especializadas) |
-| Higiene acumulada | ⏸️ Backlog continuo (env vars huérfanas, OAuth client antiguo, Safari multi-account) |
-| Incident 03/05/2026 (DB wipe + recovery PITR) | ✅ Cerrado 03/05 (branch dev + lock 14.10 + INCIDENT.md). Cleanup production_old pendiente >7 días. |
+| Higiene acumulada | ⏸️ Backlog continuo (OAuth client antiguo, Safari multi-account) |
+| Incident 03/05/2026 (DB wipe + recovery PITR) | ✅ Cerrado 03/05 (branch dev + lock 14.10 + INCIDENT.md). Cleanup production_old: branch ausente en consola Neon, verificada el 02-jun-2026 (Sprint 8). Solo quedan `production` + `dev` |
 | Sprint 1 — Observability LLM inline (29 may, `ebf3dc1`) | ✅ Completo — `/api/debug/llm-routing` expone `fallbackTriggered` + `fallbackFromModel` + `fallbackErrors[]`. Backward compatible |
 | Sprint 2 — Probe live de tiers (29 may) | ✅ Completo — los 5 tiers `allOk: true`; Pro respondió. Fallback Pro→Flash confirmado intermitente, no estructural |
 | Sprint 2.5 — Persistencia de fallbacks (29 may, `b7bac51`) | ✅ Completo — modelo `LLMFallbackLog` + migración SQL manual `20260529000000_add_llm_fallback_log`; insert con await en el bloque de fallback de `callGemini`; contado en `/api/debug/db-state` |
+| Sprint 6 — Higiene docs (02 jun, merge `c393a36`) | ✅ Completo — borrados `DEPLOY_CHECKLIST.md` + `GEMINI_FIX_README.md`; CLAUDE.md §12.1/§12.2 sincronizado con `MODEL_IDS` real (`gemini-3.5-flash` / `gemini-3.1-pro-preview`); nota ABACUSAI actualizada al estado real de Vercel |
+| Sprint 7 — Higiene code zombie (02 jun, merge `f2f28d8`) | ✅ Completo — eliminado `lib/documents/generate-pdf.ts` (jsPDF, 0 importers) + dep `jspdf`; vigente `generate-pdf-html.ts` (Puppeteer). Errores TS 42→31, sin regresión. yarn.lock regenerado |
+| Sprint 8 — Higiene Neon (02 jun) | ✅ Completo — branch zombie `production_old_2026-05-03T...` ausente en consola, verificada eliminada. Sin acción de código |
+| Sprint 3 — Higiene env vars Vercel (02 jun) | ✅ Completo con salvedad — `GEMINI_API_KEY` zombie y `ABACUSAI_API_KEY` ausentes del panel (eliminadas antes del 29-may); `GOOGLE_AI_API_KEY` también ausente (impacta alcance de Sprint 4). Las 4 vars "Needs Attention" (`GOOGLE_CLIENT_SECRET`, `PERPLEXITY_API_KEY`, `DATABASE_URL`, `NEXTAUTH_SECRET`) quedan visibles: scope All Environments impide marcarlas Sensitive sin recrearlas; warning es cosmético. ⚠️ PENDIENTE: rotación de `NEXTAUTH_SECRET` + `DATABASE_URL` como mini-sprint con ventana propia (rotar NextAuth desloguea sesiones; rotar DB toca Neon) |
 
 ---
 
