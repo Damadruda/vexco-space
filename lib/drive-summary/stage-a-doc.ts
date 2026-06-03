@@ -97,12 +97,12 @@ Clasifica el documento en las siguientes dimensiones:
 Responde SOLO con JSON valido segun el esquema.`;
 
   const response = await callLLM({
-    model: "gemini-pro",
+    tier: "T1",
     systemPrompt: SYSTEM_PROMPT,
     userPrompt,
     jsonMode: true,
     temperature: 0.1,
-    maxTokens: 256,
+    maxTokens: 1024,
     responseSchema: STAGE_A_SCHEMA,
   });
 
