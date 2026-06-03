@@ -5,6 +5,7 @@
 // =============================================================================
 
 import { callLLM } from "@/lib/clients/llm";
+import { Type } from "@google/genai";
 import type { DriveDocCategory, StageADocResult } from "./stage-a-doc";
 
 export interface StageBDocResult {
@@ -13,12 +14,12 @@ export interface StageBDocResult {
 }
 
 const STAGE_B_SCHEMA = {
-  type: "object",
+  type: Type.OBJECT,
   properties: {
-    summary: { type: "string" },
+    summary: { type: Type.STRING },
     keyInsights: {
-      type: "array",
-      items: { type: "string" },
+      type: Type.ARRAY,
+      items: { type: Type.STRING },
     },
   },
   required: ["summary", "keyInsights"],
