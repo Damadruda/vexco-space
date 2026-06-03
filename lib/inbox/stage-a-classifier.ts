@@ -3,7 +3,8 @@
 // Pure enum/scoring extraction. NO text generation.
 // =============================================================================
 
-import { GoogleGenAI, Type } from "@google/genai";
+import { Type } from "@google/genai";
+import { callLLM } from "@/lib/clients/llm";
 import type { InboxCorrectionExample } from "./corrections";
 
 export interface StageAResult {
@@ -58,11 +59,6 @@ export async function runInboxStageA(
   content: string,
   userCorrections: InboxCorrectionExample[]
 ): Promise<StageAResult> {
-  const apiKey = process.env.GOOGLE_AI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-  if (!apiKey) throw new Error("GOOGLE_AI_API_KEY no configurada");
-
-  const ai = new GoogleGenAI({ apiKey });
-
   const fewShot = formatFewShot(userCorrections);
 
   const prompt = `Eres un clasificador estructural de contenido para el Inbox de Vex&Co, una consultora boutique B2B España-LATAM. Tu única tarea es asignar metadata categórica. NO generes resúmenes ni insights — eso lo hace otro módulo.
@@ -96,17 +92,16 @@ Título: ${sourceTitle}
 URL: ${sourceUrl}
 Contenido: ${content.slice(0, 15000)}`;
 
-  const result = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
-    contents: prompt,
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: STAGE_A_SCHEMA,
-      temperature: 0.1,
-    },
+  const result = await callLLM({
+    tier: "T1",
+    systemPrompt: "",
+    userPrompt: prompt,
+    jsonMode: true,
+    temperature: 0.1,
+    responseSchema: STAGE_A_SCHEMA,
   });
 
-  const parsed = JSON.parse(result.text || "{}");
+  const parsed = JSON.parse(result.content || "{}");
   return {
     category: parsed.category || "noise",
     relevanceScore: typeof parsed.relevanceScore === "number" ? parsed.relevanceScore : 0.3,

@@ -10,7 +10,7 @@ import { routeFile } from "@/lib/firm-corpus/file-router";
 import { runStageA } from "@/lib/firm-corpus/stage-a-classifier";
 import { runStageB } from "@/lib/firm-corpus/stage-b-comprehension";
 import { persistDocument, persistOperationalSource, sanitizeForPostgres } from "@/lib/firm-corpus/persist";
-import { callGeminiMultimodal } from "@/lib/clients/llm";
+import { callGeminiMultimodal, MODEL_IDS } from "@/lib/clients/llm";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -160,7 +160,7 @@ async function extractPdfTextViaGemini(
     false,              // jsonMode
     4096,               // maxTokens — crítico, sin esto Gemini se cuelga
     0.2,                // temperature baja para fidelidad
-    "gemini-3-flash-preview" // Flash directo, Pro es overkill para extraction
+    MODEL_IDS.geminiT1 // Flash vigente; el ID raw anterior no existía en MODEL_IDS
   );
 
   const text = content?.trim() ?? "";
