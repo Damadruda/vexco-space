@@ -95,7 +95,7 @@ REGLA #0.5 aplica a AMBOS outputs: prohibido inventar nombres, cifras, fechas o 
     userPrompt,
     jsonMode: true,
     temperature: 0.2,
-    maxTokens: 2048,
+    maxTokens: 4096,
     responseSchema: STAGE_B_SCHEMA,
   });
 
