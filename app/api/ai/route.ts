@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDefaultUserId } from "@/lib/get-default-user";
 import { prisma } from "@/lib/db";
-import { callLLM } from "@/lib/clients/llm";
+import { callLLM, MODEL_IDS } from "@/lib/clients/llm";
 import { GoogleGenAI } from "@google/genai";
 
 export const dynamic = "force-dynamic";
@@ -98,7 +98,7 @@ export async function POST(request: NextRequest) {
           const encoder = new TextEncoder();
           try {
             const streamIter = await ai.models.generateContentStream({
-              model: "gemini-3.1-pro-preview",
+              model: MODEL_IDS.geminiT2,
               contents: fullPrompt,
               config: { maxOutputTokens: 4096, temperature: 0.7 },
             });

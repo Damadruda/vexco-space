@@ -15,10 +15,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { prisma } from '@/lib/prisma';
 import { authOptions } from '@/lib/auth-options';
-import { GoogleGenAI } from '@google/genai';
-
-// Initialize Gemini AI
-const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_AI_API_KEY || '' });
+import { callLLM } from '@/lib/clients/llm';
 
 // =============================================================================
 // STRATEGIC PROMPTS - McKinsey + Sequoia + Innovation Expert
@@ -141,8 +138,8 @@ export async function POST(request: NextRequest) {
     });
 
     // Call Gemini
-    const result = await ai.models.generateContent({ model: 'gemini-3.1-pro-preview', contents: prompt });
-    const responseText = result.text || '';
+    const result = await callLLM({ tier: "T2", systemPrompt: "", userPrompt: prompt, jsonMode: false });
+    const responseText = result.content || '';
 
     // Parse JSON response
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);
@@ -285,8 +282,8 @@ Responde en JSON:
 }`;
 
   try {
-    const result = await ai.models.generateContent({ model: 'gemini-3.1-pro-preview', contents: prompt });
-    const text = result.text || '';
+    const result = await callLLM({ tier: "T2", systemPrompt: "", userPrompt: prompt, jsonMode: false });
+    const text = result.content || '';
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     return jsonMatch ? JSON.parse(jsonMatch[0]) : null;
   } catch (error) {

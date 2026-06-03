@@ -13,9 +13,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { prisma } from '@/lib/prisma';
 import { authOptions } from '@/lib/auth-options';
-import { GoogleGenAI } from '@google/genai';
-
-const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_AI_API_KEY || '' });
+import { callLLM } from '@/lib/clients/llm';
 
 // =============================================================================
 // MILESTONE TEMPLATES BY PROJECT TYPE
@@ -174,8 +172,8 @@ async function detectProjectType(project: any): Promise<string> {
   const prompt = `Analiza este proyecto y determina su tipo:\n\nTítulo: ${project.title}\nDescripción: ${project.description}\n\nResponde SOLO con una palabra: SaaS, Product, o Service`;
 
   try {
-    const result = await ai.models.generateContent({ model: 'gemini-3.1-pro-preview', contents: prompt });
-    const response = (result.text || '').trim().toLowerCase();
+    const result = await callLLM({ tier: "T2", systemPrompt: "", userPrompt: prompt, jsonMode: false });
+    const response = (result.content || '').trim().toLowerCase();
     if (['saas', 'product', 'service'].includes(response)) {
       return response;
     }
@@ -215,8 +213,8 @@ Responde en JSON:
 ]`;
 
   try {
-    const result = await ai.models.generateContent({ model: 'gemini-3.1-pro-preview', contents: prompt });
-    const text = result.text || '';
+    const result = await callLLM({ tier: "T2", systemPrompt: "", userPrompt: prompt, jsonMode: false });
+    const text = result.content || '';
     const jsonMatch = text.match(/\[[\s\S]*\]/);
     if (jsonMatch) {
       return JSON.parse(jsonMatch[0]);

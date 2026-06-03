@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/db";
+import { MODEL_IDS } from "@/lib/clients/llm";
 import { GoogleGenAI } from "@google/genai";
 
 export const dynamic = "force-dynamic";
@@ -131,7 +132,7 @@ ENLACES: ${project.links.map((l: any) => `- ${l.title}: ${l.url}`).join("\n") ||
         const encoder = new TextEncoder();
         try {
           const streamIter = await ai.models.generateContentStream({
-            model: "gemini-3.1-pro-preview",
+            model: MODEL_IDS.geminiT2,
             contents: fullPrompt,
             config: { maxOutputTokens: 8192, temperature: 0.7 },
           });

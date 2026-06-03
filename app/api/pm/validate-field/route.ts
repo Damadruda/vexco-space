@@ -14,9 +14,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { prisma } from '@/lib/prisma';
 import { authOptions } from '@/lib/auth-options';
-import { GoogleGenAI } from '@google/genai';
-
-const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_AI_API_KEY || '' });
+import { callLLM } from '@/lib/clients/llm';
 
 // =============================================================================
 // VALIDATION CRITERIA BY FIELD
@@ -109,8 +107,8 @@ export async function POST(request: NextRequest) {
     const prompt = buildValidationPrompt(project, fieldKey, content, criteria);
 
     // Call Gemini
-    const result = await ai.models.generateContent({ model: 'gemini-3.1-pro-preview', contents: prompt });
-    const responseText = result.text || '';
+    const result = await callLLM({ tier: "T2", systemPrompt: "", userPrompt: prompt, jsonMode: false });
+    const responseText = result.content || '';
 
     // Parse response
     const jsonMatch = responseText.match(/\{[\s\S]*\}/);

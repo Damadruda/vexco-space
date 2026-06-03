@@ -13,9 +13,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import { prisma } from '@/lib/prisma';
 import { authOptions } from '@/lib/auth-options';
-import { GoogleGenAI } from '@google/genai';
-
-const ai = new GoogleGenAI({ apiKey: process.env.GOOGLE_AI_API_KEY || '' });
+import { callLLM } from '@/lib/clients/llm';
 
 // =============================================================================
 // POST HANDLER - Request Certification
@@ -244,8 +242,8 @@ ${evidence || 'El usuario solicita certificación automática basada en el progr
 }`;
 
   try {
-    const result = await ai.models.generateContent({ model: 'gemini-3.1-pro-preview', contents: prompt });
-    const text = result.text || '';
+    const result = await callLLM({ tier: "T2", systemPrompt: "", userPrompt: prompt, jsonMode: false });
+    const text = result.content || '';
     const jsonMatch = text.match(/\{[\s\S]*\}/);
     
     if (jsonMatch) {

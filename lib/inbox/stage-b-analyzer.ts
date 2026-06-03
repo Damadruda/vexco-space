@@ -3,7 +3,8 @@
 // Text generation with REGLA #0.5 anti-hallucination.
 // =============================================================================
 
-import { GoogleGenAI, Type } from "@google/genai";
+import { Type } from "@google/genai";
+import { callLLM } from "@/lib/clients/llm";
 import type { StageAResult } from "./stage-a-classifier";
 
 export interface StageBResult {
@@ -34,11 +35,6 @@ export async function runInboxStageB(
   content: string,
   stageAResult: StageAResult
 ): Promise<StageBResult> {
-  const apiKey = process.env.GOOGLE_AI_API_KEY || process.env.GOOGLE_GENERATIVE_AI_API_KEY;
-  if (!apiKey) throw new Error("GOOGLE_AI_API_KEY no configurada");
-
-  const ai = new GoogleGenAI({ apiKey });
-
   const prompt = `Eres un analista estratégico B2B senior de Vex&Co, una consultora boutique que opera entre España y Latinoamérica. Tu tarea es extraer comprensión profunda y fiel del siguiente contenido para que los agentes del Lab lo consuman como contexto.
 
 METADATA PRE-CLASIFICADA (por Stage A):
@@ -74,18 +70,17 @@ URL: ${sourceUrl}
 
 ${content.slice(0, 20000)}`;
 
-  const result = await ai.models.generateContent({
-    model: "gemini-2.5-pro",
-    contents: prompt,
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: STAGE_B_SCHEMA,
-      temperature: 0.2,
-      maxOutputTokens: 4000,
-    },
+  const result = await callLLM({
+    tier: "T2",
+    systemPrompt: "",
+    userPrompt: prompt,
+    jsonMode: true,
+    temperature: 0.2,
+    maxTokens: 4000,
+    responseSchema: STAGE_B_SCHEMA,
   });
 
-  const parsed = JSON.parse(result.text || "{}");
+  const parsed = JSON.parse(result.content || "{}");
   return {
     summary: parsed.summary || "",
     keyInsights: Array.isArray(parsed.keyInsights) ? parsed.keyInsights : [],
