@@ -4,6 +4,7 @@
 // =============================================================================
 
 import { callLLM } from "@/lib/clients/llm";
+import { Type } from "@google/genai";
 
 export type DriveDocCategory =
   | "COMMERCIAL"
@@ -25,10 +26,10 @@ export interface StageADocResult {
 }
 
 const STAGE_A_SCHEMA = {
-  type: "object",
+  type: Type.OBJECT,
   properties: {
     category: {
-      type: "string",
+      type: Type.STRING,
       enum: [
         "COMMERCIAL",
         "LEGAL",
@@ -44,10 +45,10 @@ const STAGE_A_SCHEMA = {
       ],
     },
     language: {
-      type: "string",
+      type: Type.STRING,
       description: "ISO 639-1 code (es, en, pt...) or empty string if undetermined",
     },
-    hasStructuredData: { type: "boolean" },
+    hasStructuredData: { type: Type.BOOLEAN },
   },
   required: ["category", "language", "hasStructuredData"],
 };
