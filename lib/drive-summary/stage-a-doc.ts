@@ -106,9 +106,7 @@ Responde SOLO con JSON valido segun el esquema.`;
     responseSchema: STAGE_A_SCHEMA,
   });
 
-  // Defensive logging: capture raw content before parse to diagnose schema/preamble issues
   const rawSnippet = response.content.slice(0, 500);
-  console.log(`[STAGE_A] ${fileName} raw response (first 500 chars):`, rawSnippet);
 
   let parsed: Partial<StageADocResult>;
   try {
