@@ -6,8 +6,10 @@
 // - Promueve al Firm Corpus los archivos indicados en `promoteToCorpusDriveFileIds`
 // - Soft-delete (set unlinkedAt) los archivos indicados en `unlinkDriveFileIds`
 // - Re-corre el flow completo de analyze-folder sobre los archivos vigentes
-//   (multimodal global + summarizeDocument per-file con Convergencia v2 / REGLA #0.5)
-// - Sobrescribe project.concept/description/targetMarket/etc + DriveDocSummary upsert
+//   (multimodal global + motor narrativo compartido processDriveDocNarrative
+//    per-file, mismo Stage A + Stage B que analyze-folder)
+// - Rellena solo campos vacíos del proyecto (preserva curación manual) +
+//   DriveDocSummary upsert
 // =============================================================================
 
 import { NextRequest, NextResponse } from "next/server";
@@ -22,11 +24,10 @@ import {
   filterAndPrioritizeFiles,
   processFilesInBatches,
   inferFileType,
-  summarizeDocument,
-  summarizeDocumentMultimodal,
 } from "@/lib/services/drive-import-helpers";
+import { extractFileContent } from "@/lib/services/corpus-importer";
+import { processDriveDocNarrative } from "@/lib/drive-summary/process-doc-narrative";
 import { callGeminiMultimodal } from "@/lib/clients/llm";
-import type { Part } from "@/lib/clients/llm";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 500;
@@ -271,90 +272,120 @@ Respondé ÚNICAMENTE con JSON válido:
     await prisma.project.update({
       where: { id: projectId },
       data: {
-        ...(parsedGlobal.concept && { concept: truncate(parsedGlobal.concept) }),
-        ...(parsedGlobal.targetMarket && { targetMarket: truncate(parsedGlobal.targetMarket) }),
-        ...(parsedGlobal.metrics && { metrics: truncate(parsedGlobal.metrics) }),
-        ...(parsedGlobal.actionPlan && { actionPlan: truncate(parsedGlobal.actionPlan) }),
-        ...(parsedGlobal.resources && { resources: truncate(parsedGlobal.resources) }),
-        ...(parsedGlobal.description && { description: truncate(parsedGlobal.description) }),
+        ...(!project.concept && parsedGlobal.concept ? { concept: truncate(parsedGlobal.concept) } : {}),
+        ...(!project.targetMarket && parsedGlobal.targetMarket ? { targetMarket: truncate(parsedGlobal.targetMarket) } : {}),
+        ...(!project.metrics && parsedGlobal.metrics ? { metrics: truncate(parsedGlobal.metrics) } : {}),
+        ...(!project.actionPlan && parsedGlobal.actionPlan ? { actionPlan: truncate(parsedGlobal.actionPlan) } : {}),
+        ...(!project.resources && parsedGlobal.resources ? { resources: truncate(parsedGlobal.resources) } : {}),
+        ...(!project.description && parsedGlobal.description ? { description: truncate(parsedGlobal.description) } : {}),
       },
     });
 
-    // ─── 7. Per-file summaries (Convergencia v2) ───────────────────────────
-    const textContentByName = new Map<string, string>();
-    for (const part of parts) {
-      if ("text" in part) {
-        const m = (part.text as string).match(/--- Archivo: (.+?) ---\n([\s\S]*?)(?=\n--- Archivo:|$)/);
-        if (m) textContentByName.set(m[1].trim(), m[2].trim());
-      }
-    }
-
-    const pdfPartsOrdered = parts.filter(
-      (p): p is { inlineData: { data: string; mimeType: string } } =>
-        "inlineData" in p &&
-        (p as { inlineData: { mimeType: string } }).inlineData.mimeType === "application/pdf"
-    );
-    const pdfPartByName = new Map<string, Part>();
-    let pdfIdx = 0;
-    for (const file of textFiles) {
-      const isPdf = file.mimeType === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
-      if (isPdf && pdfPartsOrdered[pdfIdx]) {
-        pdfPartByName.set(file.name, pdfPartsOrdered[pdfIdx] as Part);
-        pdfIdx++;
-      }
-    }
-
-    const projectContextStr = `Titulo: ${project.title}. ${parsedGlobal.concept ? `Concepto: ${String(parsedGlobal.concept).slice(0, 300)}.` : ""}`;
-
+    // ─── 7. Per-file summaries (motor narrativo compartido) ────────────────
+    // Mismo Stage A + Stage B que analyze-folder. extractFileContent cubre
+    // .docx/.txt/.md/.pdf/Google Docs vía Gemini inlineData internamente.
     const BATCH_SIZE = 4;
     for (let i = 0; i < textFiles.length; i += BATCH_SIZE) {
       const batch = textFiles.slice(i, i + BATCH_SIZE);
-      const summaryResults = await Promise.all(
+      const narrativeResults = await Promise.all(
         batch.map(async (file) => {
-          const fileType = inferFileType(file.name, file.mimeType);
-          if (fileType === "image") return null;
-          const isPdf =
-            file.mimeType === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
-          if (isPdf) {
-            const pdfPart = pdfPartByName.get(file.name);
-            if (pdfPart) return await summarizeDocumentMultimodal(file.name, pdfPart, projectContextStr);
-            return null;
+          // Imágenes: se saltan del resumen narrativo (comportamiento actual).
+          if (inferFileType(file.name, file.mimeType) === "image") return null;
+
+          let rawContent = "";
+          let extractionError: string | null = null;
+          try {
+            rawContent = await extractFileContent(
+              {
+                id: file.id,
+                name: file.name,
+                mimeType: file.mimeType,
+                modifiedTime: new Date().toISOString(),
+              },
+              accessToken
+            );
+          } catch (err) {
+            extractionError = err instanceof Error ? err.message : String(err);
+            console.warn(`[REIMPORT] Extract failed ${file.name}: ${extractionError}`);
           }
-          const textContent = textContentByName.get(file.name);
-          if (!textContent) return null;
-          return await summarizeDocument(file.name, textContent, projectContextStr);
+
+          return extractionError
+            ? {
+                category: null,
+                language: null,
+                hasStructuredData: false,
+                wordCount: 0,
+                summary: null,
+                keyInsights: [] as string[],
+                processingError: `Extraction failed: ${extractionError.slice(0, 400)}`,
+              }
+            : await processDriveDocNarrative(file.name, rawContent);
         })
       );
 
       for (let j = 0; j < batch.length; j++) {
         const file = batch[j];
-        const res = summaryResults[j];
+        const narrative = narrativeResults[j];
         const fileType = inferFileType(file.name, file.mimeType);
+
         try {
-          await prisma.driveDocSummary.upsert({
-            where: {
-              projectId_driveFileId: { projectId, driveFileId: file.id },
-            },
-            update: {
-              fileName: file.name,
-              fileType,
-              ...(res?.summary && { summary: res.summary }),
-              ...(res?.keyInsights && { keyInsights: res.keyInsights }),
-              ...(res?.category !== undefined && { category: res.category }),
-              ...(res?.wordCount !== undefined && { wordCount: res.wordCount }),
-              unlinkedAt: null, // re-vincular si estaba huérfano de una corrida previa
-            },
-            create: {
-              projectId,
-              driveFileId: file.id,
-              fileName: file.name,
-              fileType,
-              summary: res?.summary ?? `Documento importado: ${file.name}`,
-              keyInsights: res?.keyInsights ?? [],
-              category: res?.category ?? null,
-              wordCount: res?.wordCount ?? null,
-            },
-          });
+          if (narrative === null) {
+            // Imagen: mantener comportamiento actual (no toca narrativa).
+            await prisma.driveDocSummary.upsert({
+              where: {
+                projectId_driveFileId: { projectId, driveFileId: file.id },
+              },
+              update: {
+                fileName: file.name,
+                fileType,
+                unlinkedAt: null, // re-vincular si estaba huérfano de una corrida previa
+              },
+              create: {
+                projectId,
+                driveFileId: file.id,
+                fileName: file.name,
+                fileType,
+                summary: `Documento importado: ${file.name}`,
+                keyInsights: [],
+                category: null,
+                wordCount: null,
+              },
+            });
+          } else {
+            const finalSummary = narrative.summary ?? `Documento importado: ${file.name}`;
+            await prisma.driveDocSummary.upsert({
+              where: {
+                projectId_driveFileId: { projectId, driveFileId: file.id },
+              },
+              update: {
+                fileName: file.name,
+                fileType,
+                summary: finalSummary,
+                keyInsights: narrative.keyInsights,
+                category: narrative.category,
+                wordCount: narrative.wordCount,
+                language: narrative.language,
+                hasStructuredData: narrative.hasStructuredData,
+                processingError: narrative.processingError,
+                lastNarrativeProcessedAt: narrative.processingError ? null : new Date(),
+                unlinkedAt: null, // re-vincular si estaba huérfano de una corrida previa
+              },
+              create: {
+                projectId,
+                driveFileId: file.id,
+                fileName: file.name,
+                fileType,
+                summary: finalSummary,
+                keyInsights: narrative.keyInsights,
+                category: narrative.category,
+                wordCount: narrative.wordCount,
+                language: narrative.language,
+                hasStructuredData: narrative.hasStructuredData,
+                processingError: narrative.processingError,
+                lastNarrativeProcessedAt: narrative.processingError ? null : new Date(),
+              },
+            });
+          }
           stats.reprocessed++;
         } catch (err) {
           const msg = err instanceof Error ? err.message : String(err);
