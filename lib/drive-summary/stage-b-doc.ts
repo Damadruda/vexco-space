@@ -100,7 +100,6 @@ REGLA #0.5 aplica a AMBOS outputs: prohibido inventar nombres, cifras, fechas o 
   });
 
   const rawSnippet = response.content.slice(0, 500);
-  console.log(`[STAGE_B] ${fileName} raw response (first 500 chars):`, rawSnippet);
 
   let parsed: Partial<StageBDocResult>;
   try {
