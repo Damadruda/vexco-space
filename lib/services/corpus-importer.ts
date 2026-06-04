@@ -11,6 +11,7 @@ import { runStageA } from "@/lib/firm-corpus/stage-a-classifier";
 import { runStageB } from "@/lib/firm-corpus/stage-b-comprehension";
 import { persistDocument, persistOperationalSource, sanitizeForPostgres } from "@/lib/firm-corpus/persist";
 import { callGeminiMultimodal, MODEL_IDS } from "@/lib/clients/llm";
+import { extractText, getDocumentProxy } from "unpdf";
 
 // ─── Types ───────────────────────────────────────────────────────────────────
 
@@ -114,29 +115,23 @@ function getFileExtension(fileName: string): string {
  * Extrae un dossier estructurado de un PDF via Gemini multimodal (Flash directo).
  * Alta densidad informativa, no transcripción literal: secciones markdown,
  * cifras exactas, entidades nombradas, citas textuales breves. Feedea Stage A/B.
+ *
+ * Recibe el buffer ya descargado (el orquestador híbrido lo descarga una vez y
+ * lo reusa entre el intento nativo y este fallback).
  */
 async function extractPdfTextViaGemini(
-  file: DriveFileRef,
-  accessToken: string
+  fileName: string,
+  arrayBuffer: ArrayBuffer
 ): Promise<string> {
-  const downloadUrl = `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`;
-  const response = await fetch(downloadUrl, {
-    headers: { Authorization: `Bearer ${accessToken}` },
-  });
-  if (!response.ok) {
-    throw new Error(`HTTP ${response.status} descargando PDF ${file.name}`);
-  }
-
-  const arrayBuffer = await response.arrayBuffer();
   const size = arrayBuffer.byteLength;
 
   if (size > MAX_PDF_SIZE_BYTES) {
     throw new Error(
-      `PDF ${file.name} supera 20MB (${(size / 1024 / 1024).toFixed(1)}MB). No procesable via inlineData.`
+      `PDF ${fileName} supera 20MB (${(size / 1024 / 1024).toFixed(1)}MB). No procesable via inlineData.`
     );
   }
   if (size < 100) {
-    throw new Error(`PDF ${file.name} sospechosamente pequeño (${size} bytes)`);
+    throw new Error(`PDF ${fileName} sospechosamente pequeño (${size} bytes)`);
   }
 
   const base64Data = Buffer.from(arrayBuffer).toString("base64");
@@ -144,7 +139,7 @@ async function extractPdfTextViaGemini(
   const systemPrompt =
     "Eres un analista que prepara un dossier rico de un documento PDF para que otro analista lo clasifique después. Extraé el contenido clave del PDF en texto estructurado: organizá por secciones con subtítulos en markdown (##), preservá cifras exactas, nombres de empresas/personas/instituciones, fechas, y citas textuales breves (entre comillas). NO hagas transcripción literal página por página: condensá el contenido manteniendo alta densidad informativa. Máximo 3000 palabras totales. Escribí en el idioma original del documento.";
 
-  const userPrompt = `Prepará el dossier del PDF: "${file.name}". Secciones sugeridas: ## Contexto y propósito, ## Hallazgos cuantitativos, ## Actores y entidades mencionados, ## Metodología o fuentes, ## Conclusiones o recomendaciones. Omití secciones que no apliquen. Empezá directamente con los subtítulos, sin introducción meta.`;
+  const userPrompt = `Prepará el dossier del PDF: "${fileName}". Secciones sugeridas: ## Contexto y propósito, ## Hallazgos cuantitativos, ## Actores y entidades mencionados, ## Metodología o fuentes, ## Conclusiones o recomendaciones. Omití secciones que no apliquen. Empezá directamente con los subtítulos, sin introducción meta.`;
 
   const { content } = await callGeminiMultimodal(
     systemPrompt,
@@ -166,14 +161,67 @@ async function extractPdfTextViaGemini(
   const text = content?.trim() ?? "";
   if (!text || text.length < 50) {
     throw new Error(
-      `Gemini extrajo muy poco texto del PDF ${file.name} (${text.length} chars). Posible PDF escaneado sin OCR o protegido.`
+      `Gemini extrajo muy poco texto del PDF ${fileName} (${text.length} chars). Posible PDF escaneado sin OCR o protegido.`
     );
   }
 
   console.log(
-    `[extract-pdf-multimodal] ${file.name}: extracted ${text.length} chars via Gemini inlineData (source PDF: ${(size / 1024).toFixed(0)}KB)`
+    `[extract-pdf-multimodal] ${fileName}: extracted ${text.length} chars via Gemini inlineData (source PDF: ${(size / 1024).toFixed(0)}KB)`
   );
   return sanitizeForPostgres(text);
+}
+
+/**
+ * Orquestador híbrido de extracción de PDF.
+ * Path A (default): capa de texto nativa vía unpdf — gratis, local, sin LLM,
+ *   fidelidad total, todas las páginas, sin límite de tamaño. Alimenta Stage A/B
+ *   con el documento completo (Stage B / Pro condensa fielmente desde el todo).
+ * Path B (fallback lean): si la capa nativa viene pobre o ausente (PDF escaneado),
+ *   cae a una sola llamada multimodal de Gemini (la API inlineData limita a 20MB).
+ */
+async function extractPdfTextHybrid(
+  file: DriveFileRef,
+  accessToken: string
+): Promise<string> {
+  // Descargar el PDF una sola vez; el buffer se reusa entre native y fallback.
+  const downloadUrl = `https://www.googleapis.com/drive/v3/files/${file.id}?alt=media`;
+  const response = await fetch(downloadUrl, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status} descargando PDF ${file.name}`);
+  }
+  const arrayBuffer = await response.arrayBuffer();
+
+  // ── Path A — capa de texto nativa (sin límite de 20MB: es local) ──
+  try {
+    const pdf = await getDocumentProxy(new Uint8Array(arrayBuffer));
+    const { totalPages, text } = await extractText(pdf, { mergePages: true });
+    const words = text.trim().split(/\s+/).filter(Boolean).length;
+
+    // Válida si hay texto sustancial y ≥10 palabras/página en promedio.
+    if (text.trim().length >= 100 && words >= Math.max(1, totalPages) * 10) {
+      console.log(
+        `[extract-pdf-hybrid] ${file.name}: native text layer OK — ${words} words across ${totalPages} pages`
+      );
+      return sanitizeForPostgres(text);
+    }
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : String(err);
+    console.warn(`[extract-pdf-hybrid] ${file.name}: native extraction error (${msg})`);
+  }
+
+  // ── Path B — fallback Gemini multimodal (lean, una sola llamada) ──
+  console.warn(
+    `[extract-pdf-hybrid] ${file.name}: native text thin/absent (likely scanned), falling back to Gemini multimodal`
+  );
+  const size = arrayBuffer.byteLength;
+  if (size > MAX_PDF_SIZE_BYTES) {
+    throw new Error(
+      `PDF ${file.name} supera 20MB (${(size / 1024 / 1024).toFixed(1)}MB). No procesable via inlineData.`
+    );
+  }
+  return await extractPdfTextViaGemini(file.name, arrayBuffer);
 }
 
 export async function extractFileContent(
@@ -233,9 +281,9 @@ export async function extractFileContent(
     return sanitizeForPostgres(buffer.toString("utf-8"));
   }
 
-  // PDF: extract text via Gemini multimodal (inlineData)
+  // PDF: hybrid — native text layer first, Gemini multimodal fallback for scanned
   if (ext === "pdf" || file.mimeType === "application/pdf") {
-    return extractPdfTextViaGemini(file, accessToken);
+    return extractPdfTextHybrid(file, accessToken);
   }
 
   // Text files (md, txt, html, json, csv, etc): download as text

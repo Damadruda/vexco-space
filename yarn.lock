@@ -10430,6 +10430,11 @@ unist-util-visit@^5.0.0:
     unist-util-is "^6.0.0"
     unist-util-visit-parents "^6.0.0"
 
+unpdf@^1.6.2:
+  version "1.6.2"
+  resolved "https://registry.yarnpkg.com/unpdf/-/unpdf-1.6.2.tgz#9ba5a8dbc5b7f98bbd0e6a5503a5730d210b7103"
+  integrity sha512-zQ80ySoPuPHOsvIoRp/nJyQt8TOUoTh1+WBCGcBvlddQNgKDLRwm0AY3x8Q35I7+kIiRSgqMx+Ma2pl9McIp7A==
+
 unquote@^1.1.0:
   version "1.1.1"
   resolved "https://registry.yarnpkg.com/unquote/-/unquote-1.1.1.tgz#8fded7324ec6e88a0ff8b905e7c098cdc086d544"
