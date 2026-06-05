@@ -41,6 +41,12 @@ export default function ProspectDetailPage({ params }: { params: { id: string } 
   const { id } = params;
   const router = useRouter();
   const [prospect, setProspect] = useState<ProspectDetail | null>(null);
+  const [billing, setBilling] = useState<{
+    totalFacturado: number;
+    totalCobrado: number;
+    currency: string;
+    projects: Array<{ id: string; title: string; facturado: number; cobrado: number }>;
+  } | null>(null);
   const [loading, setLoading] = useState(true);
   const [editing, setEditing] = useState(false);
   const [draft, setDraft] = useState({
@@ -55,6 +61,7 @@ export default function ProspectDetailPage({ params }: { params: { id: string } 
       .then((d) => {
         if (d.prospect) {
           setProspect(d.prospect);
+          setBilling(d.billing ?? null);
           setDraft({
             name: d.prospect.name || "",
             company: d.prospect.company || "",
@@ -225,6 +232,52 @@ export default function ProspectDetailPage({ params }: { params: { id: string } 
             </>
           )}
         </div>
+
+        {/* Proyectos del cliente */}
+        <section>
+          <p className="ql-label mb-3">Proyectos del cliente</p>
+          {!billing || billing.projects.length === 0 ? (
+            <div className="rounded-lg border border-[#E8E4DE] bg-white p-6 text-center">
+              <p className="text-xs text-[#5E5E5E]/60">
+                Sin proyectos vinculados. Vincula un proyecto a este cliente desde la cabecera del proyecto.
+              </p>
+            </div>
+          ) : (
+            <div className="rounded-lg border border-[#E8E4DE] bg-white overflow-hidden">
+              <div className="flex items-center justify-between px-5 py-3 bg-[#FBF8F3]/40 border-b border-[#E8E4DE]">
+                <div>
+                  <p className="text-[10px] uppercase tracking-wider text-[#5E5E5E]/60">Facturado</p>
+                  <p className="text-lg font-light text-[#1A1A1A] tabular-nums">
+                    {billing.totalFacturado.toLocaleString("es-ES")} {billing.currency}
+                  </p>
+                </div>
+                <div className="text-right">
+                  <p className="text-[10px] uppercase tracking-wider text-[#B8860B]">Cobrado</p>
+                  <p className="text-lg font-light text-[#B8860B] tabular-nums">
+                    {billing.totalCobrado.toLocaleString("es-ES")} {billing.currency}
+                  </p>
+                </div>
+              </div>
+              <div className="divide-y divide-[#E8E4DE]">
+                {billing.projects.map((p) => (
+                  <Link
+                    key={p.id}
+                    href={`/project-builder/${p.id}`}
+                    className="flex items-center justify-between px-5 py-3 hover:bg-[#FBF8F3]/50 transition-colors"
+                  >
+                    <span className="text-sm text-[#1A1A1A] flex-1 min-w-0 truncate">{p.title}</span>
+                    <span className="text-xs text-[#5E5E5E] tabular-nums ml-4">
+                      {p.facturado.toLocaleString("es-ES")} fact.
+                    </span>
+                    <span className="text-xs text-[#B8860B] tabular-nums ml-3">
+                      {p.cobrado.toLocaleString("es-ES")} cobr.
+                    </span>
+                  </Link>
+                ))}
+              </div>
+            </div>
+          )}
+        </section>
 
         {/* Fits */}
         <section>

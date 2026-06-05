@@ -7,6 +7,7 @@ import { Swords, FileText, Inbox, ArrowRight, FolderOpen, Paperclip } from "luci
 import { ProjectFileUploader } from "@/components/project-file-uploader";
 import { ReimportDriveModal } from "@/components/project/reimport-drive-modal";
 import { CommercialTimeline } from "@/components/project/commercial-timeline";
+import { ProspectLinker } from "@/components/project/prospect-linker";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -272,6 +273,9 @@ export default function ProjectOverviewPage() {
                   Cobrado
                 </span>
               )}
+            </div>
+            <div className="mt-3">
+              <ProspectLinker projectId={project.id} />
             </div>
             {project.description && (
               <p className="text-sm text-[#6B6B6B] mt-2 max-w-xl leading-relaxed">
