@@ -6,6 +6,7 @@ import Link from "next/link";
 import { Swords, FileText, Inbox, ArrowRight, FolderOpen, Paperclip } from "lucide-react";
 import { ProjectFileUploader } from "@/components/project-file-uploader";
 import { ReimportDriveModal } from "@/components/project/reimport-drive-modal";
+import { CommercialTimeline } from "@/components/project/commercial-timeline";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -571,6 +572,11 @@ export default function ProjectOverviewPage() {
           </h2>
           <ProjectFileUploader projectId={project.id} />
         </div>
+
+        {/* ── SECTION 6c: Ciclo comercial ─────────────────────────── */}
+        <section className="mt-12 pt-8 border-t border-[#E8E4DE]">
+          <CommercialTimeline projectId={params.id as string} />
+        </section>
 
         {/* ── SECTION 7: Acciones del proyecto (Zona peligrosa) ───── */}
         <section className="mt-12 pt-8 border-t border-[#E8E4DE]">
