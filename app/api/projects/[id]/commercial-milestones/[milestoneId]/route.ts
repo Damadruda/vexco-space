@@ -62,19 +62,6 @@ export async function PATCH(
       data,
     });
 
-    // Gancho Revenue Priority: deal cobrado pisa el score del Strategist.
-    if (milestone.stage === "PAID" && milestone.completedAt != null) {
-      await prisma.project.update({
-        where: { id: existing.project.id },
-        data: {
-          revenueProximityScore: 10,
-          revenueProximityReason: "Deal cobrado — milestone comercial PAID registrado.",
-          revenueLastAssessedAt: new Date(),
-          revenueLastAssessedBy: "commercial-milestone",
-        },
-      });
-    }
-
     return NextResponse.json({ milestone });
   } catch (error) {
     if (error instanceof Error && error.message === "No autenticado") {
