@@ -207,6 +207,11 @@ export function CommercialTimeline({ projectId }: { projectId: string }) {
     .filter((m) => m.stage === "PROPOSAL_SENT" && m.amount != null)
     .reduce((sum, m) => sum + (m.amount ?? 0), 0);
 
+  const deviation = collected - quoted;
+  const deviationPct = quoted > 0 ? (deviation / quoted) * 100 : 0;
+  const devColor = deviation < 0 ? "#B4413C" : deviation > 0 ? "#5E7355" : MUTED;
+  const devSign = deviation < 0 ? "−" : deviation > 0 ? "+" : "";
+
   const byStage = (stage: CommercialStage) =>
     milestones.filter((m) => m.stage === stage);
 
@@ -262,6 +267,30 @@ export function CommercialTimeline({ projectId }: { projectId: string }) {
           </div>
         ))}
       </div>
+
+      {/* Desvío Cotizado → Cobrado */}
+      {quoted > 0 && (
+        <div
+          className="flex items-center justify-between rounded-lg border px-4 py-2.5 mb-6"
+          style={{ borderColor: BORDER, backgroundColor: "#FBF8F3" }}
+        >
+          <span
+            className="text-[10px] uppercase tracking-wider"
+            style={{ color: MUTED }}
+          >
+            Desvío · Cotizado → Cobrado
+          </span>
+          <span className="text-sm font-semibold" style={{ color: devColor }}>
+            {devSign}
+            {formatAmount(Math.abs(deviation), dominantCurrency)} ({devSign}
+            {Math.abs(deviationPct).toLocaleString("es-ES", {
+              minimumFractionDigits: 0,
+              maximumFractionDigits: 1,
+            })}
+            %)
+          </span>
+        </div>
+      )}
 
       {/* Form inline */}
       {showAdd && (
