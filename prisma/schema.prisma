@@ -235,12 +235,18 @@ model Project {
   // Sprint Upload-A — Local files
   files                 ProjectFile[]
 
+  // Sprint Commercial Milestones
+  commercialMilestones ProjectCommercialMilestone[]
+  prospectId           String?
+  prospect             Prospect? @relation(fields: [prospectId], references: [id], onDelete: SetNull)
+
   @@index([userId])
   @@index([status])
   @@index([projectType])
   @@index([conceptStatus])
   @@index([trackType])
   @@index([naicsSector])
+  @@index([prospectId])
 }
 
 // =============================================================================
@@ -321,6 +327,28 @@ model Milestone {
 
   @@index([projectId])
   @@index([isCertified])
+}
+
+// Sprint Commercial Milestones — cada fila es un EVENTO comercial del proyecto.
+// Pagos parciales soportados: múltiples filas INVOICE_SENT / PAID con su propio amount.
+// El "estado comercial" del proyecto NO se guarda: se deriva (stage más avanzado con completedAt).
+model ProjectCommercialMilestone {
+  id          String          @id @default(cuid())
+  projectId   String
+  project     Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  stage       CommercialStage
+  title       String?         // desambigua múltiples del mismo stage: "Anticipo 40%", "Final 60%"
+  amount      Float?          // significativo en INVOICE_SENT / PAID (y PROPOSAL_SENT como cotizado)
+  currency    String          @default("EUR")
+  dueDate     DateTime?       // fecha planificada del evento
+  completedAt DateTime?       // null = pendiente/planificado; set = ocurrido
+  order       Int             @default(0)
+  notes       String?         @db.Text
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
+
+  @@index([projectId])
+  @@index([stage])
 }
 
 model Idea {
@@ -432,6 +460,16 @@ enum TrackType {
 enum ProjectArchetype {
   CLIENT
   CAMPAIGN
+}
+
+// Sprint Commercial Milestones — ciclo comercial del engagement (no confundir con Milestone legacy de validación startup)
+enum CommercialStage {
+  PROPOSAL_SENT
+  ACCEPTED
+  KICKOFF
+  DELIVERY
+  INVOICE_SENT
+  PAID
 }
 
 // Prospect lifecycle status (separate from pipeline stage)
@@ -863,6 +901,7 @@ model Prospect {
   ownerId            String
   owner              User           @relation(fields: [ownerId], references: [id])
   fits               ProspectFit[]
+  projects           Project[]
   channelId          String?
   channel            Channel?       @relation(fields: [channelId], references: [id])
   createdAt          DateTime       @default(now())
