@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { getDefaultUserId } from "@/lib/get-default-user";
 import { prisma } from "@/lib/db";
+import { CommercialStage } from "@prisma/client";
 
 export async function GET(
   _request: Request,
@@ -22,7 +23,52 @@ export async function GET(
     if (!prospect) {
       return NextResponse.json({ error: "No encontrado" }, { status: 404 });
     }
-    return NextResponse.json({ prospect });
+
+    // Proyectos vinculados directamente (Project.prospectId) — distinto de fits.
+    const linked = await prisma.project.findMany({
+      where: { prospectId: id, userId },
+      select: { id: true, title: true },
+    });
+
+    let billing: {
+      totalFacturado: number;
+      totalCobrado: number;
+      currency: string;
+      projects: Array<{ id: string; title: string; facturado: number; cobrado: number }>;
+    } = { totalFacturado: 0, totalCobrado: 0, currency: prospect.currency, projects: [] };
+
+    if (linked.length > 0) {
+      const linkedIds = linked.map((p) => p.id);
+      const ms = await prisma.projectCommercialMilestone.findMany({
+        where: {
+          projectId: { in: linkedIds },
+          completedAt: { not: null },
+          stage: { in: [CommercialStage.INVOICE_SENT, CommercialStage.PAID] },
+        },
+        select: { projectId: true, stage: true, amount: true },
+      });
+      const perProject = new Map<string, { facturado: number; cobrado: number }>();
+      for (const m of ms) {
+        const e = perProject.get(m.projectId) ?? { facturado: 0, cobrado: 0 };
+        if (m.stage === "INVOICE_SENT") e.facturado += m.amount ?? 0;
+        if (m.stage === "PAID") e.cobrado += m.amount ?? 0;
+        perProject.set(m.projectId, e);
+      }
+      const projects = linked.map((p) => ({
+        id: p.id,
+        title: p.title,
+        facturado: perProject.get(p.id)?.facturado ?? 0,
+        cobrado: perProject.get(p.id)?.cobrado ?? 0,
+      }));
+      billing = {
+        totalFacturado: projects.reduce((s, p) => s + p.facturado, 0),
+        totalCobrado: projects.reduce((s, p) => s + p.cobrado, 0),
+        currency: prospect.currency,
+        projects,
+      };
+    }
+
+    return NextResponse.json({ prospect, billing });
   } catch (error) {
     return NextResponse.json(
       { error: error instanceof Error ? error.message : "Error interno" },
