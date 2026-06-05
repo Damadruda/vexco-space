@@ -172,6 +172,11 @@ export async function GET(
       corpusStatus: corpusStatusMap.get(d.driveFileId) ?? ("not_promoted" as const),
     }));
 
+    const paidCount = await prisma.projectCommercialMilestone.count({
+      where: { projectId: params.id, stage: "PAID", completedAt: { not: null } },
+    });
+    const commerciallyCollected = paidCount > 0;
+
     return NextResponse.json({
       project,
       taskStats,
@@ -179,6 +184,7 @@ export async function GET(
       inboxItems,
       driveDocs: driveDocsEnriched,
       documents,
+      commerciallyCollected,
     });
   } catch (error) {
     if (error instanceof Error && error.message === "No autenticado") {

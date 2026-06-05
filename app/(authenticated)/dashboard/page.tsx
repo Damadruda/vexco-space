@@ -5,7 +5,7 @@ import { Header } from "@/components/ui/header";
 import { CommandBar } from "@/components/ui/command-bar";
 import {
   ArrowRight, Flame, Clock, CircleDot, TrendingUp, AlertTriangle,
-  CheckSquare, Sparkles, Inbox, Activity, BrainCircuit,
+  CheckSquare, Sparkles, Inbox, Activity, BrainCircuit, Check,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -47,6 +47,7 @@ export default function DashboardPage() {
   const [revenueData, setRevenueData] = useState<{
     projects: RevenueProject[];
     alerts: Array<{ projectId: string; message: string; severity: string }>;
+    collected: Array<{ id: string; title: string; collectedTotal: number; currency: string }>;
   } | null>(null);
   const [intelligenceData, setIntelligenceData] = useState<{
     hasAnalysis: boolean;
@@ -228,6 +229,40 @@ export default function DashboardPage() {
             )}
           </div>
         </section>
+
+        {/* ─── COBRADO ───────────────────────────────────────────── */}
+        {(revenueData?.collected?.length ?? 0) > 0 && (
+          <section>
+            <p className="ql-label mb-2">Ciclo cerrado</p>
+            <h2 className="ql-h2 mb-5">Cobrado</h2>
+            <div className="rounded-lg border border-[#E8E4DE] bg-white overflow-hidden">
+              <ul className="divide-y divide-[#E8E4DE]">
+                {revenueData!.collected.map((c) => {
+                  const sym =
+                    c.currency === "EUR" ? "€" :
+                    c.currency === "USD" ? "$" :
+                    c.currency === "GBP" ? "£" : c.currency + " ";
+                  const total = c.collectedTotal.toLocaleString("es-ES", {
+                    minimumFractionDigits: 0,
+                    maximumFractionDigits: 2,
+                  });
+                  return (
+                    <Link
+                      key={c.id}
+                      href={`/project-builder/${c.id}`}
+                      className="group flex items-center gap-4 px-5 py-4 hover:bg-[#FBF8F3]/50 transition-colors border-l-2 border-transparent hover:border-[#B8860B]"
+                    >
+                      <Check className="h-4 w-4 shrink-0 text-[#B8860B]" />
+                      <span className="flex-1 min-w-0 text-sm text-[#1A1A1A] truncate">{c.title}</span>
+                      <span className="text-sm tabular-nums text-[#1A1A1A]">{sym}{total}</span>
+                      <ArrowRight className="h-3.5 w-3.5 text-[#B8860B] opacity-0 group-hover:opacity-100 transition-opacity" />
+                    </Link>
+                  );
+                })}
+              </ul>
+            </div>
+          </section>
+        )}
 
         {/* ─── 3. PULSO DEL LAB ──────────────────────────────────── */}
         <section>

@@ -67,6 +67,7 @@ interface ProjectSummary {
     feedbackRating: number | null;
     createdAt: string;
   }>;
+  commerciallyCollected?: boolean;
 }
 
 // ─── Agent display config ─────────────────────────────────────────────────────
@@ -226,7 +227,7 @@ export default function ProjectOverviewPage() {
     );
   }
 
-  const { project, taskStats, warRoomInsights, inboxItems, driveDocs, documents } = data;
+  const { project, taskStats, warRoomInsights, inboxItems, driveDocs, documents, commerciallyCollected } = data;
 
   const hasWarRoom = warRoomInsights.length > 0;
   const hasTasks = taskStats.total > 0;
@@ -264,6 +265,11 @@ export default function ProjectOverviewPage() {
               {project.trackType && project.trackType !== "GO_TO_MARKET" && (
                 <span className="border border-[#E8E4DE] text-[10px] px-2 py-0.5 rounded text-[#6B6B6B]">
                   {project.trackType.replace(/_/g, " ")}
+                </span>
+              )}
+              {commerciallyCollected && (
+                <span className="border border-[#B8860B] bg-[#B8860B]/[0.08] text-[10px] px-2 py-0.5 rounded text-[#B8860B] uppercase tracking-wider font-medium">
+                  Cobrado
                 </span>
               )}
             </div>
