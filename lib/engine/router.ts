@@ -9,6 +9,7 @@ import { prisma } from "@/lib/db";
 import { getAgentConfig } from "./agents";
 import { getRequiredSkills, researchSkill, inspirationSkill, crossValidationSkill } from "./skills";
 import { buildAgentPrompt } from "./prompts";
+import { searchCorpus } from "@/lib/corpus/search";
 import type {
   AgentResult,
   Checkpoint,
@@ -107,6 +108,23 @@ export async function routeToAgent(
     }
   }
 
+  // ── 2c. Retrieval semantico del Firm Corpus (Sprint Retrieval Layer / M.2b) ──
+  // Pre-fetch de chunks relevantes para inyectar en el prompt. El corpus es
+  // transversal → sin filtro de industry. Aditivo y seguro: si no hay corpus o
+  // falla, corpusChunks queda vacio y el prompt no cambia.
+  let corpusChunks: Array<{ content: string; score: number }> = [];
+  try {
+    const hits = await searchCorpus({
+      query: `${supervisorPlan.proposedAction} — ${supervisorPlan.estimatedScope}`,
+      topK: 6,
+      minScore: 0.65,
+      consumer: `agent:${agentId}`,
+    });
+    corpusChunks = hits.map((h) => ({ content: h.content, score: h.score }));
+  } catch (e) {
+    console.warn("[ROUTER] corpus retrieval failed (non-fatal):", e);
+  }
+
   // ── 3. Build prompt ────────────────────────────────────────────────────────
   const systemPrompt = agentConfig
     ? [agentConfig.consultingDNA, agentConfig.geographicContext, agentConfig.domainInstructions].join("\n\n")
@@ -128,7 +146,8 @@ export async function routeToAgent(
           outputType: agentConfig.outputType,
         }
       : undefined,
-    skillData
+    skillData,
+    corpusChunks
   );
 
   // ── 4. Call LLM (with fallback) ────────────────────────────────────────────
