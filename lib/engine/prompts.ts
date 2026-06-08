@@ -130,7 +130,8 @@ export function buildAgentPrompt(
   supervisorPlan: SupervisorPlan,
   decisionHistory: Array<{ outcome: string; decision: string; agentSource: string }>,
   agentConfig?: AgentPromptConfig,
-  skillResults?: string[]
+  skillResults?: string[],
+  corpusChunks?: Array<{ content: string; score: number }>
 ): string {
   const project = projectMemory.project as Record<string, unknown>;
   const agileTasks = (projectMemory.agileTasks as unknown[]) ?? [];
@@ -253,6 +254,28 @@ Considera el contexto del programa al responder. Las recomendaciones deben ser c
 }`;
   }
 
+  // Sprint Retrieval Layer (M.2b) — inyeccion de extractos del Firm Corpus.
+  // Aditivo y seguro: con corpus vacio (sin chunks) el prompt no cambia.
+  // Cap ~6 chunks / ~3000 chars. Respeta REGLA #0.5: el agente cita estos
+  // extractos como referencia, no infiere mas alla de ellos.
+  let corpusSection = "";
+  if (corpusChunks && corpusChunks.length > 0) {
+    let budget = 3000;
+    const lines: string[] = [];
+    for (const c of corpusChunks.slice(0, 6)) {
+      const snippet = c.content.slice(0, 500).trim();
+      const line = `- (score ${c.score.toFixed(2)}) ${snippet}`;
+      if (budget - line.length < 0) break;
+      budget -= line.length;
+      lines.push(line);
+    }
+    if (lines.length > 0) {
+      corpusSection = `\n\n=== CORPUS DE LA FIRMA (extractos de referencia — no inferir mas alla de lo aqui presente) ===
+${lines.join("\n")}
+=== FIN CORPUS ===`;
+    }
+  }
+
   return `${identity}
 
 ${ANTI_IA_RULE}
@@ -264,7 +287,7 @@ CONTEXTO DEL PROYECTO:
 - Progreso: ${project?.progress ?? 0}%
 - Tareas activas: ${agileTasks.length}
 - Notas disponibles: ${recentNotes.length}
-${crossPortfolioSection}${debateSection}
+${crossPortfolioSection}${debateSection}${corpusSection}
 
 EL SUPERVISOR TE HA ASIGNADO ESTA TAREA:
 "${supervisorPlan.proposedAction}"

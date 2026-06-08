@@ -5,11 +5,18 @@
     },
     "app/api/market-intelligence/tick/route.ts": {
       "maxDuration": 90
+    },
+    "app/api/corpus/embed-job/tick/route.ts": {
+      "maxDuration": 300
     }
   },
   "crons": [
     {
       "path": "/api/firm-corpus/reprocess-job/tick",
+      "schedule": "*/2 * * * *"
+    },
+    {
+      "path": "/api/corpus/embed-job/tick",
       "schedule": "*/2 * * * *"
     },
     {

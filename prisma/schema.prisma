@@ -1040,6 +1040,7 @@ model CorpusDocument {
   lastProcessedAt  DateTime?
   processingError  String?            @db.Text
   frameworkSources FrameworkSourceDocument[]
+  chunks           CorpusChunk[]
   createdAt        DateTime           @default(now())
   updatedAt        DateTime           @updatedAt
 
@@ -1290,4 +1291,44 @@ model LLMFallbackLog {
 
   @@index([createdAt])
   @@index([fromModel])
+}
+
+// =============================================================================
+// SPRINT RETRIEVAL LAYER — Embeddings + pgvector
+// =============================================================================
+
+model CorpusChunk {
+  id           String         @id @default(dbgenerated("(gen_random_uuid())::text"))
+  documentId   String
+  document     CorpusDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+  ordinal      Int
+  content      String         @db.Text
+  tokenCount   Int
+  embedding    Unsupported("vector(768)")
+  // metadata desnormalizada para filtrar sin join
+  corpusId     String
+  documentType CorpusDocumentType @default(UNCLASSIFIED)
+  industry     String?
+  provenance   Provenance     @default(UNKNOWN)
+  createdAt    DateTime       @default(now())
+
+  @@index([documentId])
+  @@index([corpusId])
+  @@index([corpusId, industry])
+}
+
+model RetrievalQueryLog {
+  id             String   @id @default(dbgenerated("(gen_random_uuid())::text"))
+  query          String   @db.Text
+  scopeCorpusId  String?
+  scopeIndustry  String?
+  topScore       Float
+  meanTopK       Float
+  resultCount    Int
+  latencyMs      Int
+  consumer       String   // "agent:strategist" | "corpus-search-debug" | etc.
+  createdAt      DateTime @default(now())
+
+  @@index([consumer, createdAt])
+  @@index([createdAt])
 }
