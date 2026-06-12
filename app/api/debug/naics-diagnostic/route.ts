@@ -161,6 +161,67 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
+  // ── Modo insights (?insights=1): dump de FirmInsight para decidir A vs B ──
+  // Devuelve sector, revisado, activo y el prefijo de subject del reasoning
+  // ([EXTERNAL_CLIENT] / [VEXCO_OPERATING] / [HORIZONTAL_OFFER] / [METHODOLOGICAL]).
+  if (new URL(request.url).searchParams.get("insights") === "1") {
+    try {
+      const user = await prisma.user.findUnique({
+        where: { email: session.user.email },
+        select: { id: true },
+      });
+      if (!user) {
+        return NextResponse.json(
+          { error: "User not found for session email" },
+          { status: 404 }
+        );
+      }
+
+      const insights = await prisma.firmInsight.findMany({
+        where: { ownerId: user.id },
+        select: {
+          id: true,
+          title: true,
+          insightType: true,
+          isActive: true,
+          naicsSector: true,
+          naicsSectorConfidence: true,
+          naicsSectorReviewed: true,
+          naicsSectorReasoning: true,
+        },
+        orderBy: [{ naicsSectorReviewed: "desc" }, { insightType: "asc" }],
+      });
+
+      const PREFIX_RE = /^\s*\[([A-Z_]+)\]/;
+
+      return NextResponse.json({
+        timestamp: new Date().toISOString(),
+        mode: "insights",
+        count: insights.length,
+        insights: insights.map((i) => {
+          const reasoning = i.naicsSectorReasoning ?? "";
+          const match = reasoning.match(PREFIX_RE);
+          return {
+            id: i.id,
+            title: i.title,
+            insightType: i.insightType,
+            isActive: i.isActive,
+            naicsSector: i.naicsSector,
+            naicsSectorConfidence: i.naicsSectorConfidence,
+            naicsSectorReviewed: i.naicsSectorReviewed,
+            subjectPrefix: match ? match[1] : null,
+            reasoningSnippet: reasoning.slice(0, 180),
+          };
+        }),
+      });
+    } catch (err) {
+      return NextResponse.json(
+        { error: err instanceof Error ? err.message.slice(0, 200) : String(err) },
+        { status: 500 }
+      );
+    }
+  }
+
   const result: Record<string, unknown> = {
     timestamp: new Date().toISOString(),
   };
