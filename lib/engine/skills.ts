@@ -18,6 +18,39 @@ export interface SkillResult {
   processingTimeMs: number;
 }
 
+// ─── Skill 0: Research decision (triage T1 — decide, no genera narrativa) ─────
+export interface ResearchDecision {
+  needsResearch: boolean;
+  query: string;
+  rationale: string;
+}
+
+export async function decideResearch(
+  message: string,
+  contextSlice: string
+): Promise<ResearchDecision> {
+  const system = `Sos un triage de research. Decidís si una consulta necesita DATOS EXTERNOS Y ACTUALES del mundo real (datos de mercado, regulación vigente, benchmarks del sector, competidores, cifras públicas) que NO estén ya en el contexto disponible. NO necesitan research: pedidos de reformular o editar texto, razonamiento sobre los datos propios del proyecto, opiniones, estructura o pricing que se deduce del caso. Si necesita research, armá UNA query de búsqueda enfocada (orientá a España/Latam cuando aplique). Respondé SOLO JSON válido, sin markdown.`;
+  const user = `CONTEXTO DISPONIBLE (parcial):\n${contextSlice || "(vacío)"}\n\nCONSULTA DEL USUARIO:\n${message}\n\nDevolvé JSON: {"needsResearch": boolean, "query": string, "rationale": string}. Si needsResearch es false, query = "".`;
+  try {
+    const res = await callLLM({
+      model: "gemini-flash",
+      systemPrompt: system,
+      userPrompt: user,
+      jsonMode: true,
+      temperature: 0.1,
+    });
+    const parsed = JSON.parse(res.content.replace(/```json\n?|\n?```/g, "").trim());
+    return {
+      needsResearch: !!parsed.needsResearch,
+      query: typeof parsed.query === "string" ? parsed.query : "",
+      rationale: typeof parsed.rationale === "string" ? parsed.rationale : "",
+    };
+  } catch (err) {
+    console.warn("[SKILLS] decideResearch failed, defaulting to no research:", err);
+    return { needsResearch: false, query: "", rationale: "decision failed" };
+  }
+}
+
 // ─── Skill 1: Research via Perplexity ────────────────────────────────────────
 
 export async function researchSkill(query: string): Promise<SkillResult> {
