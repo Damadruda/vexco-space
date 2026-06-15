@@ -7,6 +7,7 @@ import { GoogleGenAI } from "@google/genai";
 import Anthropic from "@anthropic-ai/sdk";
 import { matchInsightsForProject } from "@/lib/firm-insights/matcher";
 import { classifyInsightSector } from "@/lib/firm-insights/sector-classifier";
+import { decideResearch, researchSkill, inspirationSkill } from "@/lib/engine/skills";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -608,7 +609,7 @@ ORIENTACIÓN A ENTREGABLE: cada respuesta apunta a producir un artefacto concret
         "\n\n---\nNUEVO MENSAJE DEL USUARIO:\n";
     }
 
-    const userPrompt = projectContext
+    let userPrompt = projectContext
       ? `${projectContext}\n\n${historyBlock}${message}`
       : `${historyBlock}${message}`;
 
@@ -625,6 +626,31 @@ ORIENTACIÓN A ENTREGABLE: cada respuesta apunta a producir un artefacto concret
         };
 
         try {
+          // ── S2: pre-fetch loop (research Perplexity + Raindrop) antes de streamear ──
+          let prefetchBlocks = "";
+          try {
+            const decision = await decideResearch(message, (projectContext ?? "").slice(0, 1500));
+            const tasks: Promise<{ data: string }>[] = [];
+            if (decision.needsResearch && decision.query) {
+              sendSSE({ status: "researching", label: `Investigando: ${decision.query}` });
+              tasks.push(researchSkill(decision.query));
+            }
+            const kw = message.toLowerCase().split(/[\s,.\-_/]+/).filter((w) => w.length > 4).slice(0, 6);
+            if (agentConfig.usesRaindrop && kw.length > 0) {
+              if (!decision.needsResearch) sendSSE({ status: "researching", label: "Consultando referencias…" });
+              tasks.push(inspirationSkill(userId, kw));
+            }
+            if (tasks.length > 0) {
+              const results = await Promise.all(tasks);
+              prefetchBlocks = results.map((r) => r.data).filter(Boolean).join("\n\n");
+            }
+          } catch (prefetchErr) {
+            console.warn("[AGENT_CHAT] prefetch loop failed, continuing without:", prefetchErr);
+          }
+          if (prefetchBlocks) {
+            userPrompt = `${prefetchBlocks}\n\n${userPrompt}`;
+          }
+
           // Resolve tier → provider + modelId
           const { resolveTierModel, MODEL_IDS, supportsSamplingParams } = await import("@/lib/clients/llm");
           const tier = agentConfig.tier ?? "T3";

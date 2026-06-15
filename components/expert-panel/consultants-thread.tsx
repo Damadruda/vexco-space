@@ -282,6 +282,7 @@ export function ConsultantsThread({
   const [styleSuggestion, setStyleSuggestion] = useState<any>(null);
   const [lastDocumentId, setLastDocumentId] = useState<string | null>(null);
   const [showFeedback, setShowFeedback] = useState(false);
+  const [statusLabel, setStatusLabel] = useState<string | null>(null);
 
   const threadEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
@@ -432,6 +433,11 @@ export function ConsultantsThread({
             respondingAgentId = data.agentId as string;
           }
 
+          if (data.status) {
+            setStatusLabel((data.label as string) || "Investigando…");
+            continue;
+          }
+
           if (data.done) {
             // Stream complete — finalize message
             const finalText = (data.fullText as string) || accumulated;
@@ -455,10 +461,12 @@ export function ConsultantsThread({
 
             // 4C: Persist agent response
             persistMessage("assistant", finalText, respondingAgentId, respondingAgentName);
+            setStatusLabel(null);
             return;
           }
 
           if (data.text) {
+            if (statusLabel) setStatusLabel(null);
             accumulated += data.text as string;
             const currentText = accumulated;
             setMessages((prev) =>
@@ -484,6 +492,7 @@ export function ConsultantsThread({
         persistMessage("assistant", accumulated, respondingAgentId, respondingAgentName);
       }
     } catch {
+      setStatusLabel(null);
       setMessages((prev) =>
         prev.map((m) =>
           m.id === msgId && "expertId" in m
@@ -735,7 +744,14 @@ export function ConsultantsThread({
           <div>
             <h2 className="ql-h3 leading-tight">{projectTitle}</h2>
             <div className="flex items-center gap-2 mt-0.5">
-              {isLoading ? (
+              {statusLabel ? (
+                <>
+                  <span className="ql-status-thinking" />
+                  <span className="ql-caption normal-case tracking-normal italic">
+                    {statusLabel}
+                  </span>
+                </>
+              ) : isLoading ? (
                 <>
                   <span className="ql-status-thinking" />
                   <span className="ql-caption normal-case tracking-normal italic">
