@@ -10,6 +10,7 @@ import { getAgentConfig } from "./agents";
 import { getRequiredSkills, researchSkill, inspirationSkill, crossValidationSkill } from "./skills";
 import { buildAgentPrompt } from "./prompts";
 import { searchCorpus } from "@/lib/corpus/search";
+import { searchInboxResources, formatInboxResourceBlock } from "@/lib/inbox/inbox-resource-search";
 import type {
   AgentResult,
   Checkpoint,
@@ -123,6 +124,24 @@ export async function routeToAgent(
     corpusChunks = hits.map((h) => ({ content: h.content, score: h.score }));
   } catch (e) {
     console.warn("[ROUTER] corpus retrieval failed (non-fatal):", e);
+  }
+
+  // ── 2d. Retrieval semantico de recursos/herramientas curados del Inbox ──
+  if (agentConfig?.usesRaindrop && userId) {
+    try {
+      const resourceHits = await searchInboxResources({
+        userId,
+        query: `${supervisorPlan.proposedAction} — ${supervisorPlan.estimatedScope}`,
+        resourceTypes: ["TOOL", "REFERENCE"],
+        topK: 6,
+        minScore: 0.55,
+        consumer: `agent:${agentId}`,
+      });
+      const resourceBlock = formatInboxResourceBlock(resourceHits);
+      if (resourceBlock) skillData.push(resourceBlock);
+    } catch (e) {
+      console.warn("[ROUTER] inbox resource retrieval failed (non-fatal):", e);
+    }
   }
 
   // ── 3. Build prompt ────────────────────────────────────────────────────────

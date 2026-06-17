@@ -8,6 +8,7 @@ import Anthropic from "@anthropic-ai/sdk";
 import { matchInsightsForProject } from "@/lib/firm-insights/matcher";
 import { classifyInsightSector } from "@/lib/firm-insights/sector-classifier";
 import { decideResearch, researchSkill, inspirationSkill } from "@/lib/engine/skills";
+import { searchInboxResources, formatInboxResourceBlock } from "@/lib/inbox/inbox-resource-search";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 300;
@@ -643,6 +644,31 @@ ORIENTACIÓN A ENTREGABLE: cada respuesta apunta a producir un artefacto concret
             if (tasks.length > 0) {
               const results = await Promise.all(tasks);
               prefetchBlocks = results.map((r) => r.data).filter(Boolean).join("\n\n");
+            }
+
+            // ── Recuperacion semantica de recursos/herramientas curados ──
+            if (agentConfig.usesRaindrop) {
+              try {
+                const resourceQuery = projectContext
+                  ? `${message} — ${projectContext.slice(0, 500)}`
+                  : message;
+                const resourceHits = await searchInboxResources({
+                  userId,
+                  query: resourceQuery,
+                  resourceTypes: ["TOOL", "REFERENCE"],
+                  topK: 6,
+                  minScore: 0.55,
+                  consumer: `agent-chat:${effectiveAgentId}`,
+                });
+                const resourceBlock = formatInboxResourceBlock(resourceHits);
+                if (resourceBlock) {
+                  prefetchBlocks = prefetchBlocks
+                    ? `${prefetchBlocks}\n\n${resourceBlock}`
+                    : resourceBlock;
+                }
+              } catch (resErr) {
+                console.warn("[AGENT_CHAT] inbox resource retrieval failed (non-fatal):", resErr);
+              }
             }
           } catch (prefetchErr) {
             console.warn("[AGENT_CHAT] prefetch loop failed, continuing without:", prefetchErr);

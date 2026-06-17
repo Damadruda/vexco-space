@@ -5,6 +5,7 @@ import { jinaClient } from "@/lib/clients/jina";
 import { runInboxStageA } from "@/lib/inbox/stage-a-classifier";
 import { runInboxStageB } from "@/lib/inbox/stage-b-analyzer";
 import { getRecentCorrections } from "@/lib/inbox/corrections";
+import { embedDocuments, toVectorLiteral } from "@/lib/clients/embeddings";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -60,6 +61,8 @@ export async function POST(
       category: stageA.category,
       sentiment: stageA.sentiment,
       relevanceScore: stageA.relevanceScore,
+      resourceType: stageB.resourceType ?? null,
+      capability: stageB.capability ?? null,
       rawAiResponse: JSON.stringify({ stageA, stageB }),
       modelUsed: "gemini-2.5-flash+gemini-2.5-pro",
       processingTimeMs,
@@ -84,6 +87,34 @@ export async function POST(
       where: { id: item.id },
       data: { status: "processed" },
     });
+
+    // ── Embeber recurso curado (solo REFERENCE/TOOL) ──
+    try {
+      const rType = stageB.resourceType;
+      if (rType === "TOOL" || rType === "REFERENCE") {
+        const textToEmbed =
+          stageB.capability && stageB.capability.length > 0
+            ? `${sourceTitle}. ${stageB.capability}`
+            : `${sourceTitle}. ${stageB.summary}`;
+        const [vec] = await embedDocuments([textToEmbed]);
+        const vecLiteral = toVectorLiteral(vec);
+        await prisma.$executeRaw`
+          UPDATE "AnalysisResult"
+          SET "embedding" = ${vecLiteral}::vector, "embeddingStatus" = 'READY'
+          WHERE "id" = ${analysis.id}
+        `;
+      } else {
+        await prisma.analysisResult.update({
+          where: { id: analysis.id },
+          data: { embeddingStatus: "SKIPPED" },
+        });
+      }
+    } catch (embErr) {
+      console.warn("[INBOX ANALYZE] embedding failed (non-fatal):", embErr);
+      await prisma.analysisResult
+        .update({ where: { id: analysis.id }, data: { embeddingStatus: "FAILED" } })
+        .catch(() => {});
+    }
 
     return NextResponse.json({
       analysis,
