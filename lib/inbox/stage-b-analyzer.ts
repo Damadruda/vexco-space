@@ -11,6 +11,8 @@ export interface StageBResult {
   summary: string;
   keyInsights: string[];
   suggestedTags: string[];
+  resourceType?: string;   // "HYPE" | "REFERENCE" | "TOOL"
+  capability?: string;
 }
 
 const STAGE_B_SCHEMA = {
@@ -25,8 +27,10 @@ const STAGE_B_SCHEMA = {
       type: Type.ARRAY,
       items: { type: Type.STRING },
     },
+    resourceType: { type: Type.STRING },
+    capability: { type: Type.STRING },
   },
-  required: ["summary", "keyInsights", "suggestedTags"],
+  required: ["summary", "keyInsights", "suggestedTags", "resourceType"],
 };
 
 export async function runInboxStageB(
@@ -64,6 +68,13 @@ INSTRUCCIONES:
    - Minúsculas, guiones en vez de espacios.
    - Si el contenido trata sobre design/UX, incluye el tag "design".
 
+4. resourceType: clasificá el contenido en UNO de tres valores exactos:
+   - "TOOL": el contenido describe una herramienta, librería, API, SDK, modelo o servicio concreto con una capacidad técnica que podría integrarse al trabajo de un proyecto (ej. una herramienta de scraping, un framework de agentes, una plataforma de datos).
+   - "REFERENCE": el contenido es un recurso consultable y reutilizable — un sitio de tendencias, una librería de plantillas, un dataset, una guía metodológica o un framework aplicable.
+   - "HYPE": opinión, noticia, hilo, comentario o difusión SIN un recurso o capacidad reutilizable propia. La mayoría del contenido cae acá. NO infles a TOOL/REFERENCE por entusiasmo del autor.
+
+5. capability: SOLO si resourceType es "TOOL" o "REFERENCE". Una o dos oraciones en términos FUNCIONALES: qué problema concreto resuelve o qué permite hacer, redactado para poder cruzarlo contra la necesidad de un proyecto. Ej. para una herramienta de scraping: "Permite scraping dinámico de sitios con render JS y rotación de proxies, sorteando bloqueos anti-bot y rate-limits". Aplicá REGLA #0.5: no inventes capacidades que el texto no declara. Si resourceType es "HYPE", devolvé capability vacío.
+
 CONTENIDO:
 Título: ${sourceTitle}
 URL: ${sourceUrl}
@@ -85,5 +96,7 @@ ${content.slice(0, 20000)}`;
     summary: parsed.summary || "",
     keyInsights: Array.isArray(parsed.keyInsights) ? parsed.keyInsights : [],
     suggestedTags: Array.isArray(parsed.suggestedTags) ? parsed.suggestedTags : [],
+    resourceType: parsed.resourceType || undefined,
+    capability: parsed.capability || undefined,
   };
 }

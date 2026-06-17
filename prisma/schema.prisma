@@ -594,6 +594,10 @@ model AnalysisResult {
   processingTimeMs Int?
   createdAt        DateTime  @default(now())
   updatedAt        DateTime  @updatedAt
+  resourceType    String?   // "HYPE" | "REFERENCE" | "TOOL"
+  capability      String?   @db.Text
+  embeddingStatus String    @default("PENDING") // PENDING | READY | FAILED | SKIPPED
+  embedding       Unsupported("vector(768)")?
 }
 
 // Sprint Inbox Intelligence — Correcciones acumuladas

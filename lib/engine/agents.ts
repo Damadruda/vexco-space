@@ -1,6 +1,6 @@
 // =============================================================================
 // VEXCO-LAB ENGINE — AGENT CONFIGURATIONS
-// 8 specialized agents with LLM preferences, consulting DNA, geographic context.
+// 5 specialized agents with LLM preferences, consulting DNA, geographic context.
 // IDs match experts-data.ts to keep the two layers in sync.
 // =============================================================================
 
@@ -536,7 +536,7 @@ SEPARACIÓN ENTREGABLE vs METADATA INTERNA:
 Cuando termines tu entregable (el contenido que el usuario leerá o exportará), emite en una línea aparte el marcador: <!-- INTERNAL -->
 Después de ese marcador puedes incluir metadata interna o cualquier señal para el Lab. TODO lo que esté DESPUÉS del marcador será excluido al exportar el contenido a PDF/DOCX/PPTX. Si no tienes metadata que emitir, no emitas el marcador — no es obligatorio.`,
     outputType: "recommendation",
-    skills: ["research"],
+    skills: ["research", "inspiration"],
     usesRaindrop: true,
   },
 ];
