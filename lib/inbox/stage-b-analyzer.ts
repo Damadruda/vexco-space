@@ -1,5 +1,5 @@
 // =============================================================================
-// INBOX STAGE B — Gemini 2.5 Pro narrative analysis (T2)
+// INBOX STAGE B — Gemini 3.1 Pro narrative analysis (T2)
 // Text generation with REGLA #0.5 anti-hallucination.
 // =============================================================================
 
@@ -46,16 +46,21 @@ METADATA PRE-CLASIFICADA (por Stage A):
 - Relevancia: ${stageAResult.relevanceScore}
 - Idioma: ${stageAResult.language}
 
-REGLA #0.5 — ANTI-ALUCINACIÓN (CRÍTICO):
-PROHIBIDO inventar nombres de empresas, marcas, productos, personas, lugares, cifras o frameworks que NO aparezcan literalmente en el texto fuente. Si una información no aparece, omítela. Es preferible un resumen corto y literal que uno completo e inventado. La omisión es siempre mejor que la invención.
+REGLA #0.5 — FIDELIDAD ABSOLUTA A LA FUENTE (CRÍTICO):
+Tu ÚNICA fuente de verdad es el TEXTO FUENTE de abajo. Está terminantemente PROHIBIDO:
+- Inventar o fabricar datos.
+- Complementar la fuente con tu conocimiento propio o de entrenamiento. Si reconocés la herramienta, empresa, producto o tema del texto y creés saber datos adicionales sobre ellos (cifras, métricas, benchmarks, certificaciones, premios, inversores, clientes, fechas), NO los agregues. Reconocer un tema NO te autoriza a aportar lo que sabés de él.
+- Incluir cualquier porcentaje, métrica de rendimiento, resultado de benchmark, certificación, premio, ronda de inversión o nombre de adoptante/cliente que no aparezca EXPLÍCITAMENTE en el texto fuente.
+Si el dato no está literalmente en el texto, NO va — aunque lo creas verdadero. La omisión es siempre mejor que la adición. Si la fuente es breve o superficial, tu análisis también lo será: un summary de UNA oración fiel es correcto; uno de tres oraciones enriquecido con datos externos es un FALLO GRAVE.
 
 INSTRUCCIONES:
 
-1. summary: 2-3 oraciones, tono C-Level, voz activa, directo.
-   - Captura la tesis central del contenido, no un resumen descriptivo.
+1. summary: 1 a 3 oraciones, tono C-Level, voz activa, directo.
+   - Captura la tesis central SEGÚN EL TEXTO FUENTE, no según lo que sepas del tema.
+   - La longitud la dicta la fuente, no un mínimo a alcanzar: si el texto es pobre, UNA oración basta. No estires a 2-3 oraciones rellenando con datos que no están en la fuente.
    - Si el contenido es largo, prioriza el punto más accionable para consultoría B2B.
    - Cero jerga. Palabras prohibidas: sumérgete, tapiz, crucial, descubre, imperativo, revolucionario, sinergias.
-   - NO inventes contexto adicional. Si el contenido es breve o superficial, el summary también lo será.
+   - VERIFICACIÓN OBLIGATORIA antes de devolver: cada afirmación del summary debe poder señalarse en el texto fuente. Si no podés señalar de dónde sale, eliminala.
 
 2. keyInsights: 3-5 hallazgos concretos extraídos del texto.
    - Cada insight: 1 oración concreta.
@@ -73,7 +78,7 @@ INSTRUCCIONES:
    - "REFERENCE": el contenido es un recurso consultable y reutilizable — un sitio de tendencias, una librería de plantillas, un dataset, una guía metodológica o un framework aplicable.
    - "HYPE": opinión, noticia, hilo, comentario o difusión SIN un recurso o capacidad reutilizable propia. La mayoría del contenido cae acá. NO infles a TOOL/REFERENCE por entusiasmo del autor.
 
-5. capability: SOLO si resourceType es "TOOL" o "REFERENCE". Una o dos oraciones en términos FUNCIONALES: qué problema concreto resuelve o qué permite hacer, redactado para poder cruzarlo contra la necesidad de un proyecto. Ej. para una herramienta de scraping: "Permite scraping dinámico de sitios con render JS y rotación de proxies, sorteando bloqueos anti-bot y rate-limits". Aplicá REGLA #0.5: no inventes capacidades que el texto no declara. Si resourceType es "HYPE", devolvé capability vacío.
+5. capability: SOLO si resourceType es "TOOL" o "REFERENCE". Una o dos oraciones en términos FUNCIONALES: qué problema concreto resuelve o qué permite hacer, redactado para poder cruzarlo contra la necesidad de un proyecto. Ej. para una herramienta de scraping: "Permite scraping dinámico de sitios con render JS y rotación de proxies, sorteando bloqueos anti-bot y rate-limits". Aplicá REGLA #0.5: describí solo capacidades que el texto declara; no agregues funciones que conozcas de la herramienta pero que la fuente no mencione. Si resourceType es "HYPE", devolvé capability vacío.
 
 CONTENIDO:
 Título: ${sourceTitle}
