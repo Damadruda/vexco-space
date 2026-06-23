@@ -57,9 +57,9 @@ export async function getInspirationContext(
 
   const lines = scored.map((s, i) => {
     const title = s.item.sourceTitle ?? s.item.rawContent.slice(0, 80);
-    const summary = s.item.analysis?.summary ?? "";
+    const desc = s.item.analysis?.capability ?? s.item.analysis?.summary ?? "";
     const url = s.item.sourceUrl ?? "";
-    return `${i + 1}. ${title} — ${summary}${url ? ` (Fuente: ${url})` : ""}`;
+    return `${i + 1}. ${title}${desc ? ` — ${desc}` : ""}${url ? ` (Fuente: ${url})` : ""}`;
   });
 
   return [

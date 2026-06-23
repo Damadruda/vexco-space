@@ -113,9 +113,8 @@ export function formatInboxResourceBlock(hits: InboxResourceHit[]): string {
   const lines = hits.map((h, i) => {
     const tag = h.resourceType ? `[${h.resourceType}] ` : "";
     const cap = h.capability ? ` — Capacidad: ${h.capability}` : "";
-    const sum = h.summary ? ` ${h.summary}` : "";
     const url = h.url ? ` (Fuente: ${h.url})` : "";
-    return `${i + 1}. ${tag}${h.title}${cap}${sum}${url}`;
+    return `${i + 1}. ${tag}${h.title}${cap}${url}`;
   });
   return [
     "HERRAMIENTAS Y RECURSOS CURADOS RELEVANTES (del Inbox del usuario, recuperados por similitud semantica con esta consulta):",
