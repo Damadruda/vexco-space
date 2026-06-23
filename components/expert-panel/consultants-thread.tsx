@@ -851,7 +851,7 @@ export function ConsultantsThread({
                         prose-p:leading-relaxed prose-p:my-1
                         prose-li:my-0.5 prose-ul:my-1 prose-strong:text-ql-charcoal
                         prose-hr:border-ql-sand/30">
-                        <ReactMarkdown>{dm.content}</ReactMarkdown>
+                        <ReactMarkdown>{sanitizeForDocument(dm.content)}</ReactMarkdown>
                         {dm.streaming && (
                           <span className="inline-block w-1.5 h-4 bg-ql-charcoal/60 animate-pulse ml-0.5 -mb-0.5" />
                         )}

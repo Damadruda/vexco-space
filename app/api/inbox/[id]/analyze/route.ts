@@ -6,6 +6,7 @@ import { runInboxStageA } from "@/lib/inbox/stage-a-classifier";
 import { runInboxStageB } from "@/lib/inbox/stage-b-analyzer";
 import { getRecentCorrections } from "@/lib/inbox/corrections";
 import { embedDocuments, toVectorLiteral } from "@/lib/clients/embeddings";
+import { MODEL_IDS } from "@/lib/clients/llm";
 
 export const dynamic = "force-dynamic";
 export const maxDuration = 120;
@@ -64,7 +65,7 @@ export async function POST(
       resourceType: stageB.resourceType ?? null,
       capability: stageB.capability ?? null,
       rawAiResponse: JSON.stringify({ stageA, stageB }),
-      modelUsed: "gemini-2.5-flash+gemini-2.5-pro",
+      modelUsed: `${MODEL_IDS.geminiT1}+${MODEL_IDS.geminiT2}`,
       processingTimeMs,
     };
 
