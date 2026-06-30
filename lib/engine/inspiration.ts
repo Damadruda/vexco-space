@@ -63,7 +63,7 @@ export async function getInspirationContext(
   });
 
   return [
-    "REFERENCIAS DE INSPIRACIÓN (publicaciones curadas por el usuario):",
+    "REFERENCIAS DE INSPIRACIÓN [CLAIM EXTERNO — AFIRMADO POR LA FUENTE, SIN VERIFICAR] (publicaciones curadas por el usuario):",
     ...lines,
   ].join("\n");
 }
