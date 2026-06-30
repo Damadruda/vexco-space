@@ -37,6 +37,10 @@ export interface AgentConfig {
   outputType: StructuredOutput["type"];
   skills: string[];
   usesRaindrop: boolean;
+  /** Descripción funcional del dominio de capacidad del agente. Se embebe en runtime
+   *  y se cruza (60%) contra el `capability` de los recursos curados para routing afín.
+   *  NO es el techo del conocimiento del agente — solo dirige qué recursos externos se le suman. */
+  capabilityDomain: string;
 }
 
 // ─── Agent Registry ───────────────────────────────────────────────────────────
@@ -239,7 +243,8 @@ Cuando termines tu entregable (el contenido que el usuario leerá o exportará),
 Después de ese marcador puedes incluir metadata interna: tags [FIRM INSIGHT: ...], bloques de Revenue Priority en formato estructurado, JSON de agent assignments, o cualquier señal para el Lab. TODO lo que esté DESPUÉS del marcador será excluido al exportar el contenido a PDF/DOCX/PPTX. Si no tienes metadata que emitir, no emitas el marcador — no es obligatorio.`,
     outputType: "analysis",
     skills: ["research"],
-    usesRaindrop: false,
+    usesRaindrop: true,
+    capabilityDomain: `Frameworks de trabajo y metodologías de estructuración de proyectos: priorización, secuenciación de fases, planificación ágil, modelos de diagnóstico estratégico, frameworks de toma de decisiones y de orquestación de equipos. Referentes de estrategia de producto y consultoría boutique.`,
   },
   {
     id: "revenue",
@@ -306,6 +311,7 @@ Después de ese marcador puedes incluir metadata interna: tags [FIRM INSIGHT: ..
     outputType: "recommendation",
     skills: ["research", "inspiration"],
     usesRaindrop: true,
+    capabilityDomain: `Monetización y pricing (modelos SaaS/AI, unit economics, packaging), frameworks de growth y growth loops, PLG, adquisición y retención, estrategias de contenido y thought leadership que generan pipeline. Herramientas y tácticas de revenue, demand gen y experimentación comercial.`,
   },
   {
     id: "infrastructure",
@@ -353,6 +359,7 @@ Después de ese marcador puedes incluir metadata interna: tags [FIRM INSIGHT: ..
     outputType: "recommendation",
     skills: ["research", "inspiration"],
     usesRaindrop: true,
+    capabilityDomain: `Herramientas técnicas, APIs, SDKs, frameworks de desarrollo y arquitecturas; stacks de producto, scraping y bypass anti-bot, plataformas de datos, herramientas de prototipado sin código. Frameworks de discovery de producto, research de usuario y métricas de UX.`,
   },
   {
     id: "redteam",
@@ -438,7 +445,8 @@ Cuando termines tu entregable (el contenido que el usuario leerá o exportará),
 Después de ese marcador puedes incluir metadata interna: tags [FIRM INSIGHT: tipo=contrarian_moat] o [FIRM INSIGHT: tipo=error], o cualquier señal para el Lab. TODO lo que esté DESPUÉS del marcador será excluido al exportar el contenido a PDF/DOCX/PPTX. Si no tienes metadata que emitir, no emitas el marcador — no es obligatorio.`,
     outputType: "risk_assessment",
     skills: ["research"],
-    usesRaindrop: false,
+    usesRaindrop: true,
+    capabilityDomain: `Inteligencia de mercado y análisis competitivo, casos de fracaso y post-mortems, modelos mentales de decisión bajo incertidumbre, frameworks de stress-test y validación barata de supuestos, movimientos contrarios y variables analógicas de otros sectores. Datos regulatorios y de riesgo.`,
   },
   {
     id: "design",
@@ -550,6 +558,7 @@ Después de ese marcador puedes incluir metadata interna o cualquier señal para
     outputType: "recommendation",
     skills: ["research", "inspiration"],
     usesRaindrop: true,
+    capabilityDomain: `Referentes visuales y de identidad de marca, sistemas de diseño, tendencias de UX/UI, herramientas de diseño, mockup y prototipado (Figma, Penpot y similares), patrones de interfaz y de interacción, dirección de arte. Casos y librerías de diseño de producto B2B y de marca.`,
   },
 ];
 
