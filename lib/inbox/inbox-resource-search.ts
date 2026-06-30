@@ -26,21 +26,39 @@ export interface InboxResourceSearchParams {
   topK?: number;
   minScore?: number;
   consumer: string;
+  domainQuery?: string;      // capabilityDomain del agente; activa routing afín por doble vector
+  domainWeight?: number;     // peso del dominio en el ranking (0..1). Default 0.6
 }
 
 export async function searchInboxResources(
   params: InboxResourceSearchParams
 ): Promise<InboxResourceHit[]> {
-  const { userId, query, resourceTypes, topK = 6, minScore = 0.55, consumer } = params;
+  const { userId, query, resourceTypes, topK = 6, minScore = 0.55, consumer, domainQuery, domainWeight = 0.6 } = params;
   const start = Date.now();
 
   const qVec = await embedQuery(query);
   const vecLiteral = toVectorLiteral(qVec);
 
+  // Routing afín: si hay domainQuery, embebemos el dominio del agente y rankeamos
+  // por combinación ponderada (domainWeight al dominio, resto al proyecto/mensaje).
+  const useDomainRouting = typeof domainQuery === "string" && domainQuery.trim().length > 0;
+  const domainVecLiteral = useDomainRouting
+    ? toVectorLiteral(await embedQuery(domainQuery))
+    : null;
+  const wDomain = Math.min(Math.max(domainWeight, 0), 1);
+  const wQuery = 1 - wDomain;
+
   const typeFilter =
     resourceTypes && resourceTypes.length > 0
       ? Prisma.sql` AND a."resourceType" IN (${Prisma.join(resourceTypes)})`
       : Prisma.empty;
+
+  const scoreExpr = useDomainRouting
+    ? Prisma.sql`(${wDomain} * (1 - (a."embedding" <=> ${domainVecLiteral}::vector)) + ${wQuery} * (1 - (a."embedding" <=> ${vecLiteral}::vector)))`
+    : Prisma.sql`(1 - (a."embedding" <=> ${vecLiteral}::vector))`;
+  const orderExpr = useDomainRouting
+    ? Prisma.sql`${wDomain} * (a."embedding" <=> ${domainVecLiteral}::vector) + ${wQuery} * (a."embedding" <=> ${vecLiteral}::vector)`
+    : Prisma.sql`a."embedding" <=> ${vecLiteral}::vector`;
 
   const rows = await prisma.$queryRaw<
     {
@@ -62,13 +80,13 @@ export async function searchInboxResources(
       a."resourceType" AS "resourceType",
       a."capability"   AS "capability",
       a."summary"      AS "summary",
-      1 - (a."embedding" <=> ${vecLiteral}::vector) AS "score"
+      ${scoreExpr} AS "score"
     FROM "AnalysisResult" a
     JOIN "InboxItem" i ON i."id" = a."inboxItemId"
     WHERE a."embedding" IS NOT NULL
       AND i."userId" = ${userId}
       ${typeFilter}
-    ORDER BY a."embedding" <=> ${vecLiteral}::vector
+    ORDER BY ${orderExpr}
     LIMIT ${topK}
   `;
 
@@ -118,6 +136,7 @@ export function formatInboxResourceBlock(hits: InboxResourceHit[]): string {
   });
   return [
     "HERRAMIENTAS Y RECURSOS CURADOS [CLAIM EXTERNO — AFIRMADO POR LA FUENTE, SIN VERIFICAR] (del Inbox del usuario, recuperados por similitud semantica con esta consulta):",
+    "REFERENCIAS CURADAS AFINES A TU DOMINIO [se SUMAN a tu conocimiento, no lo reemplazan]: estas referencias externas, curadas por el usuario, son señales de novedad y dirección — material reciente que el usuario está siguiendo. Incorporá las que aporten valor real a este caso, con tu criterio. NO son tu catálogo de capacidades ni el techo de lo que sabés: si ninguna aplica, ignoralas y respondé con todo tu conocimiento. Su ausencia no te limita. Etiquetá lo que tomes de ellas según su registro epistémico (afirmación externa sin verificar).",
     "Si alguno resuelve un blocker o cambia la viabilidad de lo que se discute, decilo explicitamente y explica como se integraria al proyecto — sin inventar capacidades que el recurso no declara (REGLA #0.5).",
     ...lines,
   ].join("\n");

@@ -7,7 +7,7 @@ import { GoogleGenAI } from "@google/genai";
 import Anthropic from "@anthropic-ai/sdk";
 import { matchInsightsForProject } from "@/lib/firm-insights/matcher";
 import { classifyInsightSector } from "@/lib/firm-insights/sector-classifier";
-import { decideResearch, researchSkill, inspirationSkill } from "@/lib/engine/skills";
+import { decideResearch, researchSkill } from "@/lib/engine/skills";
 import { searchInboxResources, formatInboxResourceBlock } from "@/lib/inbox/inbox-resource-search";
 
 export const dynamic = "force-dynamic";
@@ -634,11 +634,6 @@ ORIENTACIÓN A ENTREGABLE: cada respuesta apunta a producir un artefacto concret
               sendSSE({ status: "researching", label: `Investigando: ${decision.query}` });
               tasks.push(researchSkill(decision.query));
             }
-            const kw = message.toLowerCase().split(/[\s,.\-_/]+/).filter((w) => w.length > 4).slice(0, 6);
-            if (agentConfig.usesRaindrop && kw.length > 0) {
-              if (!decision.needsResearch) sendSSE({ status: "researching", label: "Consultando referencias…" });
-              tasks.push(inspirationSkill(userId, kw));
-            }
             if (tasks.length > 0) {
               const results = await Promise.all(tasks);
               prefetchBlocks = results.map((r) => r.data).filter(Boolean).join("\n\n");
@@ -653,6 +648,7 @@ ORIENTACIÓN A ENTREGABLE: cada respuesta apunta a producir un artefacto concret
                 const resourceHits = await searchInboxResources({
                   userId,
                   query: resourceQuery,
+                  domainQuery: agentConfig.capabilityDomain,
                   resourceTypes: ["TOOL", "REFERENCE"],
                   topK: 6,
                   minScore: 0.55,
