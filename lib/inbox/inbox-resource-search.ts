@@ -117,7 +117,7 @@ export function formatInboxResourceBlock(hits: InboxResourceHit[]): string {
     return `${i + 1}. ${tag}${h.title}${cap}${url}`;
   });
   return [
-    "HERRAMIENTAS Y RECURSOS CURADOS RELEVANTES (del Inbox del usuario, recuperados por similitud semantica con esta consulta):",
+    "HERRAMIENTAS Y RECURSOS CURADOS [CLAIM EXTERNO — AFIRMADO POR LA FUENTE, SIN VERIFICAR] (del Inbox del usuario, recuperados por similitud semantica con esta consulta):",
     "Si alguno resuelve un blocker o cambia la viabilidad de lo que se discute, decilo explicitamente y explica como se integraria al proyecto — sin inventar capacidades que el recurso no declara (REGLA #0.5).",
     ...lines,
   ].join("\n");

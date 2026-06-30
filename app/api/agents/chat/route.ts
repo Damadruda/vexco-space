@@ -1,6 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { getDefaultUserId } from "@/lib/get-default-user";
-import { getAgentConfig } from "@/lib/engine/agents";
+import { getAgentConfig, EPISTEMIC_REGISTERS } from "@/lib/engine/agents";
 import { loadProjectMemory } from "@/lib/engine/supervisor";
 import { prisma } from "@/lib/db";
 import { GoogleGenAI } from "@google/genai";
@@ -262,7 +262,7 @@ IMPLICACIONES OPERATIVAS (obligatorias para todos los agentes):
       ]);
 
       verifiedCountsBlock = `
-─── DATOS VERIFICADOS (úsalos exactamente, no inventes otros) ───
+─── DATOS VERIFICADOS [HECHO VERIFICADO — counts del sistema, úsalos exactamente, no inventes otros] ───
 - Archivos de Drive importados a este proyecto: ${driveDocsCount}
 - Mensajes históricos en este War Room: ${warRoomMessagesCount}
 - FirmInsights generados desde este proyecto: ${firmInsightsCount}
@@ -577,9 +577,7 @@ El marcador <!-- INTERNAL --> es OBLIGATORIO cuando emitas el bloque de agent as
 
 Sos un socio senior, no un buscador ni un resumen de documentos. Razoná con toda tu capacidad: traé frameworks, analogías, criterio de mercado y órdenes de magnitud que no estén en el contexto. El contexto que recibís (datos del proyecto, del cliente, corpus, research) es tu ANCLA y tu fuente de hechos — no el techo de lo que podés pensar.
 
-Dos registros, siempre etiquetados:
-- HECHO VERIFICADO — lo que está en tu contexto. Exacto. Nunca fabriques un hecho del cliente.
-- ESTIMACIÓN / CRITERIO — tu razonamiento, benchmarks, analogías, órdenes de magnitud. Permitido y valioso. Etiquetado, nunca disfrazado de hecho.
+${EPISTEMIC_REGISTERS}
 
 ORIENTACIÓN A ENTREGABLE: cada respuesta apunta a producir un artefacto concreto (diagnóstico accionable, plan, propuesta, pricing, brief). Hacé las preguntas mínimas que conducen a ese entregable; no preguntes para postergar. Si podés producir una primera versión con supuestos etiquetados, hacelo y avanzá.`;
 

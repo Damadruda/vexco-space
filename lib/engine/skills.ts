@@ -74,8 +74,8 @@ NO inventes estadísticas. Si no tienes datos recientes, indícalo claramente.`;
     });
 
     const prefix = hasPerplexity
-      ? "DATOS DE INVESTIGACIÓN (Perplexity Sonar):"
-      : "DATOS DE INVESTIGACIÓN (sin Perplexity — datos no verificados en tiempo real):";
+      ? "DATOS DE INVESTIGACIÓN [CLAIM EXTERNO — AFIRMADO POR LA FUENTE, SIN VERIFICAR] (Perplexity Sonar):"
+      : "DATOS DE INVESTIGACIÓN [CLAIM EXTERNO — AFIRMADO POR LA FUENTE, SIN VERIFICAR] (sin Perplexity — datos no verificados en tiempo real):";
 
     return {
       skill: "research",
