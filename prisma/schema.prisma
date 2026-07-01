@@ -55,6 +55,8 @@ model User {
   metaProjects MetaProject[]
   // Sprint Inbox Intelligence — few-shot calibration
   inboxCorrections InboxCorrection[]
+  // Sprint 1a — Lab proposal queue
+  labProposals   LabProposal[]
 }
 
 model Account {
@@ -1074,12 +1076,6 @@ enum FrameworkLifecycleStage {
   OWN        // Framework propio puro
 }
 
-enum FrameworkUpdateStatus {
-  PENDING
-  ACCEPTED
-  REJECTED
-}
-
 enum FrameworkStatus {
   ACTIVE
   DEPRECATED
@@ -1127,7 +1123,6 @@ model Framework {
   firmInsight           FirmInsight?             @relation(fields: [firmInsightId], references: [id])
   sourceDocuments       FrameworkSourceDocument[]
   appliedInProjects     FrameworkProject[]
-  updates               FrameworkUpdate[]
   derivedFromId         String?
   derivedFrom           Framework?               @relation("FrameworkDerivation", fields: [derivedFromId], references: [id])
   derivatives           Framework[]              @relation("FrameworkDerivation")
@@ -1165,21 +1160,6 @@ model FrameworkProject {
   @@unique([frameworkId, projectId])
   @@index([frameworkId])
   @@index([projectId])
-}
-
-model FrameworkUpdate {
-  id          String                @id @default(cuid())
-  frameworkId String
-  framework   Framework             @relation(fields: [frameworkId], references: [id], onDelete: Cascade)
-  source      String                // URL, "raindrop", "perplexity_discovery", "manual"
-  description String                @db.Text
-  rawPayload  Json?
-  foundAt     DateTime              @default(now())
-  status      FrameworkUpdateStatus @default(PENDING)
-  reviewedAt  DateTime?
-
-  @@index([frameworkId])
-  @@index([status])
 }
 
 model OperationalSource {
@@ -1335,4 +1315,57 @@ model RetrievalQueryLog {
 
   @@index([consumer, createdAt])
   @@index([createdAt])
+}
+
+// ─── Sprint 1a — Lab proposal queue (source-agnostic) ───────────────────────────
+
+enum ProposalSourceType {
+  INBOX_RESOURCE
+  FIRM_INSIGHT
+  PROJECT_DELIVERABLE
+  MARKET_BRIEF
+  PERPLEXITY_DISCOVERY
+  MANUAL
+}
+
+enum ProposalTargetType {
+  AGENT_DNA
+  FRAMEWORK
+  CORPUS
+  PRODUCT_BACKLOG
+}
+
+enum ProposalStatus {
+  PENDING
+  ACCEPTED
+  REJECTED
+  APPLIED
+}
+
+model LabProposal {
+  id                String             @id @default(cuid())
+  sourceType        ProposalSourceType
+  sourceRef         String?
+  targetType        ProposalTargetType
+  targetRef         String?
+  title             String
+  rationale         String             @db.Text
+  proposedChange    String             @db.Text
+  epistemicRegister String?
+  evidence          Json?
+  confidence        Int                @default(50)
+  outcomeWeight     Float?
+  status            ProposalStatus     @default(PENDING)
+  reviewedAt        DateTime?
+  appliedAt         DateTime?
+  ownerId           String
+  owner             User               @relation(fields: [ownerId], references: [id], onDelete: Cascade)
+  createdAt         DateTime           @default(now())
+  updatedAt         DateTime           @updatedAt
+
+  @@index([status])
+  @@index([sourceType])
+  @@index([targetType])
+  @@index([targetType, targetRef])
+  @@index([ownerId])
 }
