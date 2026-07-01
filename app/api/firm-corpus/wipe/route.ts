@@ -33,9 +33,6 @@ export async function POST() {
       // 3. Delete FrameworkProject (pivot con Project)
       const projectPivotsDeleted = await tx.frameworkProject.deleteMany({});
 
-      // 4. Delete FrameworkUpdate (registros de discovery)
-      const updatesDeleted = await tx.frameworkUpdate.deleteMany({});
-
       // 5. Delete Framework (todos, activos y deprecated)
       const frameworksDeleted = await tx.framework.deleteMany({});
 
@@ -52,7 +49,6 @@ export async function POST() {
         docsArchived: docsArchived.count,
         pivotsDeleted: pivotsDeleted.count,
         projectPivotsDeleted: projectPivotsDeleted.count,
-        updatesDeleted: updatesDeleted.count,
         frameworksDeleted: frameworksDeleted.count,
         jobsCancelled: jobsCancelled.count,
       };
