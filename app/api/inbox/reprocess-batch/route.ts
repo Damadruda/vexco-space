@@ -5,6 +5,7 @@ import { jinaClient } from "@/lib/clients/jina";
 import { runInboxStageA } from "@/lib/inbox/stage-a-classifier";
 import { runInboxStageB } from "@/lib/inbox/stage-b-analyzer";
 import { getRecentCorrections } from "@/lib/inbox/corrections";
+import { upsertLabProposalFromResource } from "@/lib/inbox/lab-proposal-from-resource";
 import { embedDocuments, toVectorLiteral } from "@/lib/clients/embeddings";
 import { MODEL_IDS } from "@/lib/clients/llm";
 
@@ -92,6 +93,8 @@ export async function POST(request: NextRequest) {
               where: { id: item.id },
               data: { status: "processed" },
             });
+
+            await upsertLabProposalFromResource(item, stageB);
 
             // ── Embeber recurso curado (solo REFERENCE/TOOL) ──
             try {
