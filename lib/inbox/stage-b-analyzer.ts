@@ -13,6 +13,10 @@ export interface StageBResult {
   suggestedTags: string[];
   resourceType?: string;   // "HYPE" | "REFERENCE" | "TOOL"
   capability?: string;
+  labRelevant?: boolean;
+  labTargetType?: string;   // "AGENT_DNA" | "FRAMEWORK" | "CORPUS" | "PRODUCT_BACKLOG"
+  labRationale?: string;
+  labProposedChange?: string;
 }
 
 const STAGE_B_SCHEMA = {
@@ -29,8 +33,12 @@ const STAGE_B_SCHEMA = {
     },
     resourceType: { type: Type.STRING },
     capability: { type: Type.STRING },
+    labRelevant: { type: Type.BOOLEAN },
+    labTargetType: { type: Type.STRING },
+    labRationale: { type: Type.STRING },
+    labProposedChange: { type: Type.STRING },
   },
-  required: ["summary", "keyInsights", "suggestedTags", "resourceType"],
+  required: ["summary", "keyInsights", "suggestedTags", "resourceType", "labRelevant"],
 };
 
 export async function runInboxStageB(
@@ -80,6 +88,14 @@ INSTRUCCIONES:
 
 5. capability: SOLO si resourceType es "TOOL" o "REFERENCE". Una o dos oraciones en términos FUNCIONALES: qué problema concreto resuelve o qué permite hacer, redactado para poder cruzarlo contra la necesidad de un proyecto. Ej. para una herramienta de scraping: "Permite scraping dinámico de sitios con render JS y rotación de proxies, sorteando bloqueos anti-bot y rate-limits". Aplicá REGLA #0.5: describí solo capacidades que el texto declara; no agregues funciones que conozcas de la herramienta pero que la fuente no mencione. Si resourceType es "HYPE", devolvé capability vacío.
 
+6. labRelevant / labTargetType / labRationale / labProposedChange — ¿este recurso sirve para mejorar el LAB DE VEX&CO COMO PRODUCTO (el propio sistema multi-agente que operás), no para asesorar un proyecto de cliente?
+   - labRelevant = true SOLO si el recurso aporta algo adoptable por el Lab mismo: una técnica de infraestructura o retrieval, un framework/metodología que podría entrar al ADN de un agente, una mejora de UX/diseño del producto, o una capacidad de producto que el Lab podría construir y hoy no tiene. La MAYORÍA de los recursos son false: son combustible para proyectos de cliente, no mejoras al Lab. No infles a true por entusiasmo — mismo criterio estricto que HYPE.
+   - Si labRelevant = false: devolvé labTargetType, labRationale y labProposedChange vacíos.
+   - Si labRelevant = true:
+     - labTargetType: UNO exacto de "AGENT_DNA" (adaptar el consultingDNA de un agente), "FRAMEWORK" (alta o adaptación de un framework), "CORPUS" (conocimiento curado al corpus institucional), "PRODUCT_BACKLOG" (capacidad que el Lab debería construir).
+     - labRationale: por qué aplica A VEX&CO ESPECÍFICAMENTE, no la tendencia genérica. Aplicá REGLA #0.5: fundamentá solo con lo que el texto declara.
+     - labProposedChange: el cambio concreto propuesto (el delta), 1 a 2 oraciones.
+
 CONTENIDO:
 Título: ${sourceTitle}
 URL: ${sourceUrl}
@@ -103,5 +119,9 @@ ${content.slice(0, 20000)}`;
     suggestedTags: Array.isArray(parsed.suggestedTags) ? parsed.suggestedTags : [],
     resourceType: parsed.resourceType || undefined,
     capability: parsed.capability || undefined,
+    labRelevant: parsed.labRelevant === true,
+    labTargetType: parsed.labTargetType || undefined,
+    labRationale: parsed.labRationale || undefined,
+    labProposedChange: parsed.labProposedChange || undefined,
   };
 }

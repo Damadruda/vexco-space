@@ -20,6 +20,7 @@ import {
   Boxes,
   TableProperties,
   Tag,
+  Lightbulb,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 
@@ -31,6 +32,7 @@ const WORKSPACE = [
   { href: "/intelligence", icon: BrainCircuit, label: "Inteligencia" },
   { href: "/agile-board", icon: CheckSquare, label: "Agile Board" },
   { href: "/inbox", icon: Inbox, label: "Inbox" },
+  { href: "/proposals", icon: Lightbulb, label: "Propuestas" },
   { href: "/knowledge", icon: Brain, label: "Conocimiento" },
   { href: "/sectors/review", icon: Tag, label: "Sectores" },
   { href: "/firm-corpus", icon: Library, label: "Firm Corpus" },
